@@ -1120,80 +1120,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
-name = "rodoo-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror",
- "tracing",
-]
-
-[[package]]
-name = "rodoo-http"
-version = "0.1.0"
-dependencies = [
- "axum",
- "rodoo-core",
- "rodoo-orm",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rodoo-modules"
-version = "0.1.0"
-dependencies = [
- "rodoo-core",
- "rodoo-orm",
- "serde",
- "serde_json",
- "thiserror",
- "tracing",
-]
-
-[[package]]
-name = "rodoo-orm"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "rodoo-core",
- "serde",
- "serde_json",
- "sqlx",
- "thiserror",
- "tracing",
-]
-
-[[package]]
-name = "rodoo-qweb"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror",
- "tracing",
-]
-
-[[package]]
-name = "rodoo-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "rodoo-core",
- "rodoo-http",
- "rodoo-modules",
- "rodoo-orm",
- "rodoo-qweb",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "rsa"
 version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1211,6 +1137,80 @@ dependencies = [
  "spki",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "rusdoo-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "rusdoo-http"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "rusdoo-modules"
+version = "0.1.0"
+dependencies = [
+ "rusdoo-core",
+ "rusdoo-orm",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "rusdoo-orm"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusdoo-core",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "rusdoo-qweb"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "rusdoo-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rusdoo-core",
+ "rusdoo-http",
+ "rusdoo-modules",
+ "rusdoo-orm",
+ "rusdoo-qweb",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

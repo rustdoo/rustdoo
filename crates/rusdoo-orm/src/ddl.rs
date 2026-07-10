@@ -2,7 +2,7 @@
 
 use crate::model::Model;
 use crate::sql::quote_ident;
-use rodoo_core::RodooError;
+use rusdoo_core::RusdooError;
 
 /// Audit columns Odoo adds to every regular model (LOG_ACCESS_COLUMNS).
 const MAGIC_COLUMNS: [(&str, &str); 4] = [
@@ -12,7 +12,7 @@ const MAGIC_COLUMNS: [(&str, &str); 4] = [
     ("write_date", "timestamp"),
 ];
 
-pub fn create_table_sql(model: &Model) -> Result<String, RodooError> {
+pub fn create_table_sql(model: &Model) -> Result<String, RusdooError> {
     let table = quote_ident(&model.meta.table)?;
     let mut columns = vec![r#""id" SERIAL NOT NULL"#.to_string()];
     for (name, ty) in MAGIC_COLUMNS {

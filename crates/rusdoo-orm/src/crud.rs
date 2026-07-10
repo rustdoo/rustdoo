@@ -4,7 +4,7 @@
 use crate::domain::Domain;
 use crate::model::Model;
 use crate::sql::{bind, quote_ident, render};
-use rodoo_core::RodooError;
+use rusdoo_core::RusdooError;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Default)]
@@ -20,7 +20,7 @@ impl Model {
         &self,
         domain: &Domain,
         opts: &SearchOptions,
-    ) -> Result<(String, Vec<Value>), RodooError> {
+    ) -> Result<(String, Vec<Value>), RusdooError> {
         let mut params = Vec::new();
         let where_sql = render(domain, &mut params, Some(self))?;
         let mut sql = format!(
@@ -43,7 +43,7 @@ impl Model {
         &self,
         ids: &[i64],
         fields: &[&str],
-    ) -> Result<(String, Vec<Value>), RodooError> {
+    ) -> Result<(String, Vec<Value>), RusdooError> {
         let mut columns = vec![r#""id""#.to_string()];
         for name in fields {
             self.stored_field(name)?;
@@ -62,9 +62,9 @@ impl Model {
     pub fn insert_sql(
         &self,
         values: Vec<(&str, Value)>,
-    ) -> Result<(String, Vec<Value>), RodooError> {
+    ) -> Result<(String, Vec<Value>), RusdooError> {
         if values.is_empty() {
-            return Err(RodooError::Validation(
+            return Err(RusdooError::Validation(
                 "insert requires at least one value".into(),
             ));
         }
@@ -89,9 +89,9 @@ impl Model {
         &self,
         ids: &[i64],
         values: Vec<(&str, Value)>,
-    ) -> Result<(String, Vec<Value>), RodooError> {
+    ) -> Result<(String, Vec<Value>), RusdooError> {
         if values.is_empty() {
-            return Err(RodooError::Validation(
+            return Err(RusdooError::Validation(
                 "update requires at least one value".into(),
             ));
         }
@@ -111,7 +111,7 @@ impl Model {
         Ok((sql, params))
     }
 
-    pub fn delete_sql(&self, ids: &[i64]) -> Result<(String, Vec<Value>), RodooError> {
+    pub fn delete_sql(&self, ids: &[i64]) -> Result<(String, Vec<Value>), RusdooError> {
         let mut params = Vec::new();
         let id_list = bind_ids(ids, &mut params)?;
         let sql = format!(
@@ -123,16 +123,16 @@ impl Model {
 
     /// `"name asc, id desc"` -> `"name" ASC, "id" DESC`, validated against
     /// the model's fields so arbitrary SQL can never reach ORDER BY.
-    fn order_by(&self, spec: &str) -> Result<String, RodooError> {
+    fn order_by(&self, spec: &str) -> Result<String, RusdooError> {
         let clauses: Vec<String> = spec
             .split(',')
             .map(|part| {
                 let mut words = part.split_whitespace();
                 let field = words
                     .next()
-                    .ok_or_else(|| RodooError::Validation("empty ORDER BY clause".into()))?;
+                    .ok_or_else(|| RusdooError::Validation("empty ORDER BY clause".into()))?;
                 if field != "id" && self.field(field).is_none() {
-                    return Err(RodooError::Validation(format!(
+                    return Err(RusdooError::Validation(format!(
                         "unknown field in order: {field:?}"
                     )));
                 }
@@ -140,13 +140,13 @@ impl Model {
                     None | Some("asc") => "ASC",
                     Some("desc") => "DESC",
                     Some(other) => {
-                        return Err(RodooError::Validation(format!(
+                        return Err(RusdooError::Validation(format!(
                             "invalid order direction: {other:?}"
                         )))
                     }
                 };
                 if words.next().is_some() {
-                    return Err(RodooError::Validation(format!(
+                    return Err(RusdooError::Validation(format!(
                         "malformed order clause: {part:?}"
                     )));
                 }
@@ -156,13 +156,13 @@ impl Model {
         Ok(clauses.join(", "))
     }
 
-    fn stored_field(&self, name: &str) -> Result<(), RodooError> {
+    fn stored_field(&self, name: &str) -> Result<(), RusdooError> {
         match self.field(name) {
             Some(field) if field.stored => Ok(()),
-            Some(_) => Err(RodooError::Validation(format!(
+            Some(_) => Err(RusdooError::Validation(format!(
                 "field is not stored: {name:?}"
             ))),
-            None => Err(RodooError::Validation(format!(
+            None => Err(RusdooError::Validation(format!(
                 "unknown field on {}: {name:?}",
                 self.meta.name
             ))),
@@ -170,9 +170,9 @@ impl Model {
     }
 }
 
-fn bind_ids(ids: &[i64], params: &mut Vec<Value>) -> Result<String, RodooError> {
+fn bind_ids(ids: &[i64], params: &mut Vec<Value>) -> Result<String, RusdooError> {
     if ids.is_empty() {
-        return Err(RodooError::Validation("no record ids given".into()));
+        return Err(RusdooError::Validation("no record ids given".into()));
     }
     let placeholders: Vec<String> = ids
         .iter()

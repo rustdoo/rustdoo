@@ -3,7 +3,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum RodooError {
+pub enum RusdooError {
     /// `odoo.exceptions.UserError`
     #[error("user error: {0}")]
     User(String),

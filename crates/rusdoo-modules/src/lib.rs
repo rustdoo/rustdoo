@@ -1,4 +1,4 @@
-//! rodoo-modules — port of `odoo/modules/`: manifest parsing
+//! rusdoo-modules — port of `odoo/modules/`: manifest parsing
 //! (`__manifest__.py`), dependency graph, module loading order.
 
 /// Mirrors the keys of an addon `__manifest__.py`.

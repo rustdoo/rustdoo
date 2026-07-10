@@ -1,4 +1,4 @@
-//! rodoo-orm — port of `odoo/orm/` (models, fields, domains) on PostgreSQL.
+//! rusdoo-orm — port of `odoo/orm/` (models, fields, domains) on PostgreSQL.
 
 pub mod crud;
 pub mod ddl;

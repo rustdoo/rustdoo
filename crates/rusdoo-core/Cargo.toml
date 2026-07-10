@@ -1,5 +1,5 @@
 [package]
-name = "rodoo-modules"
+name = "rusdoo-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,5 +9,3 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-rodoo-core = { path = "../rodoo-core" }
-rodoo-orm = { path = "../rodoo-orm" }

@@ -1,5 +1,5 @@
 [package]
-name = "rodoo-http"
+name = "rusdoo-orm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,6 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-axum.workspace = true
-tokio.workspace = true
-rodoo-core = { path = "../rodoo-core" }
-rodoo-orm = { path = "../rodoo-orm" }
+sqlx.workspace = true
+chrono.workspace = true
+rusdoo-core = { path = "../rusdoo-core" }

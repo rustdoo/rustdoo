@@ -7,7 +7,7 @@
 
 use crate::domain::{Domain, Operator, Term};
 use crate::model::Model;
-use rodoo_core::RodooError;
+use rusdoo_core::RusdooError;
 use serde_json::Value;
 
 /// Hard cap mirroring the parser's limit: `Domain` values can also be built
@@ -16,21 +16,21 @@ const MAX_RENDER_DEPTH: usize = 100;
 
 /// Validate and double-quote a SQL identifier. Dotted paths (joins) are
 /// intentionally rejected until relational traversal is implemented.
-pub fn quote_ident(name: &str) -> Result<String, RodooError> {
+pub fn quote_ident(name: &str) -> Result<String, RusdooError> {
     let mut chars = name.chars();
     let valid = matches!(chars.next(), Some(c) if c.is_ascii_lowercase() || c == '_')
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
     if valid {
         Ok(format!("\"{name}\""))
     } else {
-        Err(RodooError::Validation(format!(
+        Err(RusdooError::Validation(format!(
             "invalid SQL identifier: {name:?}"
         )))
     }
 }
 
 /// Type-blind rendering; prefer [`render`] with a model when one is available.
-pub fn where_clause(domain: &Domain) -> Result<(String, Vec<Value>), RodooError> {
+pub fn where_clause(domain: &Domain) -> Result<(String, Vec<Value>), RusdooError> {
     let mut params = Vec::new();
     let sql = render(domain, &mut params, None)?;
     Ok((sql, params))
@@ -42,7 +42,7 @@ pub fn render(
     domain: &Domain,
     params: &mut Vec<Value>,
     model: Option<&Model>,
-) -> Result<String, RodooError> {
+) -> Result<String, RusdooError> {
     render_at(domain, params, model, 0)
 }
 
@@ -56,9 +56,9 @@ fn render_at(
     params: &mut Vec<Value>,
     model: Option<&Model>,
     depth: usize,
-) -> Result<String, RodooError> {
+) -> Result<String, RusdooError> {
     if depth > MAX_RENDER_DEPTH {
-        return Err(RodooError::Validation(format!(
+        return Err(RusdooError::Validation(format!(
             "domain nesting exceeds {MAX_RENDER_DEPTH} levels"
         )));
     }
@@ -81,7 +81,7 @@ fn render_nary(
     params: &mut Vec<Value>,
     model: Option<&Model>,
     depth: usize,
-) -> Result<String, RodooError> {
+) -> Result<String, RusdooError> {
     match children {
         [] => Ok("TRUE".into()),
         [only] => render_at(only, params, model, depth + 1),
@@ -110,7 +110,7 @@ fn render_term(
     term: &Term,
     params: &mut Vec<Value>,
     model: Option<&Model>,
-) -> Result<String, RodooError> {
+) -> Result<String, RusdooError> {
     let col = quote_ident(&term.field)?;
     let value = &term.value;
     use Operator::*;
@@ -159,7 +159,7 @@ fn render_term(
         EqILike => render_like(&col, "ILIKE", value, false, false, params),
         NotEqLike => render_like(&col, "LIKE", value, false, true, params),
         NotEqILike => render_like(&col, "ILIKE", value, false, true, params),
-        ChildOf | ParentOf | Any | NotAny => Err(RodooError::Validation(format!(
+        ChildOf | ParentOf | Any | NotAny => Err(RusdooError::Validation(format!(
             "operator not yet supported: {:?}",
             term.op
         ))),
@@ -171,7 +171,7 @@ fn render_cmp(
     sql_op: &str,
     value: &Value,
     params: &mut Vec<Value>,
-) -> Result<String, RodooError> {
+) -> Result<String, RusdooError> {
     Ok(format!("{col} {sql_op} {}", bind(params, value.clone())))
 }
 
@@ -180,9 +180,9 @@ fn render_in(
     value: &Value,
     negative: bool,
     params: &mut Vec<Value>,
-) -> Result<String, RodooError> {
+) -> Result<String, RusdooError> {
     let items = value.as_array().ok_or_else(|| {
-        RodooError::Validation(format!("'in' operator expects a list, got {value}"))
+        RusdooError::Validation(format!("'in' operator expects a list, got {value}"))
     })?;
     let has_unset = items.iter().any(is_unset);
     let set_values: Vec<&Value> = items.iter().filter(|v| !is_unset(v)).collect();
@@ -216,9 +216,9 @@ fn render_like(
     wrap: bool,
     negative: bool,
     params: &mut Vec<Value>,
-) -> Result<String, RodooError> {
+) -> Result<String, RusdooError> {
     let text = value.as_str().ok_or_else(|| {
-        RodooError::Validation(format!("pattern operator expects a string, got {value}"))
+        RusdooError::Validation(format!("pattern operator expects a string, got {value}"))
     })?;
     let pattern = if wrap {
         // the user searched a literal string: escape LIKE wildcards, then wrap

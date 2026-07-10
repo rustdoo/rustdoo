@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/rodoo-core",
-    "crates/rodoo-orm",
-    "crates/rodoo-http",
-    "crates/rodoo-qweb",
-    "crates/rodoo-modules",
-    "crates/rodoo-server",
+    "crates/rusdoo-core",
+    "crates/rusdoo-orm",
+    "crates/rusdoo-http",
+    "crates/rusdoo-qweb",
+    "crates/rusdoo-modules",
+    "crates/rusdoo-server",
 ]
 
 [workspace.package]

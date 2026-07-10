@@ -1,9 +1,9 @@
-//! rodoo-core — port of `odoo/` core primitives: registry, environment,
+//! rusdoo-core — port of `odoo/` core primitives: registry, environment,
 //! exceptions (`odoo/exceptions.py`), and shared types.
 
 pub mod error;
 
-pub use error::RodooError;
+pub use error::RusdooError;
 
 /// Mirrors `odoo.api.Environment`: carries db cursor, user id and context.
 #[derive(Debug, Clone)]

@@ -4,7 +4,7 @@
 //! `'!'` is unary, and consecutive expressions without an operator are
 //! implicitly AND-ed. `(1, '=', 1)` and `(0, '=', 1)` are the TRUE/FALSE leaves.
 
-use rodoo_core::RodooError;
+use rusdoo_core::RusdooError;
 use serde_json::Value;
 
 /// Hard cap on prefix-operator nesting; parsing is recursive, so an
@@ -86,10 +86,10 @@ pub enum Domain {
     Term(Term),
 }
 
-pub fn parse_domain(raw: &Value) -> Result<Domain, RodooError> {
+pub fn parse_domain(raw: &Value) -> Result<Domain, RusdooError> {
     let items = raw
         .as_array()
-        .ok_or_else(|| RodooError::Validation("domain must be a list".into()))?;
+        .ok_or_else(|| RusdooError::Validation("domain must be a list".into()))?;
     let mut parts = Vec::new();
     let mut pos = 0;
     while pos < items.len() {
@@ -104,14 +104,14 @@ pub fn parse_domain(raw: &Value) -> Result<Domain, RodooError> {
     })
 }
 
-fn parse_expr(items: &[Value], pos: usize, depth: usize) -> Result<(Domain, usize), RodooError> {
+fn parse_expr(items: &[Value], pos: usize, depth: usize) -> Result<(Domain, usize), RusdooError> {
     if depth > MAX_DOMAIN_DEPTH {
-        return Err(RodooError::Validation(format!(
+        return Err(RusdooError::Validation(format!(
             "domain nesting exceeds {MAX_DOMAIN_DEPTH} levels"
         )));
     }
     match items.get(pos) {
-        None => Err(RodooError::Validation(
+        None => Err(RusdooError::Validation(
             "domain ended while an operator still expected operands".into(),
         )),
         Some(Value::String(s)) => match s.as_str() {
@@ -129,20 +129,20 @@ fn parse_expr(items: &[Value], pos: usize, depth: usize) -> Result<(Domain, usiz
                 let (a, p) = parse_expr(items, pos + 1, depth + 1)?;
                 Ok((Domain::Not(Box::new(a)), p))
             }
-            other => Err(RodooError::Validation(format!(
+            other => Err(RusdooError::Validation(format!(
                 "invalid domain operator: {other:?}"
             ))),
         },
         Some(Value::Array(term)) => Ok((parse_term(term)?, pos + 1)),
-        Some(other) => Err(RodooError::Validation(format!(
+        Some(other) => Err(RusdooError::Validation(format!(
             "invalid domain element: {other}"
         ))),
     }
 }
 
-fn parse_term(term: &[Value]) -> Result<Domain, RodooError> {
+fn parse_term(term: &[Value]) -> Result<Domain, RusdooError> {
     let [field, op, value] = term else {
-        return Err(RodooError::Validation(format!(
+        return Err(RusdooError::Validation(format!(
             "domain term must have 3 elements, got {}",
             term.len()
         )));
@@ -157,12 +157,12 @@ fn parse_term(term: &[Value]) -> Result<Domain, RodooError> {
     }
     let field = field
         .as_str()
-        .ok_or_else(|| RodooError::Validation(format!("field name must be a string: {field}")))?;
+        .ok_or_else(|| RusdooError::Validation(format!("field name must be a string: {field}")))?;
     let op_str = op
         .as_str()
-        .ok_or_else(|| RodooError::Validation(format!("operator must be a string: {op}")))?;
+        .ok_or_else(|| RusdooError::Validation(format!("operator must be a string: {op}")))?;
     let op = Operator::parse(op_str)
-        .ok_or_else(|| RodooError::Validation(format!("unknown operator: {op_str:?}")))?;
+        .ok_or_else(|| RusdooError::Validation(format!("unknown operator: {op_str:?}")))?;
     Ok(Domain::Term(Term {
         field: field.to_string(),
         op,

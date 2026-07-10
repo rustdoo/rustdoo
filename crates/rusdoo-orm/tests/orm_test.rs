@@ -1,12 +1,12 @@
 //! Phase 1 ORM tests. Reference behaviour: `odoo/odoo/orm/domains.py`
 //! (STANDARD_CONDITION_OPERATORS, NEGATIVE_CONDITION_OPERATORS, _TRUE_LEAF).
 
-use rodoo_orm::crud::SearchOptions;
-use rodoo_orm::ddl::create_table_sql;
-use rodoo_orm::domain::{parse_domain, Domain, Operator};
-use rodoo_orm::fields::{Field, FieldType};
-use rodoo_orm::model::{Model, ModelMeta};
-use rodoo_orm::sql::where_clause;
+use rusdoo_orm::crud::SearchOptions;
+use rusdoo_orm::ddl::create_table_sql;
+use rusdoo_orm::domain::{parse_domain, Domain, Operator};
+use rusdoo_orm::fields::{Field, FieldType};
+use rusdoo_orm::model::{Model, ModelMeta};
+use rusdoo_orm::sql::where_clause;
 use serde_json::json;
 
 fn partner_model() -> Model {
