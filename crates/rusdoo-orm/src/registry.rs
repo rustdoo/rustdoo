@@ -24,6 +24,10 @@ impl Registry {
         self.models.get(name)
     }
 
+    pub fn models(&self) -> impl Iterator<Item = &Model> {
+        self.models.values()
+    }
+
     /// Register a model definition, applying Odoo's `_inherit` rules:
     /// no `_inherit` creates a new model; `_inherit` naming the model
     /// itself extends it in place; `_inherit` with a different `_name`

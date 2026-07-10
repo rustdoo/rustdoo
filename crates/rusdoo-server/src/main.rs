@@ -19,13 +19,18 @@ async fn main() -> anyhow::Result<()> {
     let pool = rusdoo_orm::db::connect(&db_url).await?;
 
     if std::env::args().any(|arg| arg == "--init") {
-        for name in ["res.company", "res.partner"] {
-            registry
-                .get(name)
-                .expect("registered above")
-                .init_table(&pool)
-                .await?;
-            tracing::info!("initialized table for {name}");
+        use rusdoo_modules::installer::{install_modules, XmlIds};
+        let addons = std::env::var("RUSDOO_ADDONS_PATH").unwrap_or_else(|_| "addons".into());
+        let addons_path = std::path::Path::new(&addons);
+        let mut xml_ids = XmlIds::new();
+        if addons_path.is_dir() {
+            let report = install_modules(&pool, &registry, &[addons_path], &mut xml_ids).await?;
+            tracing::info!("installed {} module(s)", report.modules.len());
+        } else {
+            for model in registry.models() {
+                model.init_table(&pool).await?;
+            }
+            tracing::info!("schema initialized (no addons directory found)");
         }
     }
 

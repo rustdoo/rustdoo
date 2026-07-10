@@ -229,7 +229,7 @@ fn dotted_field_paths_not_yet_supported() {
 fn create_table_has_id_and_magic_columns() {
     let sql = create_table_sql(&partner_model()).unwrap();
 
-    assert!(sql.starts_with(r#"CREATE TABLE "res_partner""#));
+    assert!(sql.starts_with(r#"CREATE TABLE IF NOT EXISTS "res_partner""#));
     assert!(sql.contains(r#""id" SERIAL NOT NULL"#));
     for magic in ["create_uid", "create_date", "write_uid", "write_date"] {
         assert!(sql.contains(&format!(r#""{magic}""#)), "missing {magic}");

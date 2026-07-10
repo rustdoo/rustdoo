@@ -19,6 +19,8 @@ pub struct Manifest {
     pub data: Vec<String>,
     pub installable: bool,
     pub auto_install: bool,
+    /// addon directory on disk (set by the loader; empty in unit parses)
+    pub path: std::path::PathBuf,
 }
 
 pub fn parse_manifest(source: &str, technical_name: &str) -> Result<Manifest, RusdooError> {
@@ -76,5 +78,6 @@ pub fn parse_manifest(source: &str, technical_name: &str) -> Result<Manifest, Ru
             Some(Value::Array(_)) => true,
             _ => false,
         },
+        path: std::path::PathBuf::new(),
     })
 }

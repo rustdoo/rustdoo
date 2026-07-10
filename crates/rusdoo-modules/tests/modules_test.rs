@@ -17,6 +17,7 @@ fn stub(name: &str, deps: &[&str]) -> Manifest {
         data: vec![],
         installable: true,
         auto_install: false,
+        path: std::path::PathBuf::new(),
     }
 }
 

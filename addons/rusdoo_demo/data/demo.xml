@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="company_rusdoo" model="res.company">
+            <field name="name">Rusdoo S.A.</field>
+        </record>
+        <record id="partner_ana" model="res.partner">
+            <field name="name">Ana Navigator</field>
+            <field name="email">ana@rusdoo.dev</field>
+            <field name="company_id" ref="company_rusdoo"/>
+        </record>
+        <record id="partner_bia" model="res.partner">
+            <field name="name">Bia Construtora</field>
+            <field name="email">bia@rusdoo.dev</field>
+            <field name="company_id" ref="company_rusdoo"/>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

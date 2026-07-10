@@ -30,7 +30,10 @@ pub fn create_table_sql(model: &Model) -> Result<String, RusdooError> {
         columns.push(column);
     }
     columns.push(r#"PRIMARY KEY("id")"#.into());
-    Ok(format!("CREATE TABLE {table} ({})", columns.join(", ")))
+    Ok(format!(
+        "CREATE TABLE IF NOT EXISTS {table} ({})",
+        columns.join(", ")
+    ))
 }
 
 /// Relation table backing a many2many field (`fields_relational.py`).

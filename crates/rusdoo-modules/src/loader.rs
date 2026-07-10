@@ -40,7 +40,9 @@ pub fn discover_addons(paths: &[&Path]) -> Result<Vec<Manifest>, RusdooError> {
             let source = fs::read_to_string(&manifest_path).map_err(|e| {
                 RusdooError::Validation(format!("cannot read {}: {e}", manifest_path.display()))
             })?;
-            manifests.push(parse_manifest(&source, &technical_name)?);
+            let mut manifest = parse_manifest(&source, &technical_name)?;
+            manifest.path = dir.clone();
+            manifests.push(manifest);
         }
     }
     manifests.sort_by(|a, b| a.name.cmp(&b.name));

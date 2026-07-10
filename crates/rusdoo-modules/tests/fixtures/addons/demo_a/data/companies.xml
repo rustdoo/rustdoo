@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="acme" model="rusdoo.test.bootco">
+        <field name="name">Acme</field>
+    </record>
+</odoo>
