@@ -1154,12 +1154,15 @@ name = "rusdoo-http"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "http-body-util",
  "rusdoo-core",
  "rusdoo-orm",
  "serde",
  "serde_json",
+ "sqlx",
  "thiserror",
  "tokio",
+ "tower",
  "tracing",
 ]
 

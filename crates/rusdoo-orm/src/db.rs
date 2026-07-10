@@ -30,6 +30,14 @@ pub async fn connect(url: &str) -> Result<PgPool, RusdooError> {
         .map_err(db_err)
 }
 
+/// Pool that only connects on first use — for tests and tooling.
+pub fn lazy_pool(url: &str) -> Result<PgPool, RusdooError> {
+    PgPoolOptions::new()
+        .max_connections(MAX_POOL_CONNECTIONS)
+        .connect_lazy(url)
+        .map_err(db_err)
+}
+
 fn db_err(e: sqlx::Error) -> RusdooError {
     RusdooError::Database(e.to_string())
 }
