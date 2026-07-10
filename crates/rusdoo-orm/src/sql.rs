@@ -7,7 +7,7 @@
 //! (`company_id.name`) and `any`/`not any` become semi-join subqueries.
 
 use crate::domain::{parse_domain, Domain, Operator, Term};
-use crate::fields::FieldType;
+use crate::fields::{Field, FieldType};
 use crate::model::Model;
 use crate::registry::Registry;
 use rusdoo_core::RusdooError;
@@ -175,6 +175,30 @@ fn render_term(
     if matches!(term.op, Operator::Any | Operator::NotAny) {
         return render_any(term, params, ctx, depth);
     }
+    if matches!(term.op, Operator::ChildOf | Operator::ParentOf) {
+        return render_hierarchy(term, params, ctx);
+    }
+    // with a model in context unknown fields fail fast, and x2many
+    // equality/membership goes through the relation, not a column
+    if let Some(model) = ctx.model {
+        if term.field != "id" {
+            let field = model.field(&term.field).ok_or_else(|| {
+                RusdooError::Validation(format!(
+                    "unknown field on {}: {:?}",
+                    model.meta.name, term.field
+                ))
+            })?;
+            if matches!(
+                field.ty,
+                FieldType::Many2many { .. } | FieldType::One2many { .. }
+            ) && matches!(
+                term.op,
+                Operator::Eq | Operator::Neq | Operator::In | Operator::NotIn
+            ) {
+                return render_x2many_in(field, term, params, ctx);
+            }
+        }
+    }
 
     let col = quote_ident(&term.field)?;
     let value = &term.value;
@@ -224,11 +248,7 @@ fn render_term(
         EqILike => render_like(&col, "ILIKE", value, false, false, params),
         NotEqLike => render_like(&col, "LIKE", value, false, true, params),
         NotEqILike => render_like(&col, "ILIKE", value, false, true, params),
-        ChildOf | ParentOf => Err(RusdooError::Validation(format!(
-            "operator not yet supported: {:?}",
-            term.op
-        ))),
-        Any | NotAny => unreachable!("handled above"),
+        ChildOf | ParentOf | Any | NotAny => unreachable!("handled above"),
     }
 }
 
@@ -271,6 +291,24 @@ fn render_path(
             Ok(format!(
                 r#""id" IN (SELECT {} FROM {} WHERE {sub})"#,
                 quote_ident(inverse)?,
+                quote_ident(&co.meta.table)?
+            ))
+        }
+        FieldType::Many2many {
+            comodel: co_name,
+            relation,
+            column1,
+            column2,
+        } => {
+            let co = comodel(registry, co_name)?;
+            let sub = render_term(&inner, params, ctx.with_model(co), depth + 1)?;
+            let (rel, c1, c2) = (
+                quote_ident(relation)?,
+                quote_ident(column1)?,
+                quote_ident(column2)?,
+            );
+            Ok(format!(
+                r#""id" IN (SELECT {c1} FROM {rel} WHERE {c2} IN (SELECT "id" FROM {} WHERE {sub}))"#,
                 quote_ident(&co.meta.table)?
             ))
         }
@@ -325,6 +363,29 @@ fn render_any(
                 )
             } else {
                 format!(r#""id" IN (SELECT {inv} FROM {table} WHERE {sub})"#)
+            })
+        }
+        FieldType::Many2many {
+            comodel: co_name,
+            relation,
+            column1,
+            column2,
+        } => {
+            let co = comodel(registry, co_name)?;
+            let sub = render_at(&sub_domain, params, ctx.with_model(co), depth + 1)?;
+            let (rel, c1, c2) = (
+                quote_ident(relation)?,
+                quote_ident(column1)?,
+                quote_ident(column2)?,
+            );
+            let inner = format!(
+                r#"SELECT {c1} FROM {rel} WHERE {c2} IN (SELECT "id" FROM {} WHERE {sub})"#,
+                quote_ident(&co.meta.table)?
+            );
+            Ok(if negative {
+                format!(r#""id" NOT IN ({inner})"#)
+            } else {
+                format!(r#""id" IN ({inner})"#)
             })
         }
         other => Err(RusdooError::Validation(format!(
@@ -403,4 +464,134 @@ fn render_like(
     } else {
         format!("{col} {sql_op} {p}")
     })
+}
+
+/// `["tag_ids", "in", [ids]]` -> membership through the relation table
+/// (many2many) or the inverse column (one2many).
+fn render_x2many_in(
+    field: &Field,
+    term: &Term,
+    params: &mut Vec<Value>,
+    ctx: Ctx,
+) -> Result<String, RusdooError> {
+    let ids = match &term.value {
+        Value::Array(items) => items.clone(),
+        single => vec![single.clone()],
+    };
+    let negative = matches!(term.op, Operator::Neq | Operator::NotIn);
+    if ids.is_empty() {
+        return Ok(if negative {
+            "TRUE".into()
+        } else {
+            "FALSE".into()
+        });
+    }
+    let placeholders: Vec<String> = ids.into_iter().map(|v| bind(params, v)).collect();
+    let list = placeholders.join(", ");
+    let inner = match &field.ty {
+        FieldType::Many2many {
+            relation,
+            column1,
+            column2,
+            ..
+        } => {
+            let (rel, c1, c2) = (
+                quote_ident(relation)?,
+                quote_ident(column1)?,
+                quote_ident(column2)?,
+            );
+            format!("SELECT {c1} FROM {rel} WHERE {c2} IN ({list})")
+        }
+        FieldType::One2many {
+            comodel: co_name,
+            inverse,
+        } => {
+            let registry = ctx.registry.ok_or_else(|| {
+                RusdooError::Validation("one2many membership requires registry context".into())
+            })?;
+            let co = comodel(registry, co_name)?;
+            let inv = quote_ident(inverse)?;
+            // NULL inverse rows would poison NOT IN
+            let guard = if negative {
+                format!(" AND {inv} IS NOT NULL")
+            } else {
+                String::new()
+            };
+            format!(
+                r#"SELECT {inv} FROM {} WHERE "id" IN ({list}){guard}"#,
+                quote_ident(&co.meta.table)?
+            )
+        }
+        _ => unreachable!("caller checked the field is x2many"),
+    };
+    Ok(if negative {
+        format!(r#""id" NOT IN ({inner})"#)
+    } else {
+        format!(r#""id" IN ({inner})"#)
+    })
+}
+
+/// `child_of`/`parent_of`: walk a `parent_id` hierarchy (Odoo's default
+/// `_parent_name`) with a recursive CTE, on this model (`field == "id"`)
+/// or on a many2one's comodel.
+fn render_hierarchy(term: &Term, params: &mut Vec<Value>, ctx: Ctx) -> Result<String, RusdooError> {
+    let (model, registry) = require_env(ctx, "hierarchical operator")?;
+    let target = if term.field == "id" {
+        model
+    } else {
+        let field = model.field(&term.field).ok_or_else(|| {
+            RusdooError::Validation(format!(
+                "unknown field on {}: {:?}",
+                model.meta.name, term.field
+            ))
+        })?;
+        match &field.ty {
+            FieldType::Many2one { comodel: co_name } => comodel(registry, co_name)?,
+            other => {
+                return Err(RusdooError::Validation(format!(
+                    "hierarchical operator not supported on field type {other:?}"
+                )))
+            }
+        }
+    };
+    if target.field("parent_id").is_none() {
+        return Err(RusdooError::Validation(format!(
+            "hierarchical operator requires a parent_id field on {}",
+            target.meta.name
+        )));
+    }
+    let ids = match &term.value {
+        Value::Array(items) => items.clone(),
+        single => vec![single.clone()],
+    };
+    if ids.is_empty() {
+        // Odoo resolves an empty id set to the FALSE domain
+        return Ok("FALSE".into());
+    }
+    if !ids.iter().all(Value::is_number) {
+        return Err(RusdooError::Validation(format!(
+            "hierarchical operator expects record ids, got {}",
+            term.value
+        )));
+    }
+    let placeholders: Vec<String> = ids.into_iter().map(|v| bind(params, v)).collect();
+    let list = placeholders.join(", ");
+    // Odoo remaps self-referential traversal (parent_id on the same model)
+    // to the id column: child_of on parent_id == child_of on id
+    let col = if term.field != "id" && target.meta.name == model.meta.name {
+        quote_ident("id")?
+    } else {
+        quote_ident(&term.field)?
+    };
+    let table = quote_ident(&target.meta.table)?;
+    let cte = if term.op == Operator::ChildOf {
+        format!(
+            r#"WITH RECURSIVE __rusdoo_tree AS (SELECT "id" FROM {table} WHERE "id" IN ({list}) UNION SELECT __t."id" FROM {table} __t JOIN __rusdoo_tree __r ON __t."parent_id" = __r."id") SELECT "id" FROM __rusdoo_tree"#
+        )
+    } else {
+        format!(
+            r#"WITH RECURSIVE __rusdoo_tree AS (SELECT "id", "parent_id" FROM {table} WHERE "id" IN ({list}) UNION SELECT __t."id", __t."parent_id" FROM {table} __t JOIN __rusdoo_tree __r ON __t."id" = __r."parent_id") SELECT "id" FROM __rusdoo_tree"#
+        )
+    };
+    Ok(format!("{col} IN ({cte})"))
 }

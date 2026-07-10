@@ -220,3 +220,134 @@ async fn many2one_path_search_live() {
         .unwrap();
     assert_eq!(found.len(), 2);
 }
+
+#[tokio::test]
+async fn hierarchy_and_m2m_live() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.node".into(),
+            table: "rusdoo_test_node".into(),
+            inherit: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "parent_id",
+                FieldType::Many2one {
+                    comodel: "rusdoo.test.node".into(),
+                },
+            ),
+            Field::new(
+                "tag_ids",
+                FieldType::Many2many {
+                    comodel: "rusdoo.test.tag".into(),
+                    relation: "rusdoo_test_node_tag_rel".into(),
+                    column1: "node_id".into(),
+                    column2: "tag_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.tag".into(),
+            table: "rusdoo_test_tag".into(),
+            inherit: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+
+    for t in [
+        "rusdoo_test_node_tag_rel",
+        "rusdoo_test_node",
+        "rusdoo_test_tag",
+    ] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let node = reg.get("rusdoo.test.node").unwrap();
+    let tag = reg.get("rusdoo.test.tag").unwrap();
+    node.init_table(&pool).await.unwrap();
+    tag.init_table(&pool).await.unwrap();
+
+    let a = node
+        .create(&pool, vec![("name", json!("a"))])
+        .await
+        .unwrap();
+    let b = node
+        .create(&pool, vec![("name", json!("b")), ("parent_id", json!(a))])
+        .await
+        .unwrap();
+    let c = node
+        .create(&pool, vec![("name", json!("c")), ("parent_id", json!(b))])
+        .await
+        .unwrap();
+    let d = node
+        .create(&pool, vec![("name", json!("d"))])
+        .await
+        .unwrap();
+
+    // child_of: the root and all its descendants
+    let dom = parse_domain(&json!([["id", "child_of", a]])).unwrap();
+    let mut found = reg
+        .search(&pool, "rusdoo.test.node", &dom, &SearchOptions::default())
+        .await
+        .unwrap();
+    found.sort();
+    assert_eq!(found, vec![a, b, c]);
+
+    // child_of on the self-referential m2o must behave like child_of on id
+    let dom = parse_domain(&json!([["parent_id", "child_of", a]])).unwrap();
+    let mut found = reg
+        .search(&pool, "rusdoo.test.node", &dom, &SearchOptions::default())
+        .await
+        .unwrap();
+    found.sort();
+    assert_eq!(found, vec![a, b, c]);
+
+    // parent_of: the leaf and all its ancestors
+    let dom = parse_domain(&json!([["id", "parent_of", c]])).unwrap();
+    let mut found = reg
+        .search(&pool, "rusdoo.test.node", &dom, &SearchOptions::default())
+        .await
+        .unwrap();
+    found.sort();
+    assert_eq!(found, vec![a, b, c]);
+
+    // m2m: init_table created the relation table; link d to a tag
+    let vip = tag
+        .create(&pool, vec![("name", json!("vip"))])
+        .await
+        .unwrap();
+    sqlx::query(r#"INSERT INTO "rusdoo_test_node_tag_rel" VALUES ($1, $2)"#)
+        .bind(d)
+        .bind(vip)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let dom = parse_domain(&json!([["tag_ids", "any", [["name", "=", "vip"]]]])).unwrap();
+    let found = reg
+        .search(&pool, "rusdoo.test.node", &dom, &SearchOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(found, vec![d]);
+
+    let dom = parse_domain(&json!([["tag_ids", "in", [vip]]])).unwrap();
+    let found = reg
+        .search(&pool, "rusdoo.test.node", &dom, &SearchOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(found, vec![d]);
+}

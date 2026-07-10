@@ -4,7 +4,7 @@
 //! Odoo web client), bound as typed PostgreSQL parameters here.
 
 use crate::crud::SearchOptions;
-use crate::ddl::create_table_sql;
+use crate::ddl::{create_relation_table_sql, create_table_sql};
 use crate::domain::Domain;
 use crate::fields::FieldType;
 use crate::model::Model;
@@ -66,9 +66,19 @@ fn row_id(row: &PgRow) -> Result<i64, RusdooError> {
 
 impl Model {
     pub async fn init_table(&self, pool: &PgPool) -> Result<(), RusdooError> {
+        // one transaction: never leave a half-initialized schema
+        let mut tx = pool.begin().await.map_err(db_err)?;
         let sql = create_table_sql(self)?;
-        sqlx::query(&sql).execute(pool).await.map_err(db_err)?;
-        Ok(())
+        sqlx::query(&sql).execute(&mut *tx).await.map_err(db_err)?;
+        for field in self.fields() {
+            if let Some(rel_sql) = create_relation_table_sql(field)? {
+                sqlx::query(&rel_sql)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(db_err)?;
+            }
+        }
+        tx.commit().await.map_err(db_err)
     }
 
     pub async fn search(

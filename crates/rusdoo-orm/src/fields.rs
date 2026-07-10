@@ -6,17 +6,34 @@ use serde_json::Value;
 pub enum FieldType {
     Boolean,
     Integer,
-    Float { digits: Option<(u8, u8)> },
-    Char { size: Option<u32> },
+    Float {
+        digits: Option<(u8, u8)>,
+    },
+    Char {
+        size: Option<u32>,
+    },
     Text,
     Html,
     Date,
     Datetime,
     Binary,
     Selection(Vec<(String, String)>),
-    Many2one { comodel: String },
-    One2many { comodel: String, inverse: String },
-    Many2many { comodel: String },
+    Many2one {
+        comodel: String,
+    },
+    One2many {
+        comodel: String,
+        inverse: String,
+    },
+    Many2many {
+        comodel: String,
+        /// relation table joining the two models
+        relation: String,
+        /// column referencing this model in the relation table
+        column1: String,
+        /// column referencing the comodel
+        column2: String,
+    },
     Json,
     Monetary,
 }
