@@ -11,3 +11,9 @@ thiserror.workspace = true
 tracing.workspace = true
 rusdoo-core = { path = "../rusdoo-core" }
 rusdoo-orm = { path = "../rusdoo-orm" }
+quick-xml.workspace = true
+csv.workspace = true
+sqlx.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
