@@ -16,4 +16,7 @@ pub enum RusdooError {
     /// `odoo.exceptions.MissingError`
     #[error("missing record: {0}")]
     Missing(String),
+    /// Database/driver failure (no direct Odoo equivalent; psycopg errors)
+    #[error("database error: {0}")]
+    Database(String),
 }

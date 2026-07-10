@@ -12,3 +12,6 @@ tracing.workspace = true
 sqlx.workspace = true
 chrono.workspace = true
 rusdoo-core = { path = "../rusdoo-core" }
+
+[dev-dependencies]
+tokio.workspace = true
