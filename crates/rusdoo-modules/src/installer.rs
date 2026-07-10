@@ -19,9 +19,38 @@ pub struct XmlIds {
     map: HashMap<String, (String, i64)>,
 }
 
+/// Persistence table for external ids, the Rust `ir.model.data`.
+const IR_MODEL_DATA_DDL: &str = r#"CREATE TABLE IF NOT EXISTS "ir_model_data" ("id" SERIAL NOT NULL, "module" varchar NOT NULL, "name" varchar NOT NULL, "model" varchar NOT NULL, "res_id" int4 NOT NULL, "noupdate" bool NOT NULL DEFAULT false, PRIMARY KEY("id"), UNIQUE("module", "name"))"#;
+
+fn db_err(e: sqlx::Error) -> RusdooError {
+    RusdooError::Database(e.to_string())
+}
+
 impl XmlIds {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Load every persisted external id (creating the table on first
+    /// use), so a fresh process resumes where the last boot stopped.
+    pub async fn load(pool: &PgPool) -> Result<Self, RusdooError> {
+        sqlx::query(IR_MODEL_DATA_DDL)
+            .execute(pool)
+            .await
+            .map_err(db_err)?;
+        let rows = sqlx::query_as::<_, (String, String, String, i32)>(
+            r#"SELECT "module", "name", "model", "res_id" FROM "ir_model_data""#,
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(db_err)?;
+        let map = rows
+            .into_iter()
+            .map(|(module, name, model, res_id)| {
+                (format!("{module}.{name}"), (model, i64::from(res_id)))
+            })
+            .collect();
+        Ok(XmlIds { map })
     }
 
     pub fn get(&self, qualified: &str) -> Option<&(String, i64)> {
@@ -65,11 +94,13 @@ pub async fn load_records(
     records: &[DataRecord],
     xml_ids: &mut XmlIds,
 ) -> Result<LoadStats, RusdooError> {
-    let mut tx: Transaction<'static, Postgres> = pool
-        .begin()
+    let mut tx: Transaction<'static, Postgres> = pool.begin().await.map_err(db_err)?;
+    sqlx::query(IR_MODEL_DATA_DDL)
+        .execute(&mut *tx)
         .await
-        .map_err(|e| RusdooError::Database(e.to_string()))?;
+        .map_err(db_err)?;
     let mut staged: HashMap<String, (String, i64)> = HashMap::new();
+    let mut staged_noupdate: HashMap<String, bool> = HashMap::new();
     let mut stats = LoadStats::default();
 
     for record in records {
@@ -121,6 +152,7 @@ pub async fn load_records(
                             )));
                         }
                         let id = registry.create_tx(&mut tx, &record.model, pairs).await?;
+                        staged_noupdate.insert(key.clone(), record.noupdate);
                         staged.insert(key, (record.model.clone(), id));
                         stats.created += 1;
                     }
@@ -129,9 +161,28 @@ pub async fn load_records(
         }
     }
 
-    tx.commit()
+    // persist the new external ids inside the same transaction
+    for (key, (model, id)) in &staged {
+        let (module_part, name_part) = key
+            .split_once('.')
+            .ok_or_else(|| RusdooError::Validation(format!("unqualified external id: {key}")))?;
+        let noupdate = staged_noupdate.get(key).copied().unwrap_or(false);
+        sqlx::query(
+            r#"INSERT INTO "ir_model_data" ("module", "name", "model", "res_id", "noupdate")
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT ("module", "name") DO UPDATE
+               SET "res_id" = EXCLUDED."res_id", "model" = EXCLUDED."model""#,
+        )
+        .bind(module_part)
+        .bind(name_part)
+        .bind(model)
+        .bind(*id)
+        .bind(noupdate)
+        .execute(&mut *tx)
         .await
-        .map_err(|e| RusdooError::Database(e.to_string()))?;
+        .map_err(db_err)?;
+    }
+    tx.commit().await.map_err(db_err)?;
     for (key, entry) in staged {
         xml_ids.insert(key, entry.0, entry.1);
     }

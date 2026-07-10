@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
         use rusdoo_modules::installer::{install_modules, XmlIds};
         let addons = std::env::var("RUSDOO_ADDONS_PATH").unwrap_or_else(|_| "addons".into());
         let addons_path = std::path::Path::new(&addons);
-        let mut xml_ids = XmlIds::new();
+        let mut xml_ids = XmlIds::load(&pool).await?;
         if addons_path.is_dir() {
             let report = install_modules(&pool, &registry, &[addons_path], &mut xml_ids).await?;
             tracing::info!("installed {} module(s)", report.modules.len());

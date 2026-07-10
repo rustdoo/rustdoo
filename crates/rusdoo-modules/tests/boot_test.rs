@@ -57,6 +57,12 @@ async fn boots_fixture_addons_in_dependency_order() {
             .unwrap();
     }
     let reg = boot_registry();
+    // ensure the persistence table exists, then isolate this test's modules
+    XmlIds::load(&pool).await.unwrap();
+    sqlx::query(r#"DELETE FROM "ir_model_data" WHERE "module" IN ('demo_a', 'demo_b')"#)
+        .execute(&pool)
+        .await
+        .unwrap();
     let mut xml_ids = XmlIds::new();
 
     // Act: full boot — schema + both fixture modules (b depends on a)
@@ -89,15 +95,32 @@ async fn boots_fixture_addons_in_dependency_order() {
         .unwrap();
     assert_eq!(found.len(), 2);
 
-    // schema init is idempotent: booting again must not fail on DDL
-    let mut fresh_ids = XmlIds::new();
+    // external ids are PERSISTED (ir.model.data): a fresh process
+    // reloads them and a re-boot creates no duplicates
+    let mut reloaded = XmlIds::load(&pool).await.unwrap();
+    assert!(
+        reloaded.get("demo_a.acme").is_some(),
+        "external ids survive restarts"
+    );
     let report = install_modules(
         &pool,
         &reg,
         &[Path::new("tests/fixtures/addons")],
-        &mut fresh_ids,
+        &mut reloaded,
     )
     .await
     .unwrap();
-    assert_eq!(report.modules.len(), 2);
+    let total_created: usize = report.modules.iter().map(|(_, s)| s.created).sum();
+    assert_eq!(total_created, 0, "no duplicate records on re-boot");
+    let dom = parse_domain(&json!([])).unwrap();
+    let all = reg
+        .search(
+            &pool,
+            "rusdoo.test.bootpartner",
+            &dom,
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 2, "still exactly ana and bia");
 }
