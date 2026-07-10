@@ -15,6 +15,7 @@ fn partner_model() -> Model {
             name: "res.partner".into(),
             table: "res_partner".into(),
             inherit: vec![],
+            inherits: vec![],
         },
         vec![
             Field::new("name", FieldType::Char { size: None }).required(),

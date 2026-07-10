@@ -10,6 +10,8 @@ pub struct ModelMeta {
     pub table: String,
     /// `_inherit` chain
     pub inherit: Vec<String>,
+    /// `_inherits` delegation: (parent model, many2one link field)
+    pub inherits: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone)]

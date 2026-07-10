@@ -15,6 +15,7 @@ fn meta(name: &str, table: &str) -> ModelMeta {
         name: name.into(),
         table: table.into(),
         inherit: vec![],
+        inherits: vec![],
     }
 }
 

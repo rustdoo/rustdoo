@@ -13,6 +13,7 @@ fn meta(name: &str, table: &str) -> ModelMeta {
         name: name.into(),
         table: table.into(),
         inherit: vec![],
+        inherits: vec![],
     }
 }
 
@@ -110,6 +111,7 @@ fn inherit_extends_model_in_place() {
             name: "res.partner".into(),
             table: "res_partner".into(),
             inherit: vec!["res.partner".into()],
+            inherits: vec![],
         },
         vec![
             Field::new("ref", FieldType::Char { size: None }),
@@ -136,6 +138,7 @@ fn inherit_requires_registered_parent() {
             name: "res.users".into(),
             table: "res_users".into(),
             inherit: vec!["res.partner".into()],
+            inherits: vec![],
         },
         vec![],
     );
@@ -153,6 +156,7 @@ fn prototype_inherit_copies_fields_to_new_model() {
             name: "res.users".into(),
             table: "res_users".into(),
             inherit: vec!["res.partner".into()],
+            inherits: vec![],
         },
         vec![Field::new("login", FieldType::Char { size: None }).required()],
     ))
@@ -298,6 +302,7 @@ fn first_listed_parent_wins_field_conflicts() {
             name: "combo".into(),
             table: "combo".into(),
             inherit: vec!["mixin.a".into(), "mixin.b".into()],
+            inherits: vec![],
         },
         vec![],
     ))

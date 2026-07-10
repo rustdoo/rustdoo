@@ -169,6 +169,24 @@ fn render_term(
     ctx: Ctx,
     depth: usize,
 ) -> Result<String, RusdooError> {
+    // _inherits delegation: a field living on a delegation parent is
+    // reached through its link field, like Odoo's inherited fields
+    if let (Some(model), Some(registry)) = (ctx.model, ctx.registry) {
+        let head = term.field.split('.').next().unwrap_or(&term.field);
+        if head != "id" && model.field(head).is_none() {
+            if let Some(chain) = registry.delegation_chain(model, head, 0) {
+                depth_check(depth)?;
+                let mut path: Vec<&str> = chain.iter().map(|(link, _)| link.as_str()).collect();
+                path.push(head);
+                let rewritten = Term {
+                    field: format!("{}{}", path.join("."), &term.field[head.len()..]),
+                    op: term.op.clone(),
+                    value: term.value.clone(),
+                };
+                return render_term(&rewritten, params, ctx, depth + 1);
+            }
+        }
+    }
     if let Some((head, rest)) = term.field.split_once('.') {
         return render_path(head, rest, term, params, ctx, depth);
     }

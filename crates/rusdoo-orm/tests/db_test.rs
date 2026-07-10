@@ -15,6 +15,7 @@ fn test_model() -> Model {
             name: "rusdoo.test.partner".into(),
             table: "rusdoo_test_partner".into(),
             inherit: vec![],
+            inherits: vec![],
         },
         vec![
             Field::new("name", FieldType::Char { size: None }).required(),
@@ -132,6 +133,7 @@ async fn many2one_path_search_live() {
             name: "rusdoo.test.company".into(),
             table: "rusdoo_test_company".into(),
             inherit: vec![],
+            inherits: vec![],
         },
         vec![Field::new("name", FieldType::Char { size: None })],
     ))
@@ -141,6 +143,7 @@ async fn many2one_path_search_live() {
             name: "rusdoo.test.contact".into(),
             table: "rusdoo_test_contact".into(),
             inherit: vec![],
+            inherits: vec![],
         },
         vec![
             Field::new("name", FieldType::Char { size: None }),
@@ -235,6 +238,7 @@ async fn hierarchy_and_m2m_live() {
             name: "rusdoo.test.node".into(),
             table: "rusdoo_test_node".into(),
             inherit: vec![],
+            inherits: vec![],
         },
         vec![
             Field::new("name", FieldType::Char { size: None }),
@@ -261,6 +265,7 @@ async fn hierarchy_and_m2m_live() {
             name: "rusdoo.test.tag".into(),
             table: "rusdoo_test_tag".into(),
             inherit: vec![],
+            inherits: vec![],
         },
         vec![Field::new("name", FieldType::Char { size: None })],
     ))
@@ -350,4 +355,207 @@ async fn hierarchy_and_m2m_live() {
         .await
         .unwrap();
     assert_eq!(found, vec![d]);
+}
+
+#[tokio::test]
+async fn inherits_delegation_live() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.person".into(),
+            table: "rusdoo_test_person".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("email", FieldType::Char { size: None }),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.account".into(),
+            table: "rusdoo_test_account".into(),
+            inherit: vec![],
+            inherits: vec![("rusdoo.test.person".into(), "person_id".into())],
+        },
+        vec![
+            Field::new("login", FieldType::Char { size: None }).required(),
+            Field::new(
+                "person_id",
+                FieldType::Many2one {
+                    comodel: "rusdoo.test.person".into(),
+                },
+            )
+            .required(),
+        ],
+    ))
+    .unwrap();
+
+    for t in ["rusdoo_test_account", "rusdoo_test_person"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    reg.get("rusdoo.test.person")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.account")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    // create with mixed values: the person row is created first
+    let uid = reg
+        .create(
+            &pool,
+            "rusdoo.test.account",
+            vec![
+                ("login", json!("ana")),
+                ("name", json!("Ana")),
+                ("email", json!("a@x")),
+            ],
+        )
+        .await
+        .unwrap();
+
+    // read joins the parent transparently
+    let rows = reg
+        .read(
+            &pool,
+            "rusdoo.test.account",
+            &[uid],
+            &["login", "name", "email"],
+        )
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["login"], json!("ana"));
+    assert_eq!(rows[0]["name"], json!("Ana"));
+    assert_eq!(rows[0]["email"], json!("a@x"));
+
+    // search on a delegated field
+    let dom = parse_domain(&json!([["name", "=", "Ana"]])).unwrap();
+    let found = reg
+        .search(
+            &pool,
+            "rusdoo.test.account",
+            &dom,
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(found, vec![uid]);
+
+    // write through delegation updates the parent row
+    reg.write(
+        &pool,
+        "rusdoo.test.account",
+        &[uid],
+        vec![("name", json!("Ana Maria"))],
+    )
+    .await
+    .unwrap();
+    let rows = reg
+        .read(&pool, "rusdoo.test.account", &[uid], &["name"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["name"], json!("Ana Maria"));
+
+    // creating with an explicit link reuses that parent: no orphan row,
+    // and delegated values land on the existing parent
+    let bob_person = reg
+        .create(&pool, "rusdoo.test.person", vec![("name", json!("Bob"))])
+        .await
+        .unwrap();
+    let persons_before: i64 = sqlx::query_scalar(r#"SELECT COUNT(*) FROM "rusdoo_test_person""#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let uid2 = reg
+        .create(
+            &pool,
+            "rusdoo.test.account",
+            vec![
+                ("login", json!("bob")),
+                ("person_id", json!(bob_person)),
+                ("email", json!("b@x")),
+            ],
+        )
+        .await
+        .unwrap();
+    let persons_after: i64 = sqlx::query_scalar(r#"SELECT COUNT(*) FROM "rusdoo_test_person""#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(persons_before, persons_after, "no orphan parent row");
+    let rows = reg
+        .read(
+            &pool,
+            "rusdoo.test.account",
+            &[uid2],
+            &["email", "person_id"],
+        )
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["email"], json!("b@x"));
+    assert_eq!(rows[0]["person_id"], json!(bob_person));
+
+    // a failed create rolls the parent rows back (login is required)
+    let failed = reg
+        .create(&pool, "rusdoo.test.account", vec![("name", json!("Ghost"))])
+        .await;
+    assert!(failed.is_err());
+    let persons_final: i64 = sqlx::query_scalar(r#"SELECT COUNT(*) FROM "rusdoo_test_person""#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        persons_after, persons_final,
+        "failed create left no orphans"
+    );
+
+    // reassigning the link and writing a delegated field in one call:
+    // the delegated value goes to the parent linked BEFORE the call
+    let rows = reg
+        .read(&pool, "rusdoo.test.account", &[uid], &["person_id"])
+        .await
+        .unwrap();
+    let old_person = rows[0]["person_id"].as_i64().unwrap();
+    reg.write(
+        &pool,
+        "rusdoo.test.account",
+        &[uid],
+        vec![("person_id", json!(bob_person)), ("name", json!("Renamed"))],
+    )
+    .await
+    .unwrap();
+    let rows = reg
+        .read(&pool, "rusdoo.test.person", &[old_person], &["name"])
+        .await
+        .unwrap();
+    assert_eq!(
+        rows[0]["name"],
+        json!("Renamed"),
+        "old parent got the delegated write"
+    );
+    let rows = reg
+        .read(&pool, "rusdoo.test.account", &[uid], &["name"])
+        .await
+        .unwrap();
+    assert_eq!(
+        rows[0]["name"],
+        json!("Bob"),
+        "account now reads through the new parent"
+    );
 }
