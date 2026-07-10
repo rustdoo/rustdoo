@@ -27,11 +27,13 @@ async fn main() -> anyhow::Result<()> {
             let report =
                 install_modules(&pool, &mut registry, &[addons_path], &mut xml_ids).await?;
             tracing::info!("installed {} module(s)", report.modules.len());
+            seed_admin(&registry, &pool).await?;
         } else {
             for model in registry.models() {
                 model.init_table(&pool).await?;
             }
             tracing::info!("schema initialized (no addons directory found)");
+            seed_admin(&registry, &pool).await?;
         }
     }
 
@@ -56,6 +58,19 @@ fn base_registry() -> anyhow::Result<Registry> {
     ))?;
     reg.register(Model::new(
         ModelMeta {
+            name: "res.users".into(),
+            table: "res_users".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("login", FieldType::Char { size: None }).required(),
+            Field::new("password", FieldType::Char { size: None }),
+            Field::new("active", FieldType::Boolean),
+        ],
+    ))?;
+    reg.register(Model::new(
+        ModelMeta {
             name: "res.partner".into(),
             table: "res_partner".into(),
             inherit: vec![],
@@ -74,4 +89,29 @@ fn base_registry() -> anyhow::Result<Registry> {
         ],
     ))?;
     Ok(reg)
+}
+
+/// First boot: create the admin user (login admin / password admin).
+async fn seed_admin(registry: &Registry, pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    use rusdoo_orm::crud::SearchOptions;
+    let domain = rusdoo_orm::domain::parse_domain(&serde_json::json!([["login", "=", "admin"]]))?;
+    let existing = registry
+        .search(pool, "res.users", &domain, &SearchOptions::default())
+        .await?;
+    if existing.is_empty() {
+        let hash = rusdoo_http::session::hash_password("admin")?;
+        registry
+            .create(
+                pool,
+                "res.users",
+                vec![
+                    ("login", serde_json::json!("admin")),
+                    ("password", serde_json::json!(hash)),
+                    ("active", serde_json::json!(true)),
+                ],
+            )
+            .await?;
+        tracing::warn!("usuário admin criado (login: admin / senha: admin) — troque a senha");
+    }
+    Ok(())
 }

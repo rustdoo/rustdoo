@@ -14,6 +14,8 @@ tokio.workspace = true
 rusdoo-core = { path = "../rusdoo-core" }
 rusdoo-orm = { path = "../rusdoo-orm" }
 sqlx.workspace = true
+argon2.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

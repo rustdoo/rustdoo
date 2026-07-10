@@ -31,3 +31,4 @@ tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 quick-xml = "0.37"
 csv = "1"
+argon2 = "0.5"

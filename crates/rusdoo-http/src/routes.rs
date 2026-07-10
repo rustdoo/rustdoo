@@ -2,10 +2,16 @@
 //! web client and classic RPC clients.
 
 use axum::extract::State;
-use axum::response::Html;
+use axum::http::{header, HeaderMap};
+use axum::response::{AppendHeaders, Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde_json::{Map, Value};
+use rusdoo_orm::crud::SearchOptions;
+use rusdoo_orm::domain::parse_domain;
+use serde_json::{json, Map, Value};
+
+/// Odoo's JSON-RPC error code for a missing/expired session.
+const SESSION_EXPIRED: i64 = 100;
 
 use crate::dispatch::{OrmService, RpcError};
 use crate::jsonrpc::{
@@ -16,6 +22,8 @@ pub fn router(service: OrmService) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/web/dataset/call_kw", post(call_kw))
+        .route("/web/session/authenticate", post(authenticate))
+        .route("/web/session/destroy", post(destroy))
         .route("/jsonrpc", post(jsonrpc_endpoint))
         .with_state(service)
 }
@@ -58,12 +66,20 @@ fn parse_envelope(body: Value) -> Result<JsonRpcRequest, JsonRpcResponse> {
 /// params: `{model, method, args, kwargs}`.
 async fn call_kw(
     State(service): State<OrmService>,
+    headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Json<JsonRpcResponse> {
     let request = match parse_envelope(body) {
         Ok(request) => request,
         Err(error) => return Json(error),
     };
+    if service.require_auth && current_session(&service, &headers).is_none() {
+        return Json(JsonRpcResponse::error(
+            request.id,
+            SESSION_EXPIRED,
+            "rusdoo session expired",
+        ));
+    }
     let params = &request.params;
     let (Some(model), Some(method)) = (
         params.get("model").and_then(Value::as_str),
@@ -115,6 +131,22 @@ async fn jsonrpc_endpoint(
         .get("args")
         .and_then(Value::as_array)
         .unwrap_or(&empty);
+    if service.require_auth {
+        let authorized = match (
+            call.get(1).and_then(Value::as_i64),
+            call.get(2).and_then(Value::as_str),
+        ) {
+            (Some(uid), Some(password)) => service.check_credentials(uid, password).await,
+            _ => false,
+        };
+        if !authorized {
+            return Json(JsonRpcResponse::error(
+                request.id,
+                SESSION_EXPIRED,
+                "acesso negado: credenciais inválidas",
+            ));
+        }
+    }
     let (Some(model), Some(method)) = (
         call.get(3).and_then(Value::as_str),
         call.get(4).and_then(Value::as_str),
@@ -137,4 +169,105 @@ async fn jsonrpc_endpoint(
         .unwrap_or_default();
     let outcome = service.call_kw(model, method, &args, &kwargs).await;
     respond(request.id, outcome)
+}
+
+fn current_session(service: &OrmService, headers: &HeaderMap) -> Option<crate::session::Session> {
+    let cookie = headers.get(header::COOKIE)?.to_str().ok()?;
+    let token = cookie
+        .split(';')
+        .find_map(|part| part.trim().strip_prefix("session_id="))?;
+    service.sessions.get(token)
+}
+
+/// `/web/session/authenticate` — params `{db, login, password}`.
+/// Success sets the `session_id` cookie; failures share one message
+/// (no user enumeration).
+async fn authenticate(State(service): State<OrmService>, Json(body): Json<Value>) -> Response {
+    let request = match parse_envelope(body) {
+        Ok(request) => request,
+        Err(error) => return Json(error).into_response(),
+    };
+    let params = &request.params;
+    let (Some(login), Some(password)) = (
+        params.get("login").and_then(Value::as_str),
+        params.get("password").and_then(Value::as_str),
+    ) else {
+        return Json(JsonRpcResponse::error(
+            request.id,
+            INVALID_PARAMS,
+            "params must include login and password",
+        ))
+        .into_response();
+    };
+
+    let mut authenticated_uid = None;
+    if let Ok(domain) = parse_domain(&json!([["login", "=", login]])) {
+        if let Ok(ids) = service
+            .registry
+            .search(
+                &service.pool,
+                "res.users",
+                &domain,
+                &SearchOptions::default(),
+            )
+            .await
+        {
+            if let Some(uid) = ids.first() {
+                if let Ok(rows) = service
+                    .registry
+                    .read(&service.pool, "res.users", &[*uid], &["password"])
+                    .await
+                {
+                    let hashed = rows
+                        .first()
+                        .and_then(|row| row["password"].as_str())
+                        .unwrap_or("");
+                    if crate::session::verify_password(password, hashed) {
+                        authenticated_uid = Some(*uid);
+                    }
+                }
+            }
+        }
+    }
+
+    match authenticated_uid {
+        None => Json(JsonRpcResponse::error(
+            request.id,
+            SESSION_EXPIRED,
+            "acesso negado: login ou senha inválidos",
+        ))
+        .into_response(),
+        Some(uid) => {
+            let token = service.sessions.open(uid, login);
+            (
+                AppendHeaders([(
+                    header::SET_COOKIE,
+                    format!("session_id={token}; HttpOnly; Path=/; SameSite=Lax"),
+                )]),
+                Json(JsonRpcResponse::result(
+                    request.id,
+                    json!({"uid": uid, "username": login}),
+                )),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// `/web/session/destroy` — logout.
+async fn destroy(
+    State(service): State<OrmService>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Json<JsonRpcResponse> {
+    let id = body.get("id").cloned();
+    if let Some(cookie) = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()) {
+        if let Some(token) = cookie
+            .split(';')
+            .find_map(|part| part.trim().strip_prefix("session_id="))
+        {
+            service.sessions.close(token);
+        }
+    }
+    Json(JsonRpcResponse::result(id, Value::Bool(true)))
 }

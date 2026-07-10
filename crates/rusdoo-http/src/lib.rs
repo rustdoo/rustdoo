@@ -6,6 +6,7 @@
 pub mod dispatch;
 pub mod jsonrpc;
 pub mod routes;
+pub mod session;
 
 use dispatch::OrmService;
 

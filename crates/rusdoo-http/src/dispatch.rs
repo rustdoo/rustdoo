@@ -44,13 +44,44 @@ impl From<RusdooError> for RpcError {
 
 #[derive(Clone)]
 pub struct OrmService {
-    registry: Arc<Registry>,
-    pool: PgPool,
+    pub(crate) registry: Arc<Registry>,
+    pub(crate) pool: PgPool,
+    pub(crate) sessions: crate::session::SessionStore,
+    pub(crate) require_auth: bool,
 }
 
 impl OrmService {
+    /// Production construction: every ORM endpoint requires a session.
     pub fn new(registry: Arc<Registry>, pool: PgPool) -> Self {
-        OrmService { registry, pool }
+        OrmService {
+            registry,
+            pool,
+            sessions: crate::session::SessionStore::new(),
+            require_auth: true,
+        }
+    }
+
+    /// No authentication — tests and trusted tooling only.
+    pub fn insecure(registry: Arc<Registry>, pool: PgPool) -> Self {
+        OrmService {
+            require_auth: false,
+            ..Self::new(registry, pool)
+        }
+    }
+
+    /// Classic RPC credentials: uid + password verified per call.
+    pub(crate) async fn check_credentials(&self, uid: i64, password: &str) -> bool {
+        let Ok(rows) = self
+            .registry
+            .read(&self.pool, "res.users", &[uid], &["password"])
+            .await
+        else {
+            return false;
+        };
+        let Some(hashed) = rows.first().and_then(|r| r["password"].as_str()) else {
+            return false;
+        };
+        crate::session::verify_password(password, hashed)
     }
 
     /// Dispatch an ORM method call, Odoo's `call_kw`.

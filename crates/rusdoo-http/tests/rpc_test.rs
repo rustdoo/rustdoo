@@ -35,7 +35,7 @@ fn test_registry() -> Registry {
 fn test_service() -> OrmService {
     let url = std::env::var("RUSDOO_TEST_DATABASE_URL")
         .unwrap_or_else(|_| "postgres://postgres:rusdoo@localhost:55432/postgres".into());
-    OrmService::new(
+    OrmService::insecure(
         Arc::new(test_registry()),
         rusdoo_orm::db::lazy_pool(&url).unwrap(),
     )
@@ -178,7 +178,7 @@ async fn call_kw_crud_roundtrip_live() {
         .init_table(&pool)
         .await
         .unwrap();
-    let service = OrmService::new(Arc::new(reg), pool);
+    let service = OrmService::insecure(Arc::new(reg), pool);
 
     // create
     let (_, resp) = rpc(
@@ -270,4 +270,137 @@ async fn index_page_is_visible_in_a_browser() {
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let page = String::from_utf8(bytes.to_vec()).unwrap();
     assert!(page.contains("rusdoo"));
+}
+
+async fn rpc_full(
+    app: axum::Router,
+    uri: &str,
+    body: Value,
+    cookie: Option<&str>,
+) -> (StatusCode, Value, Option<String>) {
+    let mut request = Request::post(uri).header("content-type", "application/json");
+    if let Some(cookie) = cookie {
+        request = request.header("cookie", cookie);
+    }
+    let response = app
+        .oneshot(request.body(Body::from(body.to_string())).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let set_cookie = response
+        .headers()
+        .get("set-cookie")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap(), set_cookie)
+}
+
+#[tokio::test]
+async fn session_auth_flow_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.users".into(),
+            table: "rusdoo_test_auth_users".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("login", FieldType::Char { size: None }).required(),
+            Field::new("password", FieldType::Char { size: None }),
+        ],
+    ))
+    .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_auth_users""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("res.users")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+    let hash = rusdoo_http::session::hash_password("segredo").unwrap();
+    reg.create(
+        &pool,
+        "res.users",
+        vec![("login", json!("ana")), ("password", json!(hash))],
+    )
+    .await
+    .unwrap();
+    // auth REQUIRED on this service
+    let service = OrmService::new(Arc::new(reg), pool);
+
+    // without a session, call_kw is rejected with Odoo's code 100
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":1,"method":"call","params":{
+            "model":"res.users","method":"search","args":[[]],"kwargs":{}}}),
+        None,
+    )
+    .await;
+    assert_eq!(resp["error"]["code"], json!(100));
+
+    // wrong password: error, no cookie
+    let (_, resp, cookie) = rpc_full(
+        router(service.clone()),
+        "/web/session/authenticate",
+        json!({"jsonrpc":"2.0","id":2,"method":"call","params":{
+            "db":"x","login":"ana","password":"errada"}}),
+        None,
+    )
+    .await;
+    assert!(resp.get("error").is_some());
+    assert!(cookie.is_none());
+
+    // right password: uid + session cookie
+    let (_, resp, cookie) = rpc_full(
+        router(service.clone()),
+        "/web/session/authenticate",
+        json!({"jsonrpc":"2.0","id":3,"method":"call","params":{
+            "db":"x","login":"ana","password":"segredo"}}),
+        None,
+    )
+    .await;
+    let uid = resp["result"]["uid"].as_i64().expect("uid in result");
+    assert!(uid >= 1);
+    let cookie = cookie.expect("session cookie set");
+    let session = cookie.split(';').next().unwrap().to_string();
+
+    // with the session, call_kw works
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":4,"method":"call","params":{
+            "model":"res.users","method":"search_read","args":[],
+            "kwargs":{"fields":["login"]}}}),
+        Some(&session),
+    )
+    .await;
+    assert_eq!(resp["result"][0]["login"], json!("ana"));
+
+    // destroy: the session stops working
+    rpc_full(
+        router(service.clone()),
+        "/web/session/destroy",
+        json!({"jsonrpc":"2.0","id":5,"method":"call","params":{}}),
+        Some(&session),
+    )
+    .await;
+    let (_, resp, _) = rpc_full(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":6,"method":"call","params":{
+            "model":"res.users","method":"search","args":[[]],"kwargs":{}}}),
+        Some(&session),
+    )
+    .await;
+    assert_eq!(resp["error"]["code"], json!(100));
 }
