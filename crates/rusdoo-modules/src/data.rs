@@ -5,15 +5,15 @@ use crate::pyliteral::parse_py_literal;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use rusdoo_core::RusdooError;
-use serde_json::Value;
+use serde_json::{Number, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldValue {
-    /// element text content
+    /// element text content, verbatim (Odoo's default `char` handling)
     Text(String),
     /// `ref="module.xml_id"`
     Ref(String),
-    /// `eval="..."` parsed as a python literal
+    /// `eval="..."` python literal, or a `type="int|float"` coercion
     Eval(Value),
 }
 
@@ -23,7 +23,7 @@ pub struct DataRecord {
     pub xml_id: Option<String>,
     pub model: String,
     pub fields: Vec<(String, FieldValue)>,
-    /// records inside `<data noupdate="1">` are never overwritten
+    /// records inside a noupdate scope are never overwritten
     pub noupdate: bool,
 }
 
@@ -52,10 +52,19 @@ fn get_attr<'a>(attrs: &'a [(String, String)], name: &str) -> Option<&'a str> {
         .map(|(_, value)| value.as_str())
 }
 
+/// Odoo's str2bool, permissive on casing.
+fn truthy(attr: &str) -> bool {
+    matches!(
+        attr.to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
 struct PendingField {
     name: String,
     reference: Option<String>,
     eval: Option<String>,
+    value_type: Option<String>,
     text: String,
 }
 
@@ -67,26 +76,56 @@ struct PendingRecord {
 }
 
 fn finish_field(pending: PendingField) -> Result<(String, FieldValue), RusdooError> {
-    let value =
-        if let Some(reference) = pending.reference {
-            FieldValue::Ref(reference)
-        } else if let Some(eval) = pending.eval {
-            FieldValue::Eval(parse_py_literal(&eval).map_err(|e| {
+    let value = if let Some(reference) = pending.reference {
+        FieldValue::Ref(reference)
+    } else if let Some(eval) = pending.eval {
+        FieldValue::Eval(
+            parse_py_literal(&eval).map_err(|e| {
                 RusdooError::Validation(format!("field {:?} eval: {e}", pending.name))
-            })?)
-        } else {
-            FieldValue::Text(pending.text.trim().to_string())
-        };
+            })?,
+        )
+    } else {
+        match pending.value_type.as_deref() {
+            None | Some("char") | Some("text") => FieldValue::Text(pending.text),
+            Some("int") => FieldValue::Eval(Value::from(
+                pending.text.trim().parse::<i64>().map_err(|_| {
+                    RusdooError::Validation(format!(
+                        "field {:?}: invalid int {:?}",
+                        pending.name, pending.text
+                    ))
+                })?,
+            )),
+            Some("float") => {
+                let parsed = pending.text.trim().parse::<f64>().map_err(|_| {
+                    RusdooError::Validation(format!(
+                        "field {:?}: invalid float {:?}",
+                        pending.name, pending.text
+                    ))
+                })?;
+                FieldValue::Eval(Number::from_f64(parsed).map(Value::Number).ok_or_else(|| {
+                    RusdooError::Validation(format!("field {:?}: non-finite float", pending.name))
+                })?)
+            }
+            Some(other) => {
+                return Err(RusdooError::Validation(format!(
+                    "field {:?}: type {other:?} not yet supported",
+                    pending.name
+                )))
+            }
+        }
+    };
     Ok((pending.name, value))
 }
 
-/// Parse an addon data XML file into records. Non-record elements
-/// (menuitem, template, function, ...) are skipped — tracked gap until
-/// their loaders are ported.
+/// Parse an addon data XML file into records. `noupdate` scopes like
+/// Odoo: settable on `<odoo>`, `<openerp>` and `<data>`, nested scopes
+/// inherit the enclosing value. Non-record elements (menuitem,
+/// template, function, ...) are skipped — tracked gap until their
+/// loaders are ported.
 pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
     let mut reader = Reader::from_str(source);
     let mut records: Vec<DataRecord> = Vec::new();
-    let mut noupdate = false;
+    let mut noupdate_stack: Vec<bool> = Vec::new();
     let mut record: Option<PendingRecord> = None;
     let mut field: Option<PendingField> = None;
     let mut skip_depth = 0usize;
@@ -95,6 +134,7 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
         Empty,
         Other,
     }
+
     loop {
         let event = reader.read_event().map_err(|e| xml_err("parse", e))?;
         let event_kind = if matches!(event, Event::Empty(_)) {
@@ -118,14 +158,14 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
                 let self_closing = matches!(event_kind, EventKind::Empty);
                 let name = element.name();
                 let attrs = attr_map(&element)?;
+                let inherited = *noupdate_stack.last().unwrap_or(&false);
                 match name.as_ref() {
-                    b"odoo" | b"openerp" => {}
-                    b"data" => {
-                        let flag = matches!(get_attr(&attrs, "noupdate"), Some("1") | Some("True"));
-                        if self_closing {
-                            // empty <data/> toggles nothing
-                        } else {
-                            noupdate = flag;
+                    b"odoo" | b"openerp" | b"data" => {
+                        let flag = get_attr(&attrs, "noupdate")
+                            .map(truthy)
+                            .unwrap_or(inherited);
+                        if !self_closing {
+                            noupdate_stack.push(flag);
                         }
                     }
                     b"record" => {
@@ -139,7 +179,7 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
                             xml_id: get_attr(&attrs, "id").map(str::to_string),
                             model,
                             fields: Vec::new(),
-                            noupdate,
+                            noupdate: inherited,
                         };
                         if self_closing {
                             records.push(DataRecord {
@@ -153,6 +193,12 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
                         }
                     }
                     b"field" => {
+                        if field.is_some() {
+                            return Err(xml_err(
+                                "field",
+                                "nested <field> elements are not supported",
+                            ));
+                        }
                         let Some(current) = record.as_mut() else {
                             return Err(xml_err("structure", "<field> outside <record>"));
                         };
@@ -162,6 +208,7 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
                                 .to_string(),
                             reference: get_attr(&attrs, "ref").map(str::to_string),
                             eval: get_attr(&attrs, "eval").map(str::to_string),
+                            value_type: get_attr(&attrs, "type").map(str::to_string),
                             text: String::new(),
                         };
                         if self_closing {
@@ -196,19 +243,19 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
             }
             Event::CData(cdata) => {
                 if let Some(pending) = field.as_mut() {
+                    let bytes = cdata.into_inner().into_owned();
                     pending
                         .text
-                        .push_str(&String::from_utf8_lossy(&cdata.into_inner()));
+                        .push_str(&String::from_utf8(bytes).map_err(|e| xml_err("cdata", e))?);
                 }
             }
             Event::End(element) => match element.name().as_ref() {
                 b"field" => {
                     let pending = field.take().ok_or_else(|| xml_err("field", "stray end"))?;
-                    record
+                    let current = record
                         .as_mut()
-                        .expect("field only opens inside a record")
-                        .fields
-                        .push(finish_field(pending)?);
+                        .ok_or_else(|| xml_err("field", "field closed outside a record"))?;
+                    current.fields.push(finish_field(pending)?);
                 }
                 b"record" => {
                     let pending = record
@@ -221,7 +268,9 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
                         noupdate: pending.noupdate,
                     });
                 }
-                b"data" => noupdate = false,
+                b"data" | b"odoo" | b"openerp" => {
+                    noupdate_stack.pop();
+                }
                 _ => {}
             },
         }

@@ -9,7 +9,7 @@ use crate::manifest::Manifest;
 use rusdoo_core::RusdooError;
 use rusdoo_orm::registry::Registry;
 use serde_json::Value;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -49,9 +49,15 @@ pub struct LoadStats {
     pub skipped: usize,
 }
 
-/// Apply records in file order: create when the external id is new,
-/// update when it exists (unless noupdate), resolve `ref`s through the
-/// accumulated external ids.
+/// Apply records in file order, atomically: the whole call runs in one
+/// transaction (Odoo rolls a failing data file back the same way), and
+/// external ids are only published to `xml_ids` after commit. Create
+/// when the external id is new, update when it exists (unless
+/// noupdate), resolve `ref`s through the accumulated external ids.
+///
+/// Known divergence: id-less records inside noupdate scopes are always
+/// created; Odoo skips them in update mode, which does not exist here
+/// yet (no persisted ir.model.data / install state).
 pub async fn load_records(
     pool: &PgPool,
     registry: &Registry,
@@ -59,55 +65,75 @@ pub async fn load_records(
     records: &[DataRecord],
     xml_ids: &mut XmlIds,
 ) -> Result<LoadStats, RusdooError> {
+    let mut tx: Transaction<'static, Postgres> = pool
+        .begin()
+        .await
+        .map_err(|e| RusdooError::Database(e.to_string()))?;
+    let mut staged: HashMap<String, (String, i64)> = HashMap::new();
     let mut stats = LoadStats::default();
+
     for record in records {
-        let mut values: Vec<(String, Value)> = Vec::new();
+        let mut pairs: Vec<(&str, Value)> = Vec::new();
         for (name, field_value) in &record.fields {
             let value = match field_value {
                 FieldValue::Text(text) => Value::String(text.clone()),
                 FieldValue::Eval(value) => value.clone(),
                 FieldValue::Ref(xml_id) => {
                     let key = qualify(module, xml_id);
-                    let (_, id) = xml_ids.get(&key).ok_or_else(|| {
-                        RusdooError::Validation(format!(
-                            "unresolved external id {key} (field {name:?} on {})",
-                            record.model
-                        ))
-                    })?;
+                    let (_, id) =
+                        staged
+                            .get(&key)
+                            .or_else(|| xml_ids.get(&key))
+                            .ok_or_else(|| {
+                                RusdooError::Validation(format!(
+                                    "unresolved external id {key} (field {name:?} on {})",
+                                    record.model
+                                ))
+                            })?;
                     Value::from(*id)
                 }
             };
-            values.push((name.clone(), value));
+            pairs.push((name.as_str(), value));
         }
-        let pairs: Vec<(&str, Value)> = values
-            .iter()
-            .map(|(name, value)| (name.as_str(), value.clone()))
-            .collect();
 
         match &record.xml_id {
             None => {
-                registry.create(pool, &record.model, pairs).await?;
+                registry.create_tx(&mut tx, &record.model, pairs).await?;
                 stats.created += 1;
             }
             Some(xml_id) => {
                 let key = qualify(module, xml_id);
-                match xml_ids.get(&key) {
+                let existing = staged.get(&key).or_else(|| xml_ids.get(&key)).cloned();
+                match existing {
                     Some(_) if record.noupdate => stats.skipped += 1,
-                    Some((_, existing)) => {
-                        let existing = *existing;
+                    Some((_, existing_id)) => {
                         registry
-                            .write(pool, &record.model, &[existing], pairs)
+                            .write_tx(&mut tx, &record.model, &[existing_id], pairs)
                             .await?;
                         stats.updated += 1;
                     }
                     None => {
-                        let id = registry.create(pool, &record.model, pairs).await?;
-                        xml_ids.insert(key, record.model.clone(), id);
+                        // a foreign-module id that does not exist is a bug
+                        // in the data file, not a record to create
+                        if !key.starts_with(&format!("{module}.")) {
+                            return Err(RusdooError::Validation(format!(
+                                "cannot update missing record {key} (referenced from module {module})"
+                            )));
+                        }
+                        let id = registry.create_tx(&mut tx, &record.model, pairs).await?;
+                        staged.insert(key, (record.model.clone(), id));
                         stats.created += 1;
                     }
                 }
             }
         }
+    }
+
+    tx.commit()
+        .await
+        .map_err(|e| RusdooError::Database(e.to_string()))?;
+    for (key, entry) in staged {
+        xml_ids.insert(key, entry.0, entry.1);
     }
     Ok(stats)
 }

@@ -319,6 +319,27 @@ impl Registry {
         })
     }
 
+    /// Like [`Registry::create`], inside a caller-managed transaction.
+    pub async fn create_tx(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        model_name: &str,
+        values: Vec<(&str, Value)>,
+    ) -> Result<i64, RusdooError> {
+        self.create_in(tx, model_name, values).await
+    }
+
+    /// Like [`Registry::write`], inside a caller-managed transaction.
+    pub async fn write_tx(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        model_name: &str,
+        ids: &[i64],
+        values: Vec<(&str, Value)>,
+    ) -> Result<(), RusdooError> {
+        self.write_in(tx, model_name, ids, values).await
+    }
+
     /// Read with `_inherits` delegation (LEFT JOINs on the link fields).
     pub async fn read(
         &self,

@@ -259,3 +259,101 @@ async fn unresolved_ref_is_a_clear_error() {
 
     assert!(err.to_string().contains("ghost.company"));
 }
+
+// ---------- review regressions ----------
+
+#[test]
+fn root_noupdate_attribute_is_honored() {
+    // <odoo noupdate="1"> is THE idiomatic pattern (162 files in base)
+    let src = r#"<odoo noupdate="1"><record id="x" model="m">
+        <field name="n">1</field></record></odoo>"#;
+
+    assert!(parse_xml_data(src).unwrap()[0].noupdate);
+}
+
+#[test]
+fn nested_data_inherits_the_enclosing_noupdate() {
+    let src = r#"<odoo noupdate="1"><data><record id="x" model="m"/></data></odoo>"#;
+
+    assert!(parse_xml_data(src).unwrap()[0].noupdate);
+}
+
+#[test]
+fn typed_text_fields_become_numbers() {
+    let src = r#"<odoo><record id="x" model="m">
+        <field name="sequence" type="int">30</field>
+        <field name="rate" type="float">1.5</field>
+    </record></odoo>"#;
+
+    let record = &parse_xml_data(src).unwrap()[0];
+
+    assert_eq!(record.fields[0].1, FieldValue::Eval(json!(30)));
+    assert_eq!(record.fields[1].1, FieldValue::Eval(json!(1.5)));
+}
+
+#[test]
+fn text_content_is_verbatim_like_odoo() {
+    let src = r#"<odoo><record id="x" model="m"><field name="d">  x  </field></record></odoo>"#;
+
+    let record = &parse_xml_data(src).unwrap()[0];
+
+    assert_eq!(record.fields[0].1, FieldValue::Text("  x  ".into()));
+}
+
+#[tokio::test]
+async fn failed_load_rolls_back_the_whole_file() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.rbco".into(),
+            table: "rusdoo_test_rbco".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "boss_id",
+                FieldType::Many2one {
+                    comodel: "rusdoo.test.rbco".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_rbco""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.rbco")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    // first record is fine, second has an unresolvable ref
+    let xml = r#"<odoo>
+        <record id="good" model="rusdoo.test.rbco"><field name="name">Boa</field></record>
+        <record id="bad" model="rusdoo.test.rbco"><field name="boss_id" ref="ghost.nope"/></record>
+    </odoo>"#;
+    let records = parse_xml_data(xml).unwrap();
+    let mut xml_ids = XmlIds::new();
+
+    let err = load_records(&pool, &reg, "demo", &records, &mut xml_ids)
+        .await
+        .unwrap_err();
+
+    assert!(err.to_string().contains("ghost.nope"));
+    // the whole file rolled back: no rows, no published external ids
+    let count: i64 = sqlx::query_scalar(r#"SELECT COUNT(*) FROM "rusdoo_test_rbco""#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    assert!(xml_ids.get("demo.good").is_none());
+}
