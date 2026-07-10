@@ -256,3 +256,18 @@ async fn call_kw_crud_roundtrip_live() {
     .await;
     assert_eq!(resp["result"], json!([]));
 }
+
+#[tokio::test]
+async fn index_page_is_visible_in_a_browser() {
+    let app = router(test_service());
+
+    let response = app
+        .oneshot(Request::get("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let page = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(page.contains("rusdoo"));
+}

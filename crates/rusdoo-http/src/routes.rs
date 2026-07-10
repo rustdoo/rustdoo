@@ -2,7 +2,8 @@
 //! web client and classic RPC clients.
 
 use axum::extract::State;
-use axum::routing::post;
+use axum::response::Html;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{Map, Value};
 
@@ -13,9 +14,31 @@ use crate::jsonrpc::{
 
 pub fn router(service: OrmService) -> Router {
     Router::new()
+        .route("/", get(index))
         .route("/web/dataset/call_kw", post(call_kw))
         .route("/jsonrpc", post(jsonrpc_endpoint))
         .with_state(service)
+}
+
+/// Browser-visible status page (the web client lands here in Phase 5).
+async fn index() -> Html<&'static str> {
+    Html(
+        r#"<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>rusdoo</title>
+<style>body{font-family:system-ui;max-width:640px;margin:4rem auto;padding:0 1rem;line-height:1.6}
+code,pre{background:#f4f4f4;border-radius:4px;padding:2px 6px}pre{padding:12px;overflow-x:auto}</style>
+</head><body>
+<h1>&#129408; rusdoo</h1>
+<p><strong>O servidor está no ar.</strong> Port do Odoo 19 para Rust — Fase 3 em andamento.</p>
+<p>Endpoints JSON-RPC 2.0 (POST):</p>
+<ul><li><code>/web/dataset/call_kw</code> — gateway do web client</li>
+<li><code>/jsonrpc</code> — RPC clássico (object/execute_kw)</li></ul>
+<p>Experimente no terminal:</p>
+<pre>curl -s -X POST http://localhost:8069/web/dataset/call_kw   -H 'Content-Type: application/json'   -d '{"jsonrpc":"2.0","id":1,"method":"call","params":{
+    "model":"res.partner","method":"search_read","args":[],
+    "kwargs":{"fields":["name","email"]}}}'</pre>
+</body></html>"#,
+    )
 }
 
 fn respond(id: Option<Value>, outcome: Result<Value, RpcError>) -> Json<JsonRpcResponse> {
