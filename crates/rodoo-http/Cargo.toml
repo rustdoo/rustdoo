@@ -1,0 +1,15 @@
+[package]
+name = "rodoo-http"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+axum.workspace = true
+tokio.workspace = true
+rodoo-core = { path = "../rodoo-core" }
+rodoo-orm = { path = "../rodoo-orm" }

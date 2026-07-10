@@ -1,0 +1,20 @@
+[package]
+name = "rodoo-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rodoo"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rodoo-core = { path = "../rodoo-core" }
+rodoo-orm = { path = "../rodoo-orm" }
+rodoo-http = { path = "../rodoo-http" }
+rodoo-qweb = { path = "../rodoo-qweb" }
+rodoo-modules = { path = "../rodoo-modules" }
