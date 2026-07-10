@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="model_livro" model="ir.model">
+        <field name="name">Livro</field>
+        <field name="model">x_lib.livro</field>
+    </record>
+    <record id="field_livro_titulo" model="ir.model.fields">
+        <field name="model_id" ref="model_livro"/>
+        <field name="name">titulo</field>
+        <field name="ttype">char</field>
+        <field name="required" eval="True"/>
+    </record>
+    <record id="field_livro_paginas" model="ir.model.fields">
+        <field name="model_id" ref="model_livro"/>
+        <field name="name">paginas</field>
+        <field name="ttype">integer</field>
+    </record>
+</odoo>

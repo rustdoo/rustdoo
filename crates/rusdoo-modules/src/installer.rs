@@ -7,6 +7,8 @@ use crate::graph::dependency_order;
 use crate::loader::discover_addons;
 use crate::manifest::Manifest;
 use rusdoo_core::RusdooError;
+use rusdoo_orm::fields::{Field, FieldType};
+use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -201,7 +203,7 @@ pub struct InstallReport {
 /// dependency order.
 pub async fn install_modules(
     pool: &PgPool,
-    registry: &Registry,
+    registry: &mut Registry,
     addons_paths: &[&Path],
     xml_ids: &mut XmlIds,
 ) -> Result<InstallReport, RusdooError> {
@@ -242,6 +244,16 @@ pub async fn install_modules(
                 tracing::warn!("skipping unsupported data file {}", file_path.display());
                 continue;
             };
+            // ir.model / ir.model.fields records define models in the
+            // registry before any data touches them
+            let (records, new_models) = apply_model_definitions(registry, &records)?;
+            for model_name in &new_models {
+                registry
+                    .get(model_name)
+                    .expect("registered just above")
+                    .init_table(pool)
+                    .await?;
+            }
             let stats = load_records(pool, registry, name, &records, xml_ids).await?;
             totals.created += stats.created;
             totals.updated += stats.updated;
@@ -256,4 +268,157 @@ pub async fn install_modules(
         report.modules.push((name.clone(), totals));
     }
     Ok(report)
+}
+
+fn record_field<'a>(record: &'a DataRecord, name: &str) -> Option<&'a FieldValue> {
+    record
+        .fields
+        .iter()
+        .find(|(field_name, _)| field_name == name)
+        .map(|(_, value)| value)
+}
+
+fn text_of(value: Option<&FieldValue>) -> Option<String> {
+    match value {
+        Some(FieldValue::Text(text)) => Some(text.clone()),
+        Some(FieldValue::Eval(Value::String(text))) => Some(text.clone()),
+        _ => None,
+    }
+}
+
+fn bool_of(value: Option<&FieldValue>) -> bool {
+    matches!(value, Some(FieldValue::Eval(Value::Bool(true))))
+        | matches!(value, Some(FieldValue::Text(t)) if t == "True" || t == "1")
+}
+
+fn field_from_ttype(
+    name: &str,
+    ttype: &str,
+    relation: Option<String>,
+    relation_field: Option<String>,
+    required: bool,
+) -> Result<Field, RusdooError> {
+    use FieldType::*;
+    let missing = |what: &str| {
+        RusdooError::Validation(format!(
+            "ir.model.fields {name:?} ({ttype}) requires '{what}'"
+        ))
+    };
+    let ty = match ttype {
+        "char" => Char { size: None },
+        "text" => Text,
+        "html" => Html,
+        "integer" => Integer,
+        "float" => Float { digits: None },
+        "boolean" => Boolean,
+        "date" => Date,
+        "datetime" => Datetime,
+        "many2one" => Many2one {
+            comodel: relation.ok_or_else(|| missing("relation"))?,
+        },
+        "one2many" => One2many {
+            comodel: relation.ok_or_else(|| missing("relation"))?,
+            inverse: relation_field.ok_or_else(|| missing("relation_field"))?,
+        },
+        other => {
+            return Err(RusdooError::Validation(format!(
+                "ir.model.fields ttype {other:?} not yet supported"
+            )))
+        }
+    };
+    let field = Field::new(name, ty);
+    Ok(if required { field.required() } else { field })
+}
+
+/// Consume `ir.model` / `ir.model.fields` records, registering the
+/// declared models (or extending existing ones); everything else is
+/// returned for normal data loading. Returns the touched model names.
+fn apply_model_definitions(
+    registry: &mut Registry,
+    records: &[DataRecord],
+) -> Result<(Vec<DataRecord>, Vec<String>), RusdooError> {
+    struct PendingModel {
+        tech_name: String,
+        fields: Vec<Field>,
+    }
+    let mut remaining = Vec::new();
+    let mut model_xmlids: HashMap<String, String> = HashMap::new();
+    let mut pending: Vec<PendingModel> = Vec::new();
+    let mut index_of: HashMap<String, usize> = HashMap::new();
+
+    for record in records {
+        match record.model.as_str() {
+            "ir.model" => {
+                let tech_name = text_of(record_field(record, "model")).ok_or_else(|| {
+                    RusdooError::Validation("ir.model record requires a 'model' field".into())
+                })?;
+                if let Some(xml_id) = &record.xml_id {
+                    model_xmlids.insert(xml_id.clone(), tech_name.clone());
+                }
+                index_of.insert(tech_name.clone(), pending.len());
+                pending.push(PendingModel {
+                    tech_name,
+                    fields: Vec::new(),
+                });
+            }
+            "ir.model.fields" => {
+                let Some(FieldValue::Ref(model_ref)) = record_field(record, "model_id") else {
+                    return Err(RusdooError::Validation(
+                        "ir.model.fields requires model_id ref".into(),
+                    ));
+                };
+                let tech_name = model_xmlids.get(model_ref).ok_or_else(|| {
+                    RusdooError::Validation(format!(
+                        "ir.model.fields model_id ref {model_ref:?} does not match an \
+                         ir.model record in this module"
+                    ))
+                })?;
+                let name = text_of(record_field(record, "name")).ok_or_else(|| {
+                    RusdooError::Validation("ir.model.fields requires 'name'".into())
+                })?;
+                let ttype = text_of(record_field(record, "ttype")).ok_or_else(|| {
+                    RusdooError::Validation("ir.model.fields requires 'ttype'".into())
+                })?;
+                let field = field_from_ttype(
+                    &name,
+                    &ttype,
+                    text_of(record_field(record, "relation")),
+                    text_of(record_field(record, "relation_field")),
+                    bool_of(record_field(record, "required")),
+                )?;
+                let index = index_of[tech_name.as_str()];
+                pending[index].fields.push(field);
+            }
+            _ => remaining.push(record.clone()),
+        }
+    }
+
+    let mut touched = Vec::new();
+    for model_def in pending {
+        if registry.get(&model_def.tech_name).is_some() {
+            // in-place extension keeps the existing table
+            registry.register(Model::new(
+                ModelMeta {
+                    name: model_def.tech_name.clone(),
+                    table: String::new(),
+                    inherit: vec![model_def.tech_name.clone()],
+                    inherits: vec![],
+                },
+                model_def.fields,
+            ))?;
+        } else {
+            let table = model_def.tech_name.replace('.', "_");
+            registry.register(Model::new(
+                ModelMeta {
+                    name: model_def.tech_name.clone(),
+                    table,
+                    inherit: vec![],
+                    inherits: vec![],
+                },
+                model_def.fields,
+            ))?;
+        }
+        touched.push(model_def.tech_name);
+    }
+    Ok((remaining, touched))
 }

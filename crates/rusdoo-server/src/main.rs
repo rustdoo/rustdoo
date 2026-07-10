@@ -15,7 +15,7 @@ async fn main() -> anyhow::Result<()> {
         .or_else(|_| std::env::var("DATABASE_URL"))
         .map_err(|_| anyhow::anyhow!("set RUSDOO_DATABASE_URL or DATABASE_URL"))?;
 
-    let registry = base_registry()?;
+    let mut registry = base_registry()?;
     let pool = rusdoo_orm::db::connect(&db_url).await?;
 
     if std::env::args().any(|arg| arg == "--init") {
@@ -24,7 +24,8 @@ async fn main() -> anyhow::Result<()> {
         let addons_path = std::path::Path::new(&addons);
         let mut xml_ids = XmlIds::load(&pool).await?;
         if addons_path.is_dir() {
-            let report = install_modules(&pool, &registry, &[addons_path], &mut xml_ids).await?;
+            let report =
+                install_modules(&pool, &mut registry, &[addons_path], &mut xml_ids).await?;
             tracing::info!("installed {} module(s)", report.modules.len());
         } else {
             for model in registry.models() {

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="livro_dom_casmurro" model="x_lib.livro">
+        <field name="titulo">Dom Casmurro</field>
+        <field name="paginas" type="int">256</field>
+    </record>
+    <record id="livro_alienista" model="x_lib.livro">
+        <field name="titulo">O Alienista</field>
+        <field name="paginas" type="int">96</field>
+    </record>
+</odoo>
