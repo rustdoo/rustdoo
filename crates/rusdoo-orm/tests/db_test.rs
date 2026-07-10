@@ -117,3 +117,106 @@ async fn full_crud_roundtrip_against_postgres() {
         .unwrap();
     assert!(remaining.is_empty());
 }
+
+#[tokio::test]
+async fn many2one_path_search_live() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.company".into(),
+            table: "rusdoo_test_company".into(),
+            inherit: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.contact".into(),
+            table: "rusdoo_test_contact".into(),
+            inherit: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "company_id",
+                FieldType::Many2one {
+                    comodel: "rusdoo.test.company".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_contact""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_company""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let company = reg.get("rusdoo.test.company").unwrap();
+    let contact = reg.get("rusdoo.test.contact").unwrap();
+    company.init_table(&pool).await.unwrap();
+    contact.init_table(&pool).await.unwrap();
+
+    let acme = company
+        .create(&pool, vec![("name", json!("Acme"))])
+        .await
+        .unwrap();
+    let globex = company
+        .create(&pool, vec![("name", json!("Globex"))])
+        .await
+        .unwrap();
+    let ana = contact
+        .create(
+            &pool,
+            vec![("name", json!("Ana")), ("company_id", json!(acme))],
+        )
+        .await
+        .unwrap();
+    contact
+        .create(
+            &pool,
+            vec![("name", json!("Bia")), ("company_id", json!(globex))],
+        )
+        .await
+        .unwrap();
+    contact
+        .create(&pool, vec![("name", json!("Céu"))])
+        .await
+        .unwrap();
+
+    // dotted path: contacts whose company is named Acme
+    let dom = parse_domain(&json!([["company_id.name", "=", "Acme"]])).unwrap();
+    let found = reg
+        .search(
+            &pool,
+            "rusdoo.test.contact",
+            &dom,
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(found, vec![ana]);
+
+    // not any: company is not Acme, or no company at all
+    let dom = parse_domain(&json!([["company_id", "not any", [["name", "=", "Acme"]]]])).unwrap();
+    let found = reg
+        .search(
+            &pool,
+            "rusdoo.test.contact",
+            &dom,
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 2);
+}

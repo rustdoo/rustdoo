@@ -3,7 +3,8 @@
 
 use crate::domain::Domain;
 use crate::model::Model;
-use crate::sql::{bind, quote_ident, render};
+use crate::registry::Registry;
+use crate::sql::{bind, quote_ident, render, Ctx};
 use rusdoo_core::RusdooError;
 use serde_json::Value;
 
@@ -21,8 +22,17 @@ impl Model {
         domain: &Domain,
         opts: &SearchOptions,
     ) -> Result<(String, Vec<Value>), RusdooError> {
+        self.search_sql_with(domain, opts, Ctx::model(self))
+    }
+
+    pub(crate) fn search_sql_with(
+        &self,
+        domain: &Domain,
+        opts: &SearchOptions,
+        ctx: Ctx,
+    ) -> Result<(String, Vec<Value>), RusdooError> {
         let mut params = Vec::new();
-        let where_sql = render(domain, &mut params, Some(self))?;
+        let where_sql = render(domain, &mut params, ctx)?;
         let mut sql = format!(
             r#"SELECT "id" FROM {} WHERE {where_sql}"#,
             quote_ident(&self.meta.table)?
@@ -179,4 +189,20 @@ fn bind_ids(ids: &[i64], params: &mut Vec<Value>) -> Result<String, RusdooError>
         .map(|id| bind(params, Value::from(*id)))
         .collect();
     Ok(placeholders.join(", "))
+}
+
+impl Registry {
+    /// Search on a registered model with full relational context
+    /// (dotted paths and any/not any resolve against this registry).
+    pub fn search_sql(
+        &self,
+        model_name: &str,
+        domain: &Domain,
+        opts: &SearchOptions,
+    ) -> Result<(String, Vec<Value>), RusdooError> {
+        let model = self
+            .get(model_name)
+            .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
+        model.search_sql_with(domain, opts, Ctx::full(model, self))
+    }
 }

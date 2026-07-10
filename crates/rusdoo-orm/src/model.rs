@@ -30,4 +30,8 @@ impl Model {
     pub fn fields(&self) -> &[Field] {
         &self.fields
     }
+
+    pub(crate) fn into_parts(self) -> (ModelMeta, Vec<Field>) {
+        (self.meta, self.fields)
+    }
 }

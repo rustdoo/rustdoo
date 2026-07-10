@@ -8,6 +8,7 @@ use crate::ddl::create_table_sql;
 use crate::domain::Domain;
 use crate::fields::FieldType;
 use crate::model::Model;
+use crate::registry::Registry;
 use rusdoo_core::RusdooError;
 use serde_json::{Map, Value};
 use sqlx::postgres::{PgArguments, PgPool, PgPoolOptions, PgRow};
@@ -77,11 +78,7 @@ impl Model {
         opts: &SearchOptions,
     ) -> Result<Vec<i64>, RusdooError> {
         let (sql, params) = self.search_sql(domain, opts)?;
-        let rows = build_query(&sql, &params)?
-            .fetch_all(pool)
-            .await
-            .map_err(db_err)?;
-        rows.iter().map(row_id).collect()
+        fetch_ids(pool, &sql, &params).await
     }
 
     pub async fn create(
@@ -174,4 +171,27 @@ impl Model {
         }
         Ok(record)
     }
+}
+
+impl Registry {
+    /// Like [`Model::search`], but with relational context: dotted paths
+    /// and any/not any resolve against this registry.
+    pub async fn search(
+        &self,
+        pool: &PgPool,
+        model_name: &str,
+        domain: &Domain,
+        opts: &SearchOptions,
+    ) -> Result<Vec<i64>, RusdooError> {
+        let (sql, params) = self.search_sql(model_name, domain, opts)?;
+        fetch_ids(pool, &sql, &params).await
+    }
+}
+
+async fn fetch_ids(pool: &PgPool, sql: &str, params: &[Value]) -> Result<Vec<i64>, RusdooError> {
+    let rows = build_query(sql, params)?
+        .fetch_all(pool)
+        .await
+        .map_err(db_err)?;
+    rows.iter().map(row_id).collect()
 }
