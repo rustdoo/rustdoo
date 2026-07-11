@@ -218,3 +218,29 @@ fn t_set_can_compute_from_context() {
     );
     assert_eq!(out, "<p>42</p>");
 }
+
+#[test]
+fn t_elif_chains_conditions() {
+    let tpl = r#"<div><t t-if="a">A</t><t t-elif="b">B</t><t t-else="">C</t></div>"#;
+    assert_eq!(r(tpl, json!({"a": true, "b": true})), "<div>A</div>");
+    assert_eq!(r(tpl, json!({"a": false, "b": true})), "<div>B</div>");
+    assert_eq!(r(tpl, json!({"a": false, "b": false})), "<div>C</div>");
+}
+
+#[test]
+fn t_attf_interpolates_the_attribute() {
+    assert_eq!(
+        r(
+            r#"<a t-attf-class="btn btn-{{state}}">x</a>"#,
+            json!({"state": "primary"})
+        ),
+        r#"<a class="btn btn-primary">x</a>"#
+    );
+    assert_eq!(
+        r(
+            r#"<div t-attf-href="/user/{{id}}/edit"/>"#,
+            json!({"id": 5})
+        ),
+        r#"<div href="/user/5/edit"></div>"#
+    );
+}

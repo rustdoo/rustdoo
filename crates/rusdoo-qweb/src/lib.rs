@@ -5,7 +5,7 @@
 //! Supported directives: `t-esc`/`t-out`, `t-if`/`t-else`,
 //! `t-foreach`/`t-as`, `t-att-*`, `t-field`, and the transparent `<t>`
 //! element, plus `t-call` (named sub-templates via `render_with`) and
-//! `t-set`. Not yet ported: `t-elif`, `t-attf-*`.
+//! `t-set`, `t-elif`, `t-attf-*`. Not yet ported: `t-field` widgets.
 
 mod expr;
 
@@ -206,6 +206,15 @@ fn render_nodes(
                         render_body(el, cx, out, depth, templates)?;
                     }
                     last_if = None;
+                } else if let (false, Some(cond)) = (has_foreach, el.attr("t-elif")) {
+                    // only evaluated when no earlier branch in the chain won
+                    if last_if == Some(false) {
+                        let taken = expr::truthy(&expr::eval(cond, cx)?);
+                        if taken {
+                            render_body(el, cx, out, depth, templates)?;
+                        }
+                        last_if = Some(taken);
+                    }
                 } else if let (false, Some(cond)) = (has_foreach, el.attr("t-if")) {
                     let taken = expr::truthy(&expr::eval(cond, cx)?);
                     if taken {
@@ -278,7 +287,15 @@ fn render_body(
         out.push('<');
         out.push_str(&el.tag);
         for (key, value) in &el.attrs {
-            if let Some(name) = key.strip_prefix("t-att-") {
+            if let Some(name) = key.strip_prefix("t-attf-") {
+                // format-string attribute: interpolate {{ expr }} runs
+                let formatted = format_attf(value, ctx)?;
+                out.push(' ');
+                out.push_str(name);
+                out.push_str("=\"");
+                out.push_str(&escape_attr(&formatted));
+                out.push('"');
+            } else if let Some(name) = key.strip_prefix("t-att-") {
                 let resolved = expr::eval(value, ctx)?;
                 if !matches!(resolved, Value::Null | Value::Bool(false)) {
                     out.push(' ');
@@ -319,6 +336,24 @@ fn render_body(
         out.push('>');
     }
     Ok(())
+}
+
+/// Interpolate `{{ expr }}` runs in a `t-attf-*` attribute template.
+fn format_attf(template: &str, ctx: &Value) -> Result<String, RusdooError> {
+    let mut out = String::new();
+    let mut rest = template;
+    while let Some(start) = rest.find("{{") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let end = after
+            .find("}}")
+            .ok_or_else(|| RusdooError::Validation("qweb: unterminated {{ in t-attf".into()))?;
+        let value = expr::eval(after[..end].trim(), ctx)?;
+        out.push_str(&value_to_string(&value));
+        rest = &after[end + 2..];
+    }
+    out.push_str(rest);
+    Ok(out)
 }
 
 fn value_to_string(value: &Value) -> String {
