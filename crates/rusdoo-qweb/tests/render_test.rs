@@ -228,6 +228,35 @@ fn t_elif_chains_conditions() {
 }
 
 #[test]
+fn static_attribute_keeps_named_html_entities() {
+    // real Odoo views embed &hellip; &nbsp; &mdash; in title/placeholder;
+    // our 5-entity resolver must not hard-fail on them
+    let out = r(r#"<span title="more&hellip;">x</span>"#, json!({}));
+    assert_eq!(out, r#"<span title="more&hellip;">x</span>"#);
+}
+
+#[test]
+fn static_attribute_preserves_ampersand_entity() {
+    // &amp; must round-trip, not become &amp;amp; nor a bare &
+    let out = r(r#"<a href="/a?x=1&amp;y=2">go</a>"#, json!({}));
+    assert_eq!(out, r#"<a href="/a?x=1&amp;y=2">go</a>"#);
+}
+
+#[test]
+fn orphan_t_elif_is_a_hard_error() {
+    // a t-elif with no preceding t-if is a template bug — fail loudly,
+    // don't silently drop it (Odoo raises SyntaxError)
+    let err = render(r#"<div><p>x</p><t t-elif="1">y</t></div>"#, &json!({})).unwrap_err();
+    assert!(format!("{err}").contains("t-elif"), "got: {err}");
+}
+
+#[test]
+fn orphan_t_else_is_a_hard_error() {
+    let err = render(r#"<div><t t-else="">y</t></div>"#, &json!({})).unwrap_err();
+    assert!(format!("{err}").contains("t-else"), "got: {err}");
+}
+
+#[test]
 fn t_attf_interpolates_the_attribute() {
     assert_eq!(
         r(

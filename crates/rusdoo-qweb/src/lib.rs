@@ -145,9 +145,18 @@ fn element_from(el: &quick_xml::events::BytesStart) -> Result<Element, RusdooErr
         let attr = attr.map_err(qweb_err)?;
         let key = String::from_utf8_lossy(attr.key.as_ref()).into_owned();
         let raw = String::from_utf8_lossy(&attr.value);
-        let value = quick_xml::escape::unescape(&raw)
-            .map_err(qweb_err)?
-            .into_owned();
+        // Directive attributes carry expressions and need XML entity
+        // resolution (e.g. `t-if="a &lt; b"` must parse as `a < b`).
+        // Static attributes are authored HTML emitted verbatim, so keep
+        // their source form — a named entity like `&hellip;` must survive
+        // rather than hard-fail on our 5-entity (XML-predefined) resolver.
+        let value = if key.starts_with("t-") {
+            quick_xml::escape::unescape(&raw)
+                .map_err(qweb_err)?
+                .into_owned()
+        } else {
+            raw.into_owned()
+        };
         attrs.push((key, value));
     }
     Ok(Element {
@@ -210,18 +219,34 @@ fn render_nodes(
                 }
                 let has_foreach = el.attr("t-foreach").is_some();
                 if !has_foreach && el.attr("t-else").is_some() {
-                    if last_if == Some(false) {
-                        render_body(el, cx, out, depth, templates)?;
+                    // a t-else with no open t-if/t-elif chain is a template
+                    // bug — Odoo raises SyntaxError; we fail loudly too
+                    match last_if {
+                        Some(false) => render_body(el, cx, out, depth, templates)?,
+                        Some(true) => {} // an earlier branch already won
+                        None => {
+                            return Err(RusdooError::Validation(
+                                "qweb: t-else must be preceded by t-if or t-elif".into(),
+                            ))
+                        }
                     }
                     last_if = None;
                 } else if let (false, Some(cond)) = (has_foreach, el.attr("t-elif")) {
-                    // only evaluated when no earlier branch in the chain won
-                    if last_if == Some(false) {
-                        let taken = expr::truthy(&expr::eval(cond, cx)?);
-                        if taken {
-                            render_body(el, cx, out, depth, templates)?;
+                    match last_if {
+                        // only evaluated when no earlier branch in the chain won
+                        Some(false) => {
+                            let taken = expr::truthy(&expr::eval(cond, cx)?);
+                            if taken {
+                                render_body(el, cx, out, depth, templates)?;
+                            }
+                            last_if = Some(taken);
                         }
-                        last_if = Some(taken);
+                        Some(true) => {} // an earlier branch already won; keep skipping
+                        None => {
+                            return Err(RusdooError::Validation(
+                                "qweb: t-elif must be preceded by t-if or t-elif".into(),
+                            ))
+                        }
                     }
                 } else if let (false, Some(cond)) = (has_foreach, el.attr("t-if")) {
                     let taken = expr::truthy(&expr::eval(cond, cx)?);
@@ -313,10 +338,13 @@ fn render_body(
                     out.push('"');
                 }
             } else if !key.starts_with("t-") {
+                // authored HTML: emit verbatim, only guarding the double
+                // quote that delimits our output (source is valid XML, so
+                // raw `<` / bare `&` cannot occur and entities are intact)
                 out.push(' ');
                 out.push_str(key);
                 out.push_str("=\"");
-                out.push_str(&escape_attr(value));
+                out.push_str(&escape_attr_static(value));
                 out.push('"');
             }
         }
@@ -397,4 +425,11 @@ fn escape_text(s: &str) -> String {
 
 fn escape_attr(s: &str) -> String {
     escape_text(s).replace('"', "&quot;")
+}
+
+/// Escape a static (authored) attribute value: it is already valid XML
+/// text, so only the delimiting double quote needs guarding — entities
+/// (`&amp;`, `&hellip;`) must pass through untouched, not be re-escaped.
+fn escape_attr_static(s: &str) -> String {
+    s.replace('"', "&quot;")
 }
