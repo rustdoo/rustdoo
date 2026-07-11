@@ -7,6 +7,7 @@ use crate::graph::dependency_order;
 use crate::loader::discover_addons;
 use crate::manifest::Manifest;
 use rusdoo_core::RusdooError;
+use rusdoo_orm::access::{AccessControl, Operation};
 use rusdoo_orm::fields::{Field, FieldType};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
@@ -195,6 +196,8 @@ pub async fn load_records(
 #[derive(Debug, Default)]
 pub struct InstallReport {
     pub modules: Vec<(String, LoadStats)>,
+    /// ir.model.access rules gathered from the installed modules
+    pub access: AccessControl,
 }
 
 /// The integrated boot, port of `odoo/modules/loading.py`:
@@ -254,6 +257,9 @@ pub async fn install_modules(
                     .init_table(pool)
                     .await?;
             }
+            // ir.model.access records become AccessControl grants; the
+            // group refs they use are already published by earlier files
+            let records = apply_access_records(&mut report.access, &records, name, xml_ids)?;
             let stats = load_records(pool, registry, name, &records, xml_ids).await?;
             totals.created += stats.created;
             totals.updated += stats.updated;
@@ -426,4 +432,70 @@ pub fn apply_model_definitions(
         touched.push(model_def.tech_name);
     }
     Ok((remaining, touched))
+}
+
+/// Truthy test for a CSV/XML permission cell.
+fn perm_true(value: Option<&FieldValue>) -> bool {
+    match value {
+        Some(FieldValue::Text(t)) => matches!(t.trim(), "1" | "True" | "true"),
+        Some(FieldValue::Eval(Value::Bool(b))) => *b,
+        Some(FieldValue::Eval(Value::Number(n))) => n.as_i64().is_some_and(|v| v != 0),
+        _ => false,
+    }
+}
+
+/// Consume `ir.model.access` records into `access`, returning the rest.
+/// The target model is taken from a `model` text column (tech name);
+/// `group_id` is a ref resolved through the accumulated external ids.
+/// A rule without a group is skipped (global grants are not modelled
+/// yet — a documented gap, kept fail-closed).
+pub fn apply_access_records(
+    access: &mut AccessControl,
+    records: &[DataRecord],
+    module: &str,
+    xml_ids: &XmlIds,
+) -> Result<Vec<DataRecord>, RusdooError> {
+    let mut remaining = Vec::new();
+    for record in records {
+        if record.model != "ir.model.access" {
+            remaining.push(record.clone());
+            continue;
+        }
+        let model = match record_field(record, "model") {
+            Some(FieldValue::Text(name)) => name.clone(),
+            _ => {
+                return Err(RusdooError::Validation(
+                    "ir.model.access needs a 'model' column with the model tech name".into(),
+                ))
+            }
+        };
+        let Some(FieldValue::Ref(group_ref)) = record_field(record, "group_id") else {
+            // no group: global grant, not supported yet — skip, stay closed
+            tracing::warn!("ir.model.access without group_id skipped on {model}");
+            continue;
+        };
+        let key = if group_ref.contains('.') {
+            group_ref.clone()
+        } else {
+            format!("{module}.{group_ref}")
+        };
+        let (_, group_id) = xml_ids.get(&key).ok_or_else(|| {
+            RusdooError::Validation(format!("ir.model.access: unknown group ref {key}"))
+        })?;
+        let mut ops = Vec::new();
+        if perm_true(record_field(record, "perm_read")) {
+            ops.push(Operation::Read);
+        }
+        if perm_true(record_field(record, "perm_write")) {
+            ops.push(Operation::Write);
+        }
+        if perm_true(record_field(record, "perm_create")) {
+            ops.push(Operation::Create);
+        }
+        if perm_true(record_field(record, "perm_unlink")) {
+            ops.push(Operation::Unlink);
+        }
+        access.grant(&model, *group_id, &ops);
+    }
+    Ok(remaining)
 }

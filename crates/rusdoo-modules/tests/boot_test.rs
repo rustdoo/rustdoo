@@ -174,3 +174,69 @@ async fn addon_defined_models_are_registered_and_loaded() {
         .unwrap();
     assert_eq!(rows[0]["titulo"], json!("Dom Casmurro"));
 }
+
+#[tokio::test]
+async fn ir_model_access_csv_loads_into_acl() {
+    use rusdoo_orm::access::Operation;
+
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.groups".into(),
+            table: "rusdoo_test_acl_groups".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "x_demo.doc".into(),
+            table: "rusdoo_test_acl_doc".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("title", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    for t in ["rusdoo_test_acl_groups", "rusdoo_test_acl_doc"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    XmlIds::load(&pool).await.unwrap();
+    sqlx::query(r#"DELETE FROM "ir_model_data" WHERE "module" = 'demo_acl'"#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut xml_ids = XmlIds::new();
+    let report = install_modules(
+        &pool,
+        &mut reg,
+        &[Path::new("tests/fixtures/addons_acl")],
+        &mut xml_ids,
+    )
+    .await
+    .unwrap();
+
+    let group_id = xml_ids.get("demo_acl.group_reader").unwrap().1;
+
+    let acl = &report.access;
+    assert!(acl
+        .check("x_demo.doc", Operation::Read, &[group_id], false)
+        .is_ok());
+    assert!(acl
+        .check("x_demo.doc", Operation::Write, &[group_id], false)
+        .is_err());
+    assert!(acl
+        .check("x_demo.doc", Operation::Read, &[], false)
+        .is_err());
+    assert!(acl.check("x_demo.doc", Operation::Write, &[], true).is_ok());
+}

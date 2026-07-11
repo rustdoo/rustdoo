@@ -17,6 +17,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut registry = base_registry()?;
     let pool = rusdoo_orm::db::connect(&db_url).await?;
+    let mut access = rusdoo_orm::access::AccessControl::new();
 
     if std::env::args().any(|arg| arg == "--init") {
         use rusdoo_modules::installer::{install_modules, XmlIds};
@@ -27,6 +28,7 @@ async fn main() -> anyhow::Result<()> {
             let report =
                 install_modules(&pool, &mut registry, &[addons_path], &mut xml_ids).await?;
             tracing::info!("installed {} module(s)", report.modules.len());
+            access = report.access;
             seed_admin(&registry, &pool).await?;
         } else {
             for model in registry.models() {
@@ -37,16 +39,18 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let mut service = OrmService::new(Arc::new(registry), pool);
+    if access.is_empty() {
+        // fail-closed: with no ACL rules only the superuser reaches models
+        tracing::warn!(
+            "nenhuma regra ir.model.access carregada: apenas o superusuário (uid 1) \
+             acessa modelos; usuários comuns ficam bloqueados até as ACLs serem carregadas \
+             (rode com --init sobre addons que tragam ir.model.access.csv)"
+        );
+    }
+    let mut service = OrmService::new(Arc::new(registry), pool).with_access(access);
     if std::env::var("RUSDOO_INSECURE_COOKIES").is_ok() {
         service = service.allow_insecure_cookies();
     }
-    // no ir.model.access data is loaded yet: only the superuser reaches
-    // restricted models — warn so this fail-closed state is visible
-    tracing::warn!(
-        "nenhuma regra ir.model.access carregada: apenas o superusuário (uid 1) \
-         acessa modelos; usuários comuns ficam bloqueados até as ACLs serem carregadas"
-    );
     tracing::info!("rusdoo listening on {DEFAULT_ADDR} (/jsonrpc, /web/dataset/call_kw)");
     rusdoo_http::serve(DEFAULT_ADDR, service).await?;
     Ok(())
