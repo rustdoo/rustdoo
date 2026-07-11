@@ -20,6 +20,12 @@ pub fn create_table_sql(model: &Model) -> Result<String, RusdooError> {
         columns.push(format!("{} {ty}", quote_ident(name)?));
     }
     for field in model.fields() {
+        // the LOG_ACCESS columns are emitted above from MAGIC_COLUMNS; the
+        // registry also exposes them as fields, so skip them here to avoid
+        // declaring the same column twice
+        if MAGIC_COLUMNS.iter().any(|(name, _)| *name == field.name) {
+            continue;
+        }
         let Some(column_type) = field.column_type() else {
             continue;
         };

@@ -34,7 +34,7 @@ impl Registry {
     /// starts the new model from a copy of the parents' fields
     /// (prototype inheritance).
     pub fn register(&mut self, model: Model) -> Result<(), RusdooError> {
-        let (meta, own_fields) = model.into_parts();
+        let (meta, mut own_fields) = model.into_parts();
 
         if meta.inherit.is_empty() {
             if self.models.contains_key(&meta.name) {
@@ -44,6 +44,7 @@ impl Registry {
                 )));
             }
             self.validate_inherits(&meta.inherits, &own_fields)?;
+            ensure_log_access(&mut own_fields);
             self.models
                 .insert(meta.name.clone(), Model::new(meta, own_fields));
             return Ok(());
@@ -81,6 +82,7 @@ impl Registry {
             meta.inherits.clone()
         };
         self.validate_inherits(&inherits, &fields)?;
+        ensure_log_access(&mut fields);
         let merged_meta = ModelMeta {
             name: meta.name.clone(),
             table,
@@ -90,6 +92,33 @@ impl Registry {
         self.models
             .insert(meta.name, Model::new(merged_meta, fields));
         Ok(())
+    }
+}
+
+/// Odoo's LOG_ACCESS fields, added to every model (`_log_access`): the
+/// audit columns exposed as readonly ORM fields — create_uid/write_uid as
+/// many2one to res.users, create_date/write_date as datetimes. The columns
+/// themselves are created by the DDL layer and stamped by the write path;
+/// here they simply become readable/introspectable and write-protected.
+fn log_access_fields() -> [Field; 4] {
+    let user = || FieldType::Many2one {
+        comodel: "res.users".into(),
+    };
+    [
+        Field::new("create_uid", user()).readonly(),
+        Field::new("create_date", FieldType::Datetime).readonly(),
+        Field::new("write_uid", user()).readonly(),
+        Field::new("write_date", FieldType::Datetime).readonly(),
+    ]
+}
+
+/// Add the LOG_ACCESS fields unless the model already declares them (a
+/// model is free to override, e.g. res.users' own create_uid).
+fn ensure_log_access(fields: &mut Vec<Field>) {
+    for field in log_access_fields() {
+        if !fields.iter().any(|f| f.name == field.name) {
+            fields.push(field);
+        }
     }
 }
 

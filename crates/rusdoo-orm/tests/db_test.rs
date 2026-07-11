@@ -1277,3 +1277,94 @@ async fn delegated_write_stamps_the_parent_writer() {
         "delegated write must stamp the parent's write_uid"
     );
 }
+
+/// The LOG_ACCESS columns are exposed as ORM fields on every model:
+/// create_uid/write_uid read back as many2one [id, name] to res.users,
+/// create_date/write_date as Odoo datetime strings. They are readonly,
+/// so a client write to them is rejected.
+#[tokio::test]
+async fn log_access_columns_are_readable_orm_fields() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.users".into(),
+            table: "res_users".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.doc".into(),
+            table: "rusdoo_test_doc".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    for t in ["res_users", "rusdoo_test_doc"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    reg.get("res.users")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.doc")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    let alice = reg
+        .create(&pool, "res.users", vec![("name", json!("Alice"))])
+        .await
+        .unwrap();
+    let doc = reg
+        .create_as(&pool, alice, "rusdoo.test.doc", vec![("name", json!("d"))])
+        .await
+        .unwrap();
+
+    let rows = reg
+        .read(
+            &pool,
+            "rusdoo.test.doc",
+            &[doc],
+            &["create_uid", "write_uid", "create_date", "write_date"],
+        )
+        .await
+        .unwrap();
+    // many2one audit fields resolve to [id, display_name], like name_get
+    assert_eq!(rows[0]["create_uid"], json!([alice, "Alice"]));
+    assert_eq!(rows[0]["write_uid"], json!([alice, "Alice"]));
+    // datetimes come back as non-empty Odoo-format strings
+    let cdate = rows[0]["create_date"].as_str().expect("create_date string");
+    assert!(cdate.len() >= 19, "datetime string: {cdate:?}");
+    assert!(rows[0]["write_date"].is_string());
+
+    // the columns are readonly: a client write must be rejected
+    let err = reg
+        .write(
+            &pool,
+            "rusdoo.test.doc",
+            &[doc],
+            vec![("create_uid", json!(999))],
+        )
+        .await;
+    assert!(
+        err.is_err(),
+        "writing a readonly LOG_ACCESS field must fail"
+    );
+}

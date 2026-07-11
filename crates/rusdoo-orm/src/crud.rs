@@ -91,7 +91,7 @@ impl Model {
         let mut params = Vec::new();
         let mut placeholders = Vec::new();
         for (name, value) in values {
-            self.stored_field(name)?;
+            self.writable_field(name)?;
             columns.push(quote_ident(name)?);
             placeholders.push(bind(&mut params, value));
         }
@@ -128,7 +128,7 @@ impl Model {
         let mut params = Vec::new();
         let mut assignments = Vec::new();
         for (name, value) in values {
-            self.stored_field(name)?;
+            self.writable_field(name)?;
             let placeholder = bind(&mut params, value);
             assignments.push(format!("{} = {placeholder}", quote_ident(name)?));
         }
@@ -201,6 +201,19 @@ impl Model {
                 self.meta.name
             ))),
         }
+    }
+
+    /// A stored, non-readonly field: the write path rejects readonly
+    /// fields (e.g. the LOG_ACCESS audit columns) so a client can never
+    /// forge them — they are set only by the ORM's own stamping.
+    fn writable_field(&self, name: &str) -> Result<(), RusdooError> {
+        self.stored_field(name)?;
+        if self.field(name).is_some_and(|f| f.readonly) {
+            return Err(RusdooError::Validation(format!(
+                "field is readonly: {name:?}"
+            )));
+        }
+        Ok(())
     }
 }
 

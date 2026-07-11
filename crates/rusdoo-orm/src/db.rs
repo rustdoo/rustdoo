@@ -240,6 +240,16 @@ fn decode_field(row: &PgRow, name: &str, field: &Field) -> Result<Value, RusdooE
             .try_get::<Option<String>, _>(name)
             .map_err(db_err)?
             .map(Value::from),
+        // Odoo serializes datetimes as "YYYY-MM-DD HH:MM:SS" and dates as
+        // "YYYY-MM-DD" (naive, UTC) over the wire
+        FieldType::Datetime => row
+            .try_get::<Option<chrono::NaiveDateTime>, _>(name)
+            .map_err(db_err)?
+            .map(|dt| Value::from(dt.format("%Y-%m-%d %H:%M:%S").to_string())),
+        FieldType::Date => row
+            .try_get::<Option<chrono::NaiveDate>, _>(name)
+            .map_err(db_err)?
+            .map(|d| Value::from(d.format("%Y-%m-%d").to_string())),
         other => {
             // explicit gap, never a silently-wrong value
             return Err(RusdooError::Validation(format!(
