@@ -404,7 +404,72 @@ impl Registry {
                 record.insert(field.name.clone(), Value::from(list));
             }
         }
+
+        // many2one reads as [id, display_name], like Odoo's name_get
+        let m2o: Vec<(String, String)> = fields
+            .iter()
+            .filter_map(|name| match model.field(name).map(|f| &f.ty) {
+                Some(FieldType::Many2one { comodel }) => Some((name.to_string(), comodel.clone())),
+                _ => None,
+            })
+            .collect();
+        for (name, comodel) in m2o {
+            let linked: Vec<i64> = records
+                .iter()
+                .filter_map(|r| r.get(&name).and_then(Value::as_i64))
+                .collect();
+            if linked.is_empty() {
+                continue;
+            }
+            let names = self.name_map(pool, &comodel, &linked).await?;
+            for record in &mut records {
+                if let Some(id) = record.get(&name).and_then(Value::as_i64) {
+                    let display = names.get(&id).cloned().unwrap_or_default();
+                    record.insert(
+                        name.clone(),
+                        Value::Array(vec![Value::from(id), Value::from(display)]),
+                    );
+                }
+            }
+        }
         Ok(records)
+    }
+
+    /// Resolve display names for a set of comodel ids (Odoo's name_get):
+    /// the comodel's `name`/`display_name` field, or the id when neither
+    /// exists. A single flat query, no per-record round-trips.
+    async fn name_map(
+        &self,
+        pool: &PgPool,
+        comodel: &str,
+        ids: &[i64],
+    ) -> Result<HashMap<i64, String>, RusdooError> {
+        let model = self
+            .get(comodel)
+            .ok_or_else(|| RusdooError::Validation(format!("comodel not registered: {comodel}")))?;
+        let rec_name = if model.field("name").is_some() {
+            "name"
+        } else if model.field("display_name").is_some() {
+            "display_name"
+        } else {
+            return Ok(ids.iter().map(|id| (*id, id.to_string())).collect());
+        };
+        let placeholders: Vec<String> = (1..=ids.len()).map(|n| format!("${n}")).collect();
+        let sql = format!(
+            r#"SELECT "id", {} FROM {} WHERE "id" IN ({})"#,
+            quote_ident(rec_name)?,
+            quote_ident(&model.meta.table)?,
+            placeholders.join(", ")
+        );
+        let mut query = sqlx::query_as::<_, (i32, Option<String>)>(&sql);
+        for id in ids {
+            query = query.bind(*id as i32);
+        }
+        let rows = query.fetch_all(pool).await.map_err(db_err)?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, name)| (i64::from(id), name.unwrap_or_default()))
+            .collect())
     }
 
     /// Fetch the related ids of an x2many field for each owner id:

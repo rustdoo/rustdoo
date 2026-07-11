@@ -220,7 +220,8 @@ async fn load_records_applies_refs_and_respects_noupdate() {
         )
         .await
         .unwrap();
-    assert_eq!(rows[0]["company_id"], json!(company_id));
+    // many2one reads as [id, display_name] (name_get)
+    assert_eq!(rows[0]["company_id"], json!([company_id, "Acme Renovada"]));
 }
 
 #[tokio::test]

@@ -509,7 +509,8 @@ async fn inherits_delegation_live() {
         .await
         .unwrap();
     assert_eq!(rows[0]["email"], json!("b@x"));
-    assert_eq!(rows[0]["person_id"], json!(bob_person));
+    // many2one reads as [id, display_name] (name_get)
+    assert_eq!(rows[0]["person_id"], json!([bob_person, "Bob"]));
 
     // a failed create rolls the parent rows back (login is required)
     let failed = reg
@@ -531,7 +532,8 @@ async fn inherits_delegation_live() {
         .read(&pool, "rusdoo.test.account", &[uid], &["person_id"])
         .await
         .unwrap();
-    let old_person = rows[0]["person_id"].as_i64().unwrap();
+    // person_id reads as [id, name] now; take the id
+    let old_person = rows[0]["person_id"][0].as_i64().unwrap();
     reg.write(
         &pool,
         "rusdoo.test.account",
@@ -912,7 +914,7 @@ async fn o2m_unlink_is_scoped_to_owner() {
         .unwrap();
     assert_eq!(
         rows[0]["parent_id"],
-        json!(p2),
+        json!([p2, "p2"]),
         "cross-owner unlink must not touch c"
     );
 
@@ -931,5 +933,93 @@ async fn o2m_unlink_is_scoped_to_owner() {
         .read(&pool, "rusdoo.test.node2", &[c], &["parent_id"])
         .await
         .unwrap();
-    assert_eq!(rows[0]["parent_id"], json!(p2));
+    assert_eq!(rows[0]["parent_id"], json!([p2, "p2"]));
+}
+
+#[tokio::test]
+async fn many2one_reads_as_id_and_name() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.co3".into(),
+            table: "rusdoo_test_co3".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.ct3".into(),
+            table: "rusdoo_test_ct3".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "company_id",
+                FieldType::Many2one {
+                    comodel: "rusdoo.test.co3".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    for t in ["rusdoo_test_ct3", "rusdoo_test_co3"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    reg.get("rusdoo.test.co3")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.ct3")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    let acme = reg
+        .get("rusdoo.test.co3")
+        .unwrap()
+        .create(&pool, vec![("name", json!("Acme"))])
+        .await
+        .unwrap();
+    let ana = reg
+        .create(
+            &pool,
+            "rusdoo.test.ct3",
+            vec![("name", json!("Ana")), ("company_id", json!(acme))],
+        )
+        .await
+        .unwrap();
+    let noco = reg
+        .create(&pool, "rusdoo.test.ct3", vec![("name", json!("Sem"))])
+        .await
+        .unwrap();
+
+    // many2one reads as [id, display_name], like Odoo
+    let rows = reg
+        .read(&pool, "rusdoo.test.ct3", &[ana], &["company_id"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["company_id"], json!([acme, "Acme"]));
+
+    // an unset many2one stays null (Odoo returns false)
+    let rows = reg
+        .read(&pool, "rusdoo.test.ct3", &[noco], &["company_id"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["company_id"], serde_json::Value::Null);
 }
