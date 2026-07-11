@@ -3,8 +3,8 @@
 //! HTML against a JSON context.
 //!
 //! Supported directives: `t-esc`/`t-out`, `t-if`/`t-else`,
-//! `t-foreach`/`t-as`, `t-att-*`, and the transparent `<t>` element.
-//! Not yet ported: `t-call`, `t-set`, `t-elif`, `t-attf-*`, `t-field`.
+//! `t-foreach`/`t-as`, `t-att-*`, `t-field`, and the transparent `<t>`
+//! element. Not yet ported: `t-call`, `t-set`, `t-elif`, `t-attf-*`.
 
 mod expr;
 
@@ -230,6 +230,8 @@ fn render_body(
         out.push_str(&escape_text(&value_to_string(&expr::eval(e, ctx)?)));
     } else if let Some(e) = el.attr("t-out") {
         out.push_str(&value_to_string(&expr::eval(e, ctx)?));
+    } else if let Some(e) = el.attr("t-field") {
+        out.push_str(&escape_text(&field_display(&expr::eval(e, ctx)?)));
     } else {
         render_nodes(&el.children, ctx, out, depth + 1)?;
     }
@@ -250,6 +252,21 @@ fn value_to_string(value: &Value) -> String {
         Value::Number(n) => n.to_string(),
         other => other.to_string(),
     }
+}
+
+/// Render a record field: a many2one read comes as `[id, display_name]`,
+/// so show the name; anything else renders like its value.
+fn field_display(value: &Value) -> String {
+    if let Value::Array(pair) = value {
+        if let [id, name] = pair.as_slice() {
+            if id.is_number() {
+                if let Some(display) = name.as_str() {
+                    return display.to_string();
+                }
+            }
+        }
+    }
+    value_to_string(value)
 }
 
 fn escape_text(s: &str) -> String {

@@ -100,3 +100,33 @@ fn realistic_report_fragment() {
         "<div><h1>Catálogo</h1><ul><li>Dom Casmurro - 256p</li><li>O Alienista - 96p</li></ul></div>"
     );
 }
+
+#[test]
+fn t_field_renders_field_values() {
+    // plain value: escaped like t-esc
+    assert_eq!(
+        r(
+            r#"<span t-field="p.name"/>"#,
+            json!({"p": {"name": "A & B"}})
+        ),
+        "<span>A &amp; B</span>"
+    );
+    // a many2one read [id, display_name] renders the name, not the id
+    assert_eq!(
+        r(
+            r#"<span t-field="p.company_id"/>"#,
+            json!({"p": {"company_id": [1, "Rusdoo S.A."]}})
+        ),
+        "<span>Rusdoo S.A.</span>"
+    );
+    // number renders its value
+    assert_eq!(
+        r(r#"<b t-field="p.pages"/>"#, json!({"p": {"pages": 256}})),
+        "<b>256</b>"
+    );
+    // unset/null renders empty
+    assert_eq!(
+        r(r#"<i t-field="p.missing"/>"#, json!({"p": {}})),
+        "<i></i>"
+    );
+}
