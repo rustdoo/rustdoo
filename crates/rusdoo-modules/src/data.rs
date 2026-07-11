@@ -129,6 +129,10 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
     let mut record: Option<PendingRecord> = None;
     let mut field: Option<PendingField> = None;
     let mut skip_depth = 0usize;
+    // when a <field> contains child markup (view arch, html), capture the
+    // inner XML verbatim as a string — Odoo stores those fields as text too
+    let mut markup: Option<usize> = None;
+    let mut field_content_start = 0usize;
 
     enum EventKind {
         Empty,
@@ -142,6 +146,40 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
         } else {
             EventKind::Other
         };
+        if let Some(depth) = markup {
+            match event {
+                Event::Start(_) => markup = Some(depth + 1),
+                Event::Empty(_) => {}
+                Event::End(element) => {
+                    if depth == 0 {
+                        // depth 0 End can only be the field's own </field>
+                        let end_pos = reader.buffer_position() as usize;
+                        let end_tag_len = element.name().as_ref().len() + 3; // </ + name + >
+                        let raw = source
+                            .get(field_content_start..end_pos.saturating_sub(end_tag_len))
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+                        let pending = field.take().expect("markup implies an open field");
+                        let current = record
+                            .as_mut()
+                            .ok_or_else(|| xml_err("field", "markup field outside a record"))?;
+                        current.fields.push((pending.name, FieldValue::Text(raw)));
+                        markup = None;
+                    } else {
+                        markup = Some(depth - 1);
+                    }
+                }
+                Event::Eof => {
+                    return Err(xml_err(
+                        "parse",
+                        "unexpected end of file inside field markup",
+                    ))
+                }
+                _ => {}
+            }
+            continue;
+        }
         if skip_depth > 0 {
             match event {
                 Event::Start(_) => skip_depth += 1,
@@ -214,15 +252,15 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
                         if self_closing {
                             current.fields.push(finish_field(pending)?);
                         } else {
+                            field_content_start = reader.buffer_position() as usize;
                             field = Some(pending);
                         }
                     }
                     _ => {
                         if field.is_some() {
-                            return Err(xml_err(
-                                "field",
-                                "markup inside <field> not yet supported",
-                            ));
+                            // child markup inside a field: capture it verbatim
+                            markup = Some(if self_closing { 0 } else { 1 });
+                            continue;
                         }
                         if record.is_some() {
                             return Err(xml_err("record", "unexpected element inside <record>"));

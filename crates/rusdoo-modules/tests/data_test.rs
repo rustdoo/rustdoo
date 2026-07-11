@@ -396,3 +396,25 @@ fn reserved_field_names_are_rejected() {
     .unwrap();
     assert!(apply_model_definitions(&mut reg, &records).is_err());
 }
+
+#[test]
+fn field_markup_captured_as_text() {
+    // a <field> containing child markup keeps the inner XML as a string
+    let src = r#"<odoo><record id="v" model="ir.ui.view">
+        <field name="name">my view</field>
+        <field name="arch" type="xml">
+            <form><field name="partner_id"/><group>Oi</group></form>
+        </field>
+    </record></odoo>"#;
+
+    let record = &parse_xml_data(src).unwrap()[0];
+
+    assert_eq!(record.fields[0].1, FieldValue::Text("my view".into()));
+    let arch = match &record.fields[1].1 {
+        FieldValue::Text(t) => t,
+        other => panic!("expected text arch, got {other:?}"),
+    };
+    assert!(arch.starts_with("<form>"));
+    assert!(arch.contains(r#"<field name="partner_id"/>"#));
+    assert!(arch.ends_with("</form>"));
+}
