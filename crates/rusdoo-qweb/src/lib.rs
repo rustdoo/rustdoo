@@ -22,6 +22,37 @@ pub type Templates = HashMap<String, String>;
 /// Templates parsed once for a render pass, so t-call never re-parses.
 type Compiled = HashMap<String, Vec<Node>>;
 
+/// Sentinel object key marking a value as pre-escaped HTML — the port of
+/// Odoo's `markupsafe.Markup`. `t-out`/`t-esc` escape ordinary values but
+/// emit a Markup string raw; a `t-set` body capture (already-rendered
+/// HTML) is stored as Markup so later references don't double-escape it.
+/// The NUL byte makes the key impossible to collide with real JSON data.
+const MARKUP_KEY: &str = "\u{0}qweb-markup";
+
+/// Wrap already-rendered HTML as Markup (safe, not re-escaped on output).
+fn markup(html: String) -> Value {
+    let mut obj = Map::new();
+    obj.insert(MARKUP_KEY.to_string(), Value::String(html));
+    Value::Object(obj)
+}
+
+/// If `value` is Markup, borrow its inner HTML.
+fn as_markup(value: &Value) -> Option<&str> {
+    match value {
+        Value::Object(map) if map.len() == 1 => map.get(MARKUP_KEY).and_then(Value::as_str),
+        _ => None,
+    }
+}
+
+/// Emit an evaluated value the way `t-out`/`t-esc` do: Markup passes
+/// through raw, everything else is HTML-escaped.
+fn push_out(value: &Value, out: &mut String) {
+    match as_markup(value) {
+        Some(html) => out.push_str(html),
+        None => out.push_str(&escape_text(&value_to_string(value))),
+    }
+}
+
 /// The `t-call` targets referenced anywhere in a template — used by
 /// callers to resolve (and access-check) only the templates in use.
 pub fn t_call_refs(template: &str) -> Result<Vec<String>, RusdooError> {
@@ -208,9 +239,11 @@ fn render_nodes(
                     let value = if let Some(v) = el.attr("t-value") {
                         expr::eval(v, cx)?
                     } else {
+                        // captured body is already-rendered HTML: mark it
+                        // Markup so a later t-out/t-esc emits it raw
                         let mut buf = String::new();
                         render_nodes(&el.children, cx, &mut buf, depth + 1, templates)?;
-                        Value::String(buf)
+                        markup(buf)
                     };
                     overlay
                         .get_or_insert_with(Map::new)
@@ -357,11 +390,15 @@ fn render_body(
         })?;
         render_nodes(nodes, ctx, out, depth + 1, templates)?;
     } else if let Some(e) = el.attr("t-esc") {
-        out.push_str(&escape_text(&value_to_string(&expr::eval(e, ctx)?)));
+        push_out(&expr::eval(e, ctx)?, out);
     } else if let Some(e) = el.attr("t-out") {
-        out.push_str(&value_to_string(&expr::eval(e, ctx)?));
+        push_out(&expr::eval(e, ctx)?, out);
     } else if let Some(e) = el.attr("t-field") {
-        out.push_str(&escape_text(&field_display(&expr::eval(e, ctx)?)));
+        let value = expr::eval(e, ctx)?;
+        match as_markup(&value) {
+            Some(html) => out.push_str(html),
+            None => out.push_str(&escape_text(&field_display(&value))),
+        }
     } else {
         render_nodes(&el.children, ctx, out, depth + 1, templates)?;
     }

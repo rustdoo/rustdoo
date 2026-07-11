@@ -16,9 +16,28 @@ fn t_esc_outputs_escaped_value() {
 }
 
 #[test]
-fn t_out_outputs_raw() {
+fn t_out_escapes_plain_values() {
+    // Odoo's t-out escapes a plain (non-Markup) value — emitting it raw
+    // was an XSS. Only Markup passes through unescaped (see t-set below).
     let out = r(r#"<div t-out="body"/>"#, json!({"body": "<b>hi</b>"}));
-    assert_eq!(out, "<div><b>hi</b></div>");
+    assert_eq!(out, "<div>&lt;b&gt;hi&lt;/b&gt;</div>");
+}
+
+#[test]
+fn t_set_body_capture_is_markup_not_reescaped() {
+    // a t-set body captures rendered HTML as Markup; a later t-out/t-esc
+    // must emit it raw, not double-escape it
+    let out = r(
+        r#"<div><t t-set="g"><b>bold</b></t><t t-out="g"/></div>"#,
+        json!({}),
+    );
+    assert_eq!(out, "<div><b>bold</b></div>");
+    // and the same capture reused through t-esc
+    let out = r(
+        r#"<div><t t-set="g"><i>x</i></t><t t-esc="g"/></div>"#,
+        json!({}),
+    );
+    assert_eq!(out, "<div><i>x</i></div>");
 }
 
 #[test]
