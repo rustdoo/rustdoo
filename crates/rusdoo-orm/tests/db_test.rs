@@ -1489,3 +1489,37 @@ async fn readonly_delegated_field_write_is_rejected() {
         "readonly field must be write-protected through _inherits delegation"
     );
 }
+
+/// A Json (jsonb) field round-trips its structured value through the ORM.
+#[tokio::test]
+async fn json_field_roundtrips() {
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let model = Model::new(
+        ModelMeta {
+            name: "rusdoo.test.jdoc".into(),
+            table: "rusdoo_test_jdoc".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("data", FieldType::Json),
+        ],
+    );
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_jdoc""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    model.init_table(&pool).await.unwrap();
+
+    let payload = json!({"k": "v", "n": 3, "nested": [1, 2]});
+    let id = model
+        .create(&pool, vec![("name", json!("j")), ("data", payload.clone())])
+        .await
+        .unwrap();
+    let rows = model.read(&pool, &[id], &["data"]).await.unwrap();
+    assert_eq!(rows[0]["data"], payload);
+}

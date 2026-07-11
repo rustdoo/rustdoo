@@ -258,6 +258,8 @@ fn decode_field(row: &PgRow, name: &str, field: &Field) -> Result<Value, RusdooE
             .try_get::<Option<chrono::NaiveDate>, _>(name)
             .map_err(db_err)?
             .map(|d| Value::from(d.format("%Y-%m-%d").to_string())),
+        // jsonb round-trips as the structured value itself
+        FieldType::Json => row.try_get::<Option<Value>, _>(name).map_err(db_err)?,
         other => {
             // explicit gap, never a silently-wrong value
             return Err(RusdooError::Validation(format!(
