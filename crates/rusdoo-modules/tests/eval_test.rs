@@ -81,3 +81,14 @@ fn real_base_groups_expr_evaluates() {
     );
     assert_eq!(out, json!([[4, 7, 0], [4, 8, 0]]));
 }
+
+#[test]
+fn wrong_arity_is_an_error() {
+    let m = refs(&[]);
+    let bad = |src: &str| eval_expr(src, &|n: &str| m.get(n).copied()).is_err();
+    // Command.link() forgot the id -> must error, not silently [4,0,0]
+    assert!(bad("Command.link()"));
+    assert!(bad("Command.update(5)"));
+    assert!(bad("Command.clear(1)"));
+    assert!(bad("Command.link(1, 2)"));
+}

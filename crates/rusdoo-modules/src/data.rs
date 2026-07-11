@@ -157,15 +157,21 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
                 Event::Empty(_) => {}
                 Event::End(element) => {
                     if depth == 0 {
-                        // depth 0 End can only be the field's own </field>
+                        // depth 0 End can only be the field's own </field>.
+                        // Find where the closing tag starts (its '<' is the
+                        // last one before end_pos) so trailing whitespace in
+                        // </field  > cannot leak into the captured markup.
+                        let _ = element;
                         let end_pos = reader.buffer_position() as usize;
-                        let end_tag_len = element.name().as_ref().len() + 3; // </ + name + >
+                        let tag_start = source[..end_pos].rfind('<').unwrap_or(end_pos);
                         let raw = source
-                            .get(field_content_start..end_pos.saturating_sub(end_tag_len))
+                            .get(field_content_start..tag_start)
                             .unwrap_or("")
                             .trim()
                             .to_string();
-                        let pending = field.take().expect("markup implies an open field");
+                        let pending = field.take().ok_or_else(|| {
+                            xml_err("field", "markup close without an open field")
+                        })?;
                         let current = record
                             .as_mut()
                             .ok_or_else(|| xml_err("field", "markup field outside a record"))?;

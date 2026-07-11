@@ -418,3 +418,17 @@ fn field_markup_captured_as_text() {
     assert!(arch.contains(r#"<field name="partner_id"/>"#));
     assert!(arch.ends_with("</form>"));
 }
+
+#[test]
+fn markup_close_tag_with_whitespace() {
+    // </field > (legal XML) must not leak a stray '<' into the markup
+    let src = "<odoo><record id=\"v\" model=\"ir.ui.view\">\
+        <field name=\"arch\" type=\"xml\"><form><b/></form></field ></record></odoo>";
+
+    let record = &parse_xml_data(src).unwrap()[0];
+
+    match &record.fields[0].1 {
+        FieldValue::Text(t) => assert_eq!(t, "<form><b/></form>"),
+        other => panic!("expected clean markup, got {other:?}"),
+    }
+}

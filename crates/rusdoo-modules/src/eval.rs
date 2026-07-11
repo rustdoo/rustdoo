@@ -24,6 +24,8 @@ impl<F: Fn(&str) -> Option<i64>> RefResolver for F {
 /// stack on hostile input.
 const MAX_DEPTH: usize = 100;
 
+/// Evaluate an `eval="..."` expression: python literals plus `ref('id')`
+/// (resolved via `refs`) and `Command.<method>(...)` x2many tuples.
 pub fn eval_expr(src: &str, refs: &dyn RefResolver) -> Result<Value, RusdooError> {
     let mut parser = Parser {
         chars: src.chars().collect(),
@@ -254,26 +256,55 @@ impl Parser<'_> {
 /// Translate a `Command.<method>(args)` call into Odoo's `(code, id, values)`
 /// tuple (`odoo/orm/commands.py`).
 fn command(method: &str, args: Vec<Value>) -> Result<Value, String> {
-    let first = |args: &[Value]| args.first().cloned().unwrap_or(Value::from(0));
+    // arity is checked so a typo like `Command.link()` errors instead of
+    // silently producing a link to record 0
+    let arity = |n: usize| -> Result<(), String> {
+        if args.len() == n {
+            Ok(())
+        } else {
+            Err(format!(
+                "Command.{method} takes {n} argument(s), got {}",
+                args.len()
+            ))
+        }
+    };
+    let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::from(0));
     Ok(match method {
         // create(values) -> (0, 0, values)
-        "create" => triple(0, Value::from(0), first(&args)),
+        "create" => {
+            arity(1)?;
+            triple(0, Value::from(0), arg(0))
+        }
         // update(id, values) -> (1, id, values)
-        "update" => triple(
-            1,
-            args.first().cloned().unwrap_or(Value::from(0)),
-            args.get(1).cloned().unwrap_or(Value::from(0)),
-        ),
+        "update" => {
+            arity(2)?;
+            triple(1, arg(0), arg(1))
+        }
         // delete(id) -> (2, id, 0)
-        "delete" => triple(2, first(&args), Value::from(0)),
+        "delete" => {
+            arity(1)?;
+            triple(2, arg(0), Value::from(0))
+        }
         // unlink(id) -> (3, id, 0)
-        "unlink" => triple(3, first(&args), Value::from(0)),
+        "unlink" => {
+            arity(1)?;
+            triple(3, arg(0), Value::from(0))
+        }
         // link(id) -> (4, id, 0)
-        "link" => triple(4, first(&args), Value::from(0)),
+        "link" => {
+            arity(1)?;
+            triple(4, arg(0), Value::from(0))
+        }
         // clear() -> (5, 0, 0)
-        "clear" => triple(5, Value::from(0), Value::from(0)),
+        "clear" => {
+            arity(0)?;
+            triple(5, Value::from(0), Value::from(0))
+        }
         // set(ids) -> (6, 0, ids)
-        "set" => triple(6, Value::from(0), first(&args)),
+        "set" => {
+            arity(1)?;
+            triple(6, Value::from(0), arg(0))
+        }
         other => return Err(format!("unsupported Command.{other}")),
     })
 }
