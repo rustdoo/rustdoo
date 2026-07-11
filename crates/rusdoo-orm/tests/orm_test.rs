@@ -300,21 +300,22 @@ fn insert_sql_returns_new_id() {
     let model = partner_model();
 
     let (sql, params) = model
-        .insert_sql(vec![("name", json!("Gemini")), ("color", json!(7))])
+        .insert_sql(1, vec![("name", json!("Gemini")), ("color", json!(7))])
         .unwrap();
 
     assert_eq!(
         sql,
-        r#"INSERT INTO "res_partner" ("name", "color", "create_date", "write_date") VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING "id""#
+        r#"INSERT INTO "res_partner" ("name", "color", "create_uid", "write_uid", "create_date", "write_date") VALUES ($1, $2, $3, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING "id""#
     );
-    assert_eq!(params.len(), 2);
+    // name, color, uid (create_uid and write_uid reuse the same bind)
+    assert_eq!(params.len(), 3);
 }
 
 #[test]
 fn insert_sql_rejects_unknown_field() {
     let model = partner_model();
 
-    assert!(model.insert_sql(vec![("nope", json!(1))]).is_err());
+    assert!(model.insert_sql(1, vec![("nope", json!(1))]).is_err());
 }
 
 #[test]
@@ -322,14 +323,15 @@ fn update_sql_sets_columns_for_ids() {
     let model = partner_model();
 
     let (sql, params) = model
-        .update_sql(&[4, 5], vec![("name", json!("X"))])
+        .update_sql(9, &[4, 5], vec![("name", json!("X"))])
         .unwrap();
 
     assert_eq!(
         sql,
-        r#"UPDATE "res_partner" SET "name" = $1, "write_date" = CURRENT_TIMESTAMP WHERE "id" IN ($2, $3)"#
+        r#"UPDATE "res_partner" SET "name" = $1, "write_uid" = $2, "write_date" = CURRENT_TIMESTAMP WHERE "id" IN ($3, $4)"#
     );
-    assert_eq!(params.len(), 3);
+    // name, write_uid, and the two ids
+    assert_eq!(params.len(), 4);
 }
 
 #[test]

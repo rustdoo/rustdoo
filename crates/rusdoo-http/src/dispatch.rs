@@ -407,6 +407,7 @@ impl OrmService {
     /// Dispatch an ORM method call, Odoo's `call_kw`.
     pub async fn call_kw(
         &self,
+        uid: i64,
         model: &str,
         method: &str,
         args: &[Value],
@@ -460,7 +461,10 @@ impl OrmService {
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
-                let id = self.registry.create(&self.pool, model, pairs).await?;
+                let id = self
+                    .registry
+                    .create_as(&self.pool, uid, model, pairs)
+                    .await?;
                 Ok(json!(id))
             }
             "write" => {
@@ -470,7 +474,9 @@ impl OrmService {
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
-                self.registry.write(&self.pool, model, &ids, pairs).await?;
+                self.registry
+                    .write_as(&self.pool, uid, model, &ids, pairs)
+                    .await?;
                 Ok(json!(true))
             }
             "unlink" => {

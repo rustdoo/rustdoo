@@ -1023,3 +1023,71 @@ async fn many2one_reads_as_id_and_name() {
         .unwrap();
     assert_eq!(rows[0]["company_id"], serde_json::Value::Null);
 }
+
+/// Odoo stamps `create_uid`/`write_uid` with the acting user on every
+/// create/write (LOG_ACCESS). The columns aren't exposed as ORM fields
+/// yet, so we assert them straight from the row.
+#[tokio::test]
+async fn create_and_write_stamp_the_acting_user() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.audit".into(),
+            table: "rusdoo_test_audit".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None }).required()],
+    ))
+    .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_audit""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.audit")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    // create as user 7: both create_uid and write_uid start as 7
+    let id = reg
+        .create_as(&pool, 7, "rusdoo.test.audit", vec![("name", json!("row"))])
+        .await
+        .unwrap();
+    let (cuid, wuid): (Option<i32>, Option<i32>) = sqlx::query_as(
+        r#"SELECT "create_uid", "write_uid" FROM "rusdoo_test_audit" WHERE "id" = $1"#,
+    )
+    .bind(id as i32)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(cuid, Some(7), "create_uid should record the creator");
+    assert_eq!(wuid, Some(7), "write_uid on create should equal create_uid");
+
+    // write as user 9: create_uid is preserved, write_uid moves to 9
+    reg.write_as(
+        &pool,
+        9,
+        "rusdoo.test.audit",
+        &[id],
+        vec![("name", json!("edited"))],
+    )
+    .await
+    .unwrap();
+    let (cuid, wuid): (Option<i32>, Option<i32>) = sqlx::query_as(
+        r#"SELECT "create_uid", "write_uid" FROM "rusdoo_test_audit" WHERE "id" = $1"#,
+    )
+    .bind(id as i32)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(cuid, Some(7), "create_uid must not change on write");
+    assert_eq!(wuid, Some(9), "write_uid should record the last writer");
+}

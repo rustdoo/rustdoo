@@ -114,7 +114,12 @@ async fn call_kw(
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
-    let outcome = service.call_kw(model, method, &args, &kwargs).await;
+    // attribute writes to the session user; unauthenticated tooling acts as superuser
+    let uid = session
+        .as_ref()
+        .map(|s| s.uid)
+        .unwrap_or(crate::session::SUPERUSER_ID);
+    let outcome = service.call_kw(uid, model, method, &args, &kwargs).await;
     respond(request.id, outcome)
 }
 
@@ -195,7 +200,12 @@ async fn jsonrpc_endpoint(
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
-    let outcome = service.call_kw(model, method, &args, &kwargs).await;
+    // the verified uid (or superuser when auth is disabled) owns the write
+    let uid = call
+        .get(1)
+        .and_then(Value::as_i64)
+        .unwrap_or(crate::session::SUPERUSER_ID);
+    let outcome = service.call_kw(uid, model, method, &args, &kwargs).await;
     respond(request.id, outcome)
 }
 

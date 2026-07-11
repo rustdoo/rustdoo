@@ -73,15 +73,19 @@ impl Model {
 
     pub fn insert_sql(
         &self,
+        uid: i64,
         values: Vec<(&str, Value)>,
     ) -> Result<(String, Vec<Value>), RusdooError> {
         if values.is_empty() {
-            // delegation may create a parent row with no explicit values
+            // delegation may create a parent row with no explicit values;
+            // it still gets the full LOG_ACCESS stamp
+            let mut params = Vec::new();
+            let uid_ph = bind(&mut params, Value::from(uid));
             let sql = format!(
-                r#"INSERT INTO {} ("create_date", "write_date")                    VALUES (CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING "id""#,
+                r#"INSERT INTO {} ("create_uid", "write_uid", "create_date", "write_date")                    VALUES ({uid_ph}, {uid_ph}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING "id""#,
                 quote_ident(&self.meta.table)?
             );
-            return Ok((sql, Vec::new()));
+            return Ok((sql, params));
         }
         let mut columns = Vec::new();
         let mut params = Vec::new();
@@ -92,8 +96,13 @@ impl Model {
             placeholders.push(bind(&mut params, value));
         }
         // audit columns Odoo stamps on every create (LOG_ACCESS)
+        let uid_ph = bind(&mut params, Value::from(uid));
+        columns.push(r#""create_uid""#.to_string());
+        columns.push(r#""write_uid""#.to_string());
         columns.push(r#""create_date""#.to_string());
         columns.push(r#""write_date""#.to_string());
+        placeholders.push(uid_ph.clone());
+        placeholders.push(uid_ph);
         placeholders.push("CURRENT_TIMESTAMP".to_string());
         placeholders.push("CURRENT_TIMESTAMP".to_string());
         let sql = format!(
@@ -107,6 +116,7 @@ impl Model {
 
     pub fn update_sql(
         &self,
+        uid: i64,
         ids: &[i64],
         values: Vec<(&str, Value)>,
     ) -> Result<(String, Vec<Value>), RusdooError> {
@@ -122,7 +132,9 @@ impl Model {
             let placeholder = bind(&mut params, value);
             assignments.push(format!("{} = {placeholder}", quote_ident(name)?));
         }
-        // Odoo refreshes write_date on every write
+        // Odoo refreshes write_uid/write_date on every write
+        let uid_ph = bind(&mut params, Value::from(uid));
+        assignments.push(format!(r#""write_uid" = {uid_ph}"#));
         assignments.push(r#""write_date" = CURRENT_TIMESTAMP"#.to_string());
         let id_list = bind_ids(ids, &mut params)?;
         let sql = format!(

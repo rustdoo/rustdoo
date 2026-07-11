@@ -11,8 +11,9 @@ use rusdoo_core::RusdooError;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 
-/// Odoo's SUPERUSER_ID — bypasses access control.
-pub const SUPERUSER_ID: i64 = 1;
+/// Odoo's SUPERUSER_ID — bypasses access control. Canonical definition
+/// lives in `rusdoo-core`; re-exported here for the HTTP layer's callers.
+pub use rusdoo_core::SUPERUSER_ID;
 
 #[derive(Debug, Clone)]
 pub struct Session {

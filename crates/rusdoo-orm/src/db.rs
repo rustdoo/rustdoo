@@ -10,7 +10,7 @@ use crate::fields::{Field, FieldType};
 use crate::model::Model;
 use crate::registry::Registry;
 use crate::sql::{bind, quote_ident};
-use rusdoo_core::RusdooError;
+use rusdoo_core::{RusdooError, SUPERUSER_ID};
 use serde_json::{Map, Value};
 use sqlx::postgres::{PgArguments, PgPool, PgPoolOptions, PgRow};
 use sqlx::{PgConnection, Postgres, Row, Transaction};
@@ -109,15 +109,16 @@ impl Model {
         values: Vec<(&str, Value)>,
     ) -> Result<i64, RusdooError> {
         let mut conn = pool.acquire().await.map_err(db_err)?;
-        self.create_conn(&mut conn, values).await
+        self.create_conn(&mut conn, SUPERUSER_ID, values).await
     }
 
     pub(crate) async fn create_conn(
         &self,
         conn: &mut PgConnection,
+        uid: i64,
         values: Vec<(&str, Value)>,
     ) -> Result<i64, RusdooError> {
-        let (sql, params) = self.insert_sql(values)?;
+        let (sql, params) = self.insert_sql(uid, values)?;
         let row = build_query(&sql, &params)?
             .fetch_one(&mut *conn)
             .await
@@ -148,16 +149,17 @@ impl Model {
         values: Vec<(&str, Value)>,
     ) -> Result<u64, RusdooError> {
         let mut conn = pool.acquire().await.map_err(db_err)?;
-        self.write_conn(&mut conn, ids, values).await
+        self.write_conn(&mut conn, SUPERUSER_ID, ids, values).await
     }
 
     pub(crate) async fn write_conn(
         &self,
         conn: &mut PgConnection,
+        uid: i64,
         ids: &[i64],
         values: Vec<(&str, Value)>,
     ) -> Result<u64, RusdooError> {
-        let (sql, params) = self.update_sql(ids, values)?;
+        let (sql, params) = self.update_sql(uid, ids, values)?;
         let done = build_query(&sql, &params)?
             .execute(&mut *conn)
             .await
@@ -259,8 +261,20 @@ impl Registry {
         model_name: &str,
         values: Vec<(&str, Value)>,
     ) -> Result<i64, RusdooError> {
+        self.create_as(pool, SUPERUSER_ID, model_name, values).await
+    }
+
+    /// Create attributed to `uid`: the acting user is stamped on
+    /// `create_uid`/`write_uid` (LOG_ACCESS) down the whole delegation tree.
+    pub async fn create_as(
+        &self,
+        pool: &PgPool,
+        uid: i64,
+        model_name: &str,
+        values: Vec<(&str, Value)>,
+    ) -> Result<i64, RusdooError> {
         let mut tx = pool.begin().await.map_err(db_err)?;
-        let id = self.create_in(&mut tx, model_name, values).await?;
+        let id = self.create_in(&mut tx, uid, model_name, values).await?;
         tx.commit().await.map_err(db_err)?;
         Ok(id)
     }
@@ -268,6 +282,7 @@ impl Registry {
     fn create_in<'a>(
         &'a self,
         tx: &'a mut Transaction<'static, Postgres>,
+        uid: i64,
         model_name: &'a str,
         values: Vec<(&'a str, Value)>,
     ) -> Pin<Box<dyn Future<Output = Result<i64, RusdooError>> + Send + 'a>> {
@@ -277,7 +292,7 @@ impl Registry {
                 .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
             let (values, x2many) = self.split_x2many(model, values)?;
             if model.meta.inherits.is_empty() {
-                let id = model.create_conn(&mut *tx, values).await?;
+                let id = model.create_conn(&mut *tx, uid, values).await?;
                 self.apply_x2many_all(&mut *tx, &x2many, id).await?;
                 return Ok(id);
             }
@@ -316,15 +331,17 @@ impl Registry {
                                 "link field {link:?} must hold an integer id"
                             ))
                         })?;
-                        self.write_in(&mut *tx, parent_name, &[parent_id], parent_values)
+                        self.write_in(&mut *tx, uid, parent_name, &[parent_id], parent_values)
                             .await?;
                     }
                     continue;
                 }
-                let parent_id = self.create_in(&mut *tx, parent_name, parent_values).await?;
+                let parent_id = self
+                    .create_in(&mut *tx, uid, parent_name, parent_values)
+                    .await?;
                 local.push((link.as_str(), Value::from(parent_id)));
             }
-            let id = model.create_conn(&mut *tx, local).await?;
+            let id = model.create_conn(&mut *tx, uid, local).await?;
             self.apply_x2many_all(&mut *tx, &x2many, id).await?;
             Ok(id)
         })
@@ -337,7 +354,7 @@ impl Registry {
         model_name: &str,
         values: Vec<(&str, Value)>,
     ) -> Result<i64, RusdooError> {
-        self.create_in(tx, model_name, values).await
+        self.create_in(tx, SUPERUSER_ID, model_name, values).await
     }
 
     /// Like [`Registry::write`], inside a caller-managed transaction.
@@ -348,7 +365,8 @@ impl Registry {
         ids: &[i64],
         values: Vec<(&str, Value)>,
     ) -> Result<(), RusdooError> {
-        self.write_in(tx, model_name, ids, values).await
+        self.write_in(tx, SUPERUSER_ID, model_name, ids, values)
+            .await
     }
 
     /// Read with `_inherits` delegation (LEFT JOINs on the link fields).
@@ -540,14 +558,29 @@ impl Registry {
         ids: &[i64],
         values: Vec<(&str, Value)>,
     ) -> Result<(), RusdooError> {
+        self.write_as(pool, SUPERUSER_ID, model_name, ids, values)
+            .await
+    }
+
+    /// Write attributed to `uid`: `write_uid`/`write_date` record the acting
+    /// user on the record and on any `_inherits` parent it touches.
+    pub async fn write_as(
+        &self,
+        pool: &PgPool,
+        uid: i64,
+        model_name: &str,
+        ids: &[i64],
+        values: Vec<(&str, Value)>,
+    ) -> Result<(), RusdooError> {
         let mut tx = pool.begin().await.map_err(db_err)?;
-        self.write_in(&mut tx, model_name, ids, values).await?;
+        self.write_in(&mut tx, uid, model_name, ids, values).await?;
         tx.commit().await.map_err(db_err)
     }
 
     async fn write_in(
         &self,
         tx: &mut Transaction<'static, Postgres>,
+        uid: i64,
         model_name: &str,
         ids: &[i64],
         values: Vec<(&str, Value)>,
@@ -607,6 +640,10 @@ impl Registry {
                 let placeholder = bind(&mut params, value);
                 assignments.push(format!("{} = {placeholder}", quote_ident(name)?));
             }
+            // stamp LOG_ACCESS on the delegated parent too, like a direct write
+            let uid_ph = bind(&mut params, Value::from(uid));
+            assignments.push(format!(r#""write_uid" = {uid_ph}"#));
+            assignments.push(r#""write_date" = CURRENT_TIMESTAMP"#.to_string());
             let id_list = bind_ids(ids, &mut params)?;
             // walk the link columns: child ids -> ... -> owner ids
             let mut target = format!(r#""id" IN ({id_list})"#);
@@ -635,7 +672,7 @@ impl Registry {
                 .map_err(db_err)?;
         }
         if !local.is_empty() {
-            model.write_conn(&mut *tx, ids, local).await?;
+            model.write_conn(&mut *tx, uid, ids, local).await?;
         }
         for (field, commands) in &x2many_local {
             for id in ids {
