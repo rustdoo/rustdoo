@@ -1281,6 +1281,8 @@ dependencies = [
 name = "rusdoo-qweb"
 version = "0.1.0"
 dependencies = [
+ "quick-xml",
+ "rusdoo-core",
  "serde",
  "serde_json",
  "thiserror",

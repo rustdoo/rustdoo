@@ -9,3 +9,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+quick-xml.workspace = true
+rusdoo-core = { path = "../rusdoo-core" }
+
+[dev-dependencies]
+serde_json.workspace = true
