@@ -78,7 +78,7 @@ impl Model {
         if values.is_empty() {
             // delegation may create a parent row with no explicit values
             let sql = format!(
-                r#"INSERT INTO {} DEFAULT VALUES RETURNING "id""#,
+                r#"INSERT INTO {} ("create_date", "write_date")                    VALUES (CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING "id""#,
                 quote_ident(&self.meta.table)?
             );
             return Ok((sql, Vec::new()));
@@ -91,6 +91,11 @@ impl Model {
             columns.push(quote_ident(name)?);
             placeholders.push(bind(&mut params, value));
         }
+        // audit columns Odoo stamps on every create (LOG_ACCESS)
+        columns.push(r#""create_date""#.to_string());
+        columns.push(r#""write_date""#.to_string());
+        placeholders.push("CURRENT_TIMESTAMP".to_string());
+        placeholders.push("CURRENT_TIMESTAMP".to_string());
         let sql = format!(
             r#"INSERT INTO {} ({}) VALUES ({}) RETURNING "id""#,
             quote_ident(&self.meta.table)?,
@@ -117,6 +122,8 @@ impl Model {
             let placeholder = bind(&mut params, value);
             assignments.push(format!("{} = {placeholder}", quote_ident(name)?));
         }
+        // Odoo refreshes write_date on every write
+        assignments.push(r#""write_date" = CURRENT_TIMESTAMP"#.to_string());
         let id_list = bind_ids(ids, &mut params)?;
         let sql = format!(
             r#"UPDATE {} SET {} WHERE "id" IN ({id_list})"#,

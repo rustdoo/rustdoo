@@ -305,7 +305,7 @@ fn insert_sql_returns_new_id() {
 
     assert_eq!(
         sql,
-        r#"INSERT INTO "res_partner" ("name", "color") VALUES ($1, $2) RETURNING "id""#
+        r#"INSERT INTO "res_partner" ("name", "color", "create_date", "write_date") VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING "id""#
     );
     assert_eq!(params.len(), 2);
 }
@@ -327,7 +327,7 @@ fn update_sql_sets_columns_for_ids() {
 
     assert_eq!(
         sql,
-        r#"UPDATE "res_partner" SET "name" = $1 WHERE "id" IN ($2, $3)"#
+        r#"UPDATE "res_partner" SET "name" = $1, "write_date" = CURRENT_TIMESTAMP WHERE "id" IN ($2, $3)"#
     );
     assert_eq!(params.len(), 3);
 }
