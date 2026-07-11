@@ -240,3 +240,65 @@ async fn ir_model_access_csv_loads_into_acl() {
         .is_err());
     assert!(acl.check("x_demo.doc", Operation::Write, &[], true).is_ok());
 }
+
+#[tokio::test]
+async fn command_link_loads_m2m_end_to_end() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.groups".into(),
+            table: "rusdoo_test_impl_groups".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "implied_ids",
+                FieldType::Many2many {
+                    comodel: "res.groups".into(),
+                    relation: "rusdoo_test_impl_rel".into(),
+                    column1: "gid".into(),
+                    column2: "hid".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    for t in ["rusdoo_test_impl_rel", "rusdoo_test_impl_groups"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    XmlIds::load(&pool).await.unwrap();
+    sqlx::query(r#"DELETE FROM "ir_model_data" WHERE "module" = 'demo_impl'"#)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let mut xml_ids = XmlIds::new();
+    install_modules(
+        &pool,
+        &mut reg,
+        &[Path::new("tests/fixtures/addons_impl")],
+        &mut xml_ids,
+    )
+    .await
+    .unwrap();
+
+    // the whole chain worked: eval Command.link(ref('group_a')) became a
+    // relation row linking group_b -> group_a
+    let a = xml_ids.get("demo_impl.group_a").unwrap().1;
+    let b = xml_ids.get("demo_impl.group_b").unwrap().1;
+    let rows = reg
+        .read(&pool, "res.groups", &[b], &["implied_ids"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["implied_ids"], json!([a]));
+}

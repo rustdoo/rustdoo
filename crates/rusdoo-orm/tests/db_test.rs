@@ -699,3 +699,136 @@ async fn x2many_read_returns_ids_live() {
     assert_eq!(groups, vec![g1, g2]);
     assert_eq!(rows[0]["post_ids"], json!([p1]));
 }
+
+#[tokio::test]
+async fn x2many_write_commands_live() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.tag2".into(),
+            table: "rusdoo_test_tag2".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.doc2".into(),
+            table: "rusdoo_test_doc2".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "tag_ids",
+                FieldType::Many2many {
+                    comodel: "rusdoo.test.tag2".into(),
+                    relation: "rusdoo_test_doc2_tag_rel".into(),
+                    column1: "doc_id".into(),
+                    column2: "tag_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    for t in [
+        "rusdoo_test_doc2_tag_rel",
+        "rusdoo_test_doc2",
+        "rusdoo_test_tag2",
+    ] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in ["rusdoo.test.tag2", "rusdoo.test.doc2"] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+    let a = reg
+        .get("rusdoo.test.tag2")
+        .unwrap()
+        .create(&pool, vec![("name", json!("a"))])
+        .await
+        .unwrap();
+    let b = reg
+        .get("rusdoo.test.tag2")
+        .unwrap()
+        .create(&pool, vec![("name", json!("b"))])
+        .await
+        .unwrap();
+    let c = reg
+        .get("rusdoo.test.tag2")
+        .unwrap()
+        .create(&pool, vec![("name", json!("c"))])
+        .await
+        .unwrap();
+
+    // create with Command.link tuples: [[4, a, 0], [4, b, 0]]
+    let doc = reg
+        .create(
+            &pool,
+            "rusdoo.test.doc2",
+            vec![
+                ("name", json!("doc")),
+                ("tag_ids", json!([[4, a, 0], [4, b, 0]])),
+            ],
+        )
+        .await
+        .unwrap();
+    let mut tags: Vec<i64> = reg
+        .read(&pool, "rusdoo.test.doc2", &[doc], &["tag_ids"])
+        .await
+        .unwrap()[0]["tag_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    tags.sort();
+    assert_eq!(tags, vec![a, b]);
+
+    // write set([c]) replaces the whole set
+    reg.write(
+        &pool,
+        "rusdoo.test.doc2",
+        &[doc],
+        vec![("tag_ids", json!([[6, 0, [c]]]))],
+    )
+    .await
+    .unwrap();
+    let tags: Vec<i64> = reg
+        .read(&pool, "rusdoo.test.doc2", &[doc], &["tag_ids"])
+        .await
+        .unwrap()[0]["tag_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    assert_eq!(tags, vec![c]);
+
+    // write unlink(c) empties it
+    reg.write(
+        &pool,
+        "rusdoo.test.doc2",
+        &[doc],
+        vec![("tag_ids", json!([[3, c, 0]]))],
+    )
+    .await
+    .unwrap();
+    let tags = reg
+        .read(&pool, "rusdoo.test.doc2", &[doc], &["tag_ids"])
+        .await
+        .unwrap()[0]["tag_ids"]
+        .clone();
+    assert_eq!(tags, json!([]));
+}

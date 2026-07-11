@@ -213,6 +213,12 @@ async fn fetch_ids(pool: &PgPool, sql: &str, params: &[Value]) -> Result<Vec<i64
 /// Hops of (link field, parent model) grouping delegated writes.
 type DelegationChain = Vec<(String, String)>;
 
+/// x2many fields split out of a create/write with their command tuples.
+type X2manyCommands = Vec<(Field, Vec<Value>)>;
+
+/// Result of splitting create/write values into scalar columns + x2many.
+type SplitValues<'a> = (Vec<(&'a str, Value)>, X2manyCommands);
+
 /// Decode one column into JSON according to its field type; unset -> Null.
 fn decode_field(row: &PgRow, name: &str, field: &Field) -> Result<Value, RusdooError> {
     let value = match &field.ty {
@@ -269,8 +275,11 @@ impl Registry {
             let model = self
                 .get(model_name)
                 .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
+            let (values, x2many) = self.split_x2many(model, values)?;
             if model.meta.inherits.is_empty() {
-                return model.create_conn(&mut *tx, values).await;
+                let id = model.create_conn(&mut *tx, values).await?;
+                self.apply_x2many_all(&mut *tx, &x2many, id).await?;
+                return Ok(id);
             }
             let mut local: Vec<(&str, Value)> = Vec::new();
             let mut per_parent: Vec<Vec<(&str, Value)>> =
@@ -315,7 +324,9 @@ impl Registry {
                 let parent_id = self.create_in(&mut *tx, parent_name, parent_values).await?;
                 local.push((link.as_str(), Value::from(parent_id)));
             }
-            model.create_conn(&mut *tx, local).await
+            let id = model.create_conn(&mut *tx, local).await?;
+            self.apply_x2many_all(&mut *tx, &x2many, id).await?;
+            Ok(id)
         })
     }
 
@@ -480,16 +491,24 @@ impl Registry {
             .get(model_name)
             .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
         let mut local: Vec<(&str, Value)> = Vec::new();
+        let mut x2many_local: Vec<(Field, Vec<Value>)> = Vec::new();
         let mut delegated: HashMap<DelegationChain, Vec<(&str, Value)>> = HashMap::new();
         for (name, value) in values {
-            if model.field(name).is_some() {
-                local.push((name, value));
-            } else if let Some(chain) = self.delegation_chain(model, name, 0) {
-                delegated.entry(chain).or_default().push((name, value));
-            } else {
-                return Err(RusdooError::Validation(format!(
-                    "unknown field on {model_name}: {name:?}"
-                )));
+            match model.field(name).map(|f| &f.ty) {
+                Some(FieldType::Many2many { .. } | FieldType::One2many { .. }) => {
+                    let field = model.field(name).expect("just matched").clone();
+                    x2many_local.push((field, parse_commands(&value)?));
+                }
+                Some(_) => local.push((name, value)),
+                None => {
+                    if let Some(chain) = self.delegation_chain(model, name, 0) {
+                        delegated.entry(chain).or_default().push((name, value));
+                    } else {
+                        return Err(RusdooError::Validation(format!(
+                            "unknown field on {model_name}: {name:?}"
+                        )));
+                    }
+                }
             }
         }
         // delegated first: the link subqueries must see the links as they
@@ -542,6 +561,229 @@ impl Registry {
         }
         if !local.is_empty() {
             model.write_conn(&mut *tx, ids, local).await?;
+        }
+        for (field, commands) in &x2many_local {
+            for id in ids {
+                self.apply_x2many(&mut *tx, field, *id, commands).await?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Normalize an x2many field value into a list of command tuples.
+/// Accepts `[[code, id, values], ...]` (commands) or `[id, id, ...]`
+/// (a bare id list, treated as `set`).
+fn parse_commands(value: &Value) -> Result<Vec<Value>, RusdooError> {
+    let arr = value.as_array().ok_or_else(|| {
+        RusdooError::Validation("x2many value must be a list of commands or ids".into())
+    })?;
+    if arr.iter().all(Value::is_array) {
+        Ok(arr.clone())
+    } else if arr.iter().all(|v| v.as_i64().is_some()) {
+        Ok(vec![Value::Array(vec![
+            Value::from(6),
+            Value::from(0),
+            Value::Array(arr.clone()),
+        ])])
+    } else {
+        Err(RusdooError::Validation(
+            "x2many value must be command tuples or a plain id list".into(),
+        ))
+    }
+}
+
+impl Registry {
+    fn split_x2many<'a>(
+        &self,
+        model: &Model,
+        values: Vec<(&'a str, Value)>,
+    ) -> Result<SplitValues<'a>, RusdooError> {
+        let mut scalars = Vec::new();
+        let mut x2many = Vec::new();
+        for (name, value) in values {
+            match model.field(name).map(|f| &f.ty) {
+                Some(FieldType::Many2many { .. } | FieldType::One2many { .. }) => {
+                    let field = model.field(name).expect("just matched").clone();
+                    x2many.push((field, parse_commands(&value)?));
+                }
+                _ => scalars.push((name, value)),
+            }
+        }
+        Ok((scalars, x2many))
+    }
+
+    async fn apply_x2many_all(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        x2many: &X2manyCommands,
+        owner: i64,
+    ) -> Result<(), RusdooError> {
+        for (field, commands) in x2many {
+            self.apply_x2many(tx, field, owner, commands).await?;
+        }
+        Ok(())
+    }
+
+    /// Apply x2many write commands (Odoo's `(code, id, values)` tuples) to
+    /// the relation table (many2many) or inverse column (one2many).
+    async fn apply_x2many(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        field: &Field,
+        owner: i64,
+        commands: &[Value],
+    ) -> Result<(), RusdooError> {
+        let want_id = |arr: &[Value]| -> Result<i64, RusdooError> {
+            arr.get(1)
+                .and_then(Value::as_i64)
+                .ok_or_else(|| RusdooError::Validation("x2many command needs a record id".into()))
+        };
+        for cmd in commands {
+            let arr = cmd
+                .as_array()
+                .ok_or_else(|| RusdooError::Validation("x2many command must be a tuple".into()))?;
+            let code = arr.first().and_then(Value::as_i64).ok_or_else(|| {
+                RusdooError::Validation("x2many command needs a numeric code".into())
+            })?;
+            match &field.ty {
+                FieldType::Many2many {
+                    relation,
+                    column1,
+                    column2,
+                    ..
+                } => {
+                    let rel = quote_ident(relation)?;
+                    let c1 = quote_ident(column1)?;
+                    let c2 = quote_ident(column2)?;
+                    let link_sql = format!(
+                        "INSERT INTO {rel} ({c1}, {c2}) VALUES ($1, $2) ON CONFLICT DO NOTHING"
+                    );
+                    match code {
+                        4 => {
+                            let rid = want_id(arr)?;
+                            sqlx::query(&link_sql)
+                                .bind(owner as i32)
+                                .bind(rid as i32)
+                                .execute(&mut **tx)
+                                .await
+                                .map_err(db_err)?;
+                        }
+                        3 => {
+                            let rid = want_id(arr)?;
+                            sqlx::query(&format!(
+                                "DELETE FROM {rel} WHERE {c1} = $1 AND {c2} = $2"
+                            ))
+                            .bind(owner as i32)
+                            .bind(rid as i32)
+                            .execute(&mut **tx)
+                            .await
+                            .map_err(db_err)?;
+                        }
+                        5 => {
+                            sqlx::query(&format!("DELETE FROM {rel} WHERE {c1} = $1"))
+                                .bind(owner as i32)
+                                .execute(&mut **tx)
+                                .await
+                                .map_err(db_err)?;
+                        }
+                        6 => {
+                            sqlx::query(&format!("DELETE FROM {rel} WHERE {c1} = $1"))
+                                .bind(owner as i32)
+                                .execute(&mut **tx)
+                                .await
+                                .map_err(db_err)?;
+                            for v in arr.get(2).and_then(Value::as_array).into_iter().flatten() {
+                                let rid = v.as_i64().ok_or_else(|| {
+                                    RusdooError::Validation("set() ids must be integers".into())
+                                })?;
+                                sqlx::query(&link_sql)
+                                    .bind(owner as i32)
+                                    .bind(rid as i32)
+                                    .execute(&mut **tx)
+                                    .await
+                                    .map_err(db_err)?;
+                            }
+                        }
+                        other => {
+                            return Err(RusdooError::Validation(format!(
+                                "many2many command {other} not yet supported"
+                            )))
+                        }
+                    }
+                }
+                FieldType::One2many { comodel, inverse } => {
+                    let co = self.get(comodel).ok_or_else(|| {
+                        RusdooError::Validation(format!("comodel not registered: {comodel}"))
+                    })?;
+                    let table = quote_ident(&co.meta.table)?;
+                    let inv = quote_ident(inverse)?;
+                    match code {
+                        4 => {
+                            let rid = want_id(arr)?;
+                            sqlx::query(&format!(
+                                r#"UPDATE {table} SET {inv} = $1 WHERE "id" = $2"#
+                            ))
+                            .bind(owner as i32)
+                            .bind(rid as i32)
+                            .execute(&mut **tx)
+                            .await
+                            .map_err(db_err)?;
+                        }
+                        3 => {
+                            let rid = want_id(arr)?;
+                            sqlx::query(&format!(
+                                r#"UPDATE {table} SET {inv} = NULL WHERE "id" = $1"#
+                            ))
+                            .bind(rid as i32)
+                            .execute(&mut **tx)
+                            .await
+                            .map_err(db_err)?;
+                        }
+                        5 => {
+                            sqlx::query(&format!(
+                                "UPDATE {table} SET {inv} = NULL WHERE {inv} = $1"
+                            ))
+                            .bind(owner as i32)
+                            .execute(&mut **tx)
+                            .await
+                            .map_err(db_err)?;
+                        }
+                        6 => {
+                            sqlx::query(&format!(
+                                "UPDATE {table} SET {inv} = NULL WHERE {inv} = $1"
+                            ))
+                            .bind(owner as i32)
+                            .execute(&mut **tx)
+                            .await
+                            .map_err(db_err)?;
+                            for v in arr.get(2).and_then(Value::as_array).into_iter().flatten() {
+                                let rid = v.as_i64().ok_or_else(|| {
+                                    RusdooError::Validation("set() ids must be integers".into())
+                                })?;
+                                sqlx::query(&format!(
+                                    r#"UPDATE {table} SET {inv} = $1 WHERE "id" = $2"#
+                                ))
+                                .bind(owner as i32)
+                                .bind(rid as i32)
+                                .execute(&mut **tx)
+                                .await
+                                .map_err(db_err)?;
+                            }
+                        }
+                        other => {
+                            return Err(RusdooError::Validation(format!(
+                                "one2many command {other} not yet supported"
+                            )))
+                        }
+                    }
+                }
+                other => {
+                    return Err(RusdooError::Validation(format!(
+                        "apply_x2many on non-x2many field type {other:?}"
+                    )))
+                }
+            }
         }
         Ok(())
     }
