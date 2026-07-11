@@ -832,3 +832,104 @@ async fn x2many_write_commands_live() {
         .clone();
     assert_eq!(tags, json!([]));
 }
+
+#[tokio::test]
+async fn o2m_unlink_is_scoped_to_owner() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.node2".into(),
+            table: "rusdoo_test_node2".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "parent_id",
+                FieldType::Many2one {
+                    comodel: "rusdoo.test.node2".into(),
+                },
+            ),
+            Field::new(
+                "child_ids",
+                FieldType::One2many {
+                    comodel: "rusdoo.test.node2".into(),
+                    inverse: "parent_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_node2""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.node2")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    let p1 = reg
+        .create(&pool, "rusdoo.test.node2", vec![("name", json!("p1"))])
+        .await
+        .unwrap();
+    let p2 = reg
+        .create(&pool, "rusdoo.test.node2", vec![("name", json!("p2"))])
+        .await
+        .unwrap();
+    // c belongs to p2
+    let c = reg
+        .create(
+            &pool,
+            "rusdoo.test.node2",
+            vec![("name", json!("c")), ("parent_id", json!(p2))],
+        )
+        .await
+        .unwrap();
+
+    // p1 tries to unlink c (which it does NOT own) — must be a no-op
+    reg.write(
+        &pool,
+        "rusdoo.test.node2",
+        &[p1],
+        vec![("child_ids", json!([[3, c, 0]]))],
+    )
+    .await
+    .unwrap();
+
+    // c is still linked to p2 (not severed)
+    let rows = reg
+        .read(&pool, "rusdoo.test.node2", &[c], &["parent_id"])
+        .await
+        .unwrap();
+    assert_eq!(
+        rows[0]["parent_id"],
+        json!(p2),
+        "cross-owner unlink must not touch c"
+    );
+
+    // a bare command tuple (missing outer list) is rejected, not applied
+    let err = reg
+        .write(
+            &pool,
+            "rusdoo.test.node2",
+            &[p2],
+            vec![("child_ids", json!([3, c, 0]))],
+        )
+        .await;
+    assert!(err.is_err(), "bare command tuple must be rejected");
+    // and c is STILL linked to p2 (the rejected write changed nothing)
+    let rows = reg
+        .read(&pool, "rusdoo.test.node2", &[c], &["parent_id"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["parent_id"], json!(p2));
+}

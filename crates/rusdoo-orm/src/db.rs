@@ -523,6 +523,16 @@ impl Registry {
             for (name, value) in chain_values {
                 match owner.field(name) {
                     Some(field) if field.stored => {}
+                    Some(field)
+                        if matches!(
+                            field.ty,
+                            FieldType::Many2many { .. } | FieldType::One2many { .. }
+                        ) =>
+                    {
+                        return Err(RusdooError::Validation(format!(
+                            "writing x2many field {name:?} through _inherits delegation                              is not yet supported"
+                        )))
+                    }
                     _ => {
                         return Err(RusdooError::Validation(format!(
                             "field is not stored: {name:?}"
@@ -581,6 +591,15 @@ fn parse_commands(value: &Value) -> Result<Vec<Value>, RusdooError> {
     if arr.iter().all(Value::is_array) {
         Ok(arr.clone())
     } else if arr.iter().all(|v| v.as_i64().is_some()) {
+        // reject a bare command tuple (e.g. [4, id, 0]) that lost its
+        // outer list: silently reading it as set([...]) would wipe links
+        let looks_like_bare_command = arr.len() == 3 && matches!(arr[0].as_i64(), Some(0..=6));
+        if looks_like_bare_command {
+            return Err(RusdooError::Validation(
+                "x2many value looks like a bare command tuple; wrap it in a list,                  e.g. [[4, id, 0]] not [4, id, 0]"
+                    .into(),
+            ));
+        }
         Ok(vec![Value::Array(vec![
             Value::from(6),
             Value::from(0),
@@ -732,10 +751,13 @@ impl Registry {
                         }
                         3 => {
                             let rid = want_id(arr)?;
+                            // scope to this owner: never sever another
+                            // record's link (a cross-record corruption)
                             sqlx::query(&format!(
-                                r#"UPDATE {table} SET {inv} = NULL WHERE "id" = $1"#
+                                r#"UPDATE {table} SET {inv} = NULL WHERE "id" = $1 AND {inv} = $2"#
                             ))
                             .bind(rid as i32)
+                            .bind(owner as i32)
                             .execute(&mut **tx)
                             .await
                             .map_err(db_err)?;
