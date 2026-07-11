@@ -24,6 +24,7 @@ pub fn router(service: OrmService) -> Router {
         .route("/web/dataset/call_kw", post(call_kw))
         .route("/web/session/authenticate", post(authenticate))
         .route("/web/session/destroy", post(destroy))
+        .route("/web", get(web_index))
         .route("/web/view/{xml_id}", get(render_view_page))
         .route("/jsonrpc", post(jsonrpc_endpoint))
         .with_state(service)
@@ -333,6 +334,55 @@ async fn render_view_page(
             (
                 axum::http::StatusCode::BAD_REQUEST,
                 Html("<h1>erro</h1><p>não foi possível renderizar a view</p>".to_string()),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Minimal HTML escaping for text interpolated into pages.
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// `GET /web` — a navigable index of the stored views.
+async fn web_index(State(service): State<OrmService>, headers: HeaderMap) -> Response {
+    let session = current_session(&service, &headers);
+    if service.require_auth && session.is_none() {
+        return (
+            axum::http::StatusCode::UNAUTHORIZED,
+            Html("<h1>401</h1><p>faça login em /web/session/authenticate</p>".to_string()),
+        )
+            .into_response();
+    }
+    match service.list_views(session.as_ref()).await {
+        Ok(views) => {
+            let mut body = String::from(
+                "<!doctype html><meta charset=\"utf-8\"><title>rusdoo</title>\
+                 <div style=\"font-family:system-ui;max-width:640px;margin:3rem auto\">\
+                 <h1>&#129408; rusdoo</h1><p>Views disponíveis:</p><ul>",
+            );
+            if views.is_empty() {
+                body.push_str("<li>nenhuma view instalada (rode --init sobre um addon)</li>");
+            }
+            for (xml_id, name) in views {
+                body.push_str(&format!(
+                    "<li><a href=\"/web/view/{}\">{}</a></li>",
+                    html_escape(&xml_id),
+                    html_escape(&name)
+                ));
+            }
+            body.push_str("</ul></div>");
+            Html(body).into_response()
+        }
+        Err(err) => {
+            tracing::warn!("web_index failed: {}", err.message);
+            (
+                axum::http::StatusCode::BAD_REQUEST,
+                Html("<h1>erro</h1><p>não foi possível listar as views</p>".to_string()),
             )
                 .into_response()
         }

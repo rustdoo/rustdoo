@@ -110,6 +110,50 @@ impl OrmService {
             })
     }
 
+    /// List every `ir.ui.view` as (external id, display name), for a
+    /// navigable index page. ACL-checked when a session is present.
+    pub(crate) async fn list_views(
+        &self,
+        session: Option<&crate::session::Session>,
+    ) -> Result<Vec<(String, String)>, RpcError> {
+        if let Some(s) = session {
+            self.check_access("ir.ui.view", "read", s)?;
+        }
+        let rows: Vec<(String, String, i32)> = sqlx::query_as(
+            r#"SELECT "module", "name", "res_id" FROM "ir_model_data"
+               WHERE "model" = 'ir.ui.view' ORDER BY "module", "name""#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: e.to_string(),
+        })?;
+        let ids: Vec<i64> = rows.iter().map(|(_, _, r)| i64::from(*r)).collect();
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let recs = self
+            .registry
+            .read(&self.pool, "ir.ui.view", &ids, &["name"])
+            .await?;
+        let name_by_id: HashMap<i64, String> = recs
+            .iter()
+            .filter_map(|r| Some((r.get("id")?.as_i64()?, r.get("name")?.as_str()?.to_string())))
+            .collect();
+        Ok(rows
+            .into_iter()
+            .map(|(m, n, rid)| {
+                let xml_id = format!("{m}.{n}");
+                let name = name_by_id
+                    .get(&i64::from(rid))
+                    .cloned()
+                    .unwrap_or_else(|| xml_id.clone());
+                (xml_id, name)
+            })
+            .collect())
+    }
+
     /// Render an `ir.ui.view` (resolved by external id) to HTML: read the
     /// view's arch, gather its target model's records as the context, and
     /// run them through QWeb. The Rust side of an Odoo QWeb report/list.
