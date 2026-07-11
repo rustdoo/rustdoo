@@ -400,10 +400,13 @@ fn render_menu(items: &[crate::dispatch::MenuItem], out: &mut String) {
     out.push_str("<ul>");
     for item in items {
         out.push_str("<li>");
-        match &item.action {
+        // only a well-formed xml_id (module.name) becomes a link. Refusing
+        // anything else keeps the value a single, safe path segment: a `/`,
+        // `..`, `?` or `#` can never redirect the click outside /web/action/.
+        match item.action.as_deref().filter(|a| is_xml_id(a)) {
             Some(action) => out.push_str(&format!(
                 "<a href=\"/web/action/{}\">{}</a>",
-                html_escape(action),
+                action,
                 html_escape(&item.name)
             )),
             None => out.push_str(&html_escape(&item.name)),
@@ -414,6 +417,14 @@ fn render_menu(items: &[crate::dispatch::MenuItem], out: &mut String) {
         out.push_str("</li>");
     }
     out.push_str("</ul>");
+}
+
+/// A safe external id: `module.name` using only identifier characters, so
+/// it is a single URL path segment with no traversal or query injection.
+fn is_xml_id(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
 /// Minimal HTML escaping for text interpolated into pages.

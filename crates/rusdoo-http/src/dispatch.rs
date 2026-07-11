@@ -186,7 +186,8 @@ impl OrmService {
         let arch = view.get("arch").and_then(Value::as_str).unwrap_or("");
         let target = view.get("model").and_then(Value::as_str).unwrap_or("");
         let title = view.get("name").and_then(Value::as_str).unwrap_or("");
-        self.render_arch(arch, target, title, session).await
+        self.render_arch(arch, target, title, &Domain::True, session)
+            .await
     }
 
     /// Render a view arch against its target model's records: gather the
@@ -197,6 +198,7 @@ impl OrmService {
         arch: &str,
         target: &str,
         title: &str,
+        domain: &Domain,
         session: Option<&crate::session::Session>,
     ) -> Result<String, RpcError> {
         let mut ctx = Map::new();
@@ -223,7 +225,7 @@ impl OrmService {
             };
             let ids = self
                 .registry
-                .search(&self.pool, target, &Domain::True, &opts)
+                .search(&self.pool, target, domain, &opts)
                 .await?;
             let records = self.registry.read(&self.pool, target, &ids, &names).await?;
             ctx.insert("records".into(), json!(records));
@@ -261,7 +263,7 @@ impl OrmService {
                 &self.pool,
                 "ir.actions.act_window",
                 &[res_id],
-                &["name", "res_model"],
+                &["name", "res_model", "domain"],
             )
             .await?;
         let action = actions.first().ok_or_else(|| RpcError {
@@ -273,7 +275,12 @@ impl OrmService {
             .get("res_model")
             .and_then(Value::as_str)
             .unwrap_or("");
-        // pick the first stored ir.ui.view for the action's model
+        // apply the action's domain: it scopes the rows a user may see, so
+        // ignoring it would over-expose data (a "My X" action relies on it)
+        let domain = parse_action_domain(action.get("domain").and_then(Value::as_str))?;
+        // pick a view for the model. NOTE: view_mode and view type/priority
+        // are not yet honored — we render the lowest-id view (deterministic
+        // but arbitrary between a list and a form). Tracked for follow-up.
         let view: Option<(String,)> = sqlx::query_as(
             r#"SELECT "arch" FROM "ir_ui_view" WHERE "model" = $1 ORDER BY "id" LIMIT 1"#,
         )
@@ -288,7 +295,8 @@ impl OrmService {
             code: crate::jsonrpc::SERVER_ERROR,
             message: format!("no view for model {res_model:?}"),
         })?;
-        self.render_arch(&arch, res_model, title, session).await
+        self.render_arch(&arch, res_model, title, &domain, session)
+            .await
     }
 
     /// Resolve an external id to its `res_id`, asserting the record's model.
@@ -331,10 +339,12 @@ impl OrmService {
         if let Some(s) = session {
             self.check_access("ir.ui.menu", "read", s)?;
         }
-        // (id, name, parent_id, sequence, action external id)
+        // (id, name, parent_id, sequence, action external id). NULLS LAST:
+        // an unset sequence sorts after explicit ones (Odoo defaults ~10),
+        // not to the front of its sibling group.
         let rows: Vec<MenuRow> = sqlx::query_as(
             r#"SELECT "id", "name", "parent_id", "sequence", "action"
-                   FROM "ir_ui_menu" ORDER BY "sequence" NULLS FIRST, "id""#,
+                   FROM "ir_ui_menu" ORDER BY "sequence" NULLS LAST, "id""#,
         )
         .fetch_all(&self.pool)
         .await
@@ -356,7 +366,52 @@ impl OrmService {
                 .or_default()
                 .push(item);
         }
-        Ok(build_menu_forest(None, &mut children, 0))
+        let forest = build_menu_forest(None, &mut children, 0);
+        // rows unreachable from a real root (orphaned parent_id or a parent
+        // cycle) are dropped — surface that rather than vanish silently
+        let dropped: usize = children.values().map(Vec::len).sum();
+        if dropped > 0 {
+            tracing::warn!("ir.ui.menu: {dropped} row(s) dropped (orphaned parent_id or cycle)");
+        }
+        // per-item visibility: a user only sees a menu whose action they may
+        // open (its target model is readable). Odoo uses ir.ui.menu.groups_id
+        // for this; until that field is modeled we gate on the action's
+        // target-model read ACL. No session (insecure tooling) => show all.
+        let Some(s) = session else {
+            return Ok(forest);
+        };
+        let mut actions = Vec::new();
+        collect_menu_actions(&forest, &mut actions);
+        let mut allowed: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for action in actions {
+            if let Some(model) = self.action_res_model(&action).await {
+                if self.check_access(&model, "read", s).is_ok() {
+                    allowed.insert(action);
+                }
+            }
+        }
+        Ok(prune_menu(forest, &allowed))
+    }
+
+    /// The target model of an `ir.actions.act_window` external id, or None
+    /// if it can't be resolved (used to gate menu visibility).
+    async fn action_res_model(&self, xml_id: &str) -> Option<String> {
+        let (module, name) = xml_id.split_once('.')?;
+        let res_id = self
+            .resolve_external_id(module, name, "ir.actions.act_window")
+            .await
+            .ok()?;
+        let recs = self
+            .registry
+            .read(
+                &self.pool,
+                "ir.actions.act_window",
+                &[res_id],
+                &["res_model"],
+            )
+            .await
+            .ok()?;
+        recs.first()?.get("res_model")?.as_str().map(String::from)
     }
 
     /// Resolve the transitive closure of `t-call` targets referenced from
@@ -677,6 +732,23 @@ fn is_readable_scalar(ty: &FieldType) -> bool {
     )
 }
 
+/// Parse an `ir.actions.act_window.domain` into a [`Domain`]. An empty or
+/// `[]` domain means "everything". Only a JSON-encoded domain is supported;
+/// a non-empty Python-expression domain is REFUSED (error) rather than
+/// silently ignored — ignoring it would render the model unscoped and
+/// over-expose rows the action author meant to filter out.
+fn parse_action_domain(raw: Option<&str>) -> Result<Domain, RpcError> {
+    let trimmed = raw.unwrap_or("").trim();
+    if trimmed.is_empty() || trimmed == "[]" {
+        return Ok(Domain::True);
+    }
+    let value: Value = serde_json::from_str(trimmed).map_err(|_| RpcError {
+        code: SERVER_ERROR,
+        message: "action domain is not a JSON domain; refusing to render unscoped data".into(),
+    })?;
+    parse_domain(&value).map_err(RpcError::from)
+}
+
 /// A raw `ir.ui.menu` row: (id, name, parent_id, sequence, action xml_id).
 type MenuRow = (
     i32,
@@ -707,6 +779,9 @@ fn build_menu_forest(
     depth: usize,
 ) -> Vec<MenuItem> {
     if depth > MAX_MENU_DEPTH {
+        // a legitimately deep tree or a cycle guard trip — either way the
+        // subtree below is not rendered, so say so
+        tracing::warn!("ir.ui.menu: depth cap {MAX_MENU_DEPTH} reached, subtree truncated");
         return Vec::new();
     }
     let Some(mut items) = by_parent.remove(&parent) else {
@@ -716,4 +791,32 @@ fn build_menu_forest(
         item.children = build_menu_forest(Some(item.id), by_parent, depth + 1);
     }
     items
+}
+
+/// Collect every action external id referenced anywhere in the forest.
+fn collect_menu_actions(items: &[MenuItem], out: &mut Vec<String>) {
+    for item in items {
+        if let Some(action) = &item.action {
+            out.push(action.clone());
+        }
+        collect_menu_actions(&item.children, out);
+    }
+}
+
+/// Drop menu items the user can't reach: a leaf survives only if its action
+/// is in `allowed`; a branch survives only if it keeps a visible child. A
+/// label-only item with no surviving child is pruned.
+fn prune_menu(items: Vec<MenuItem>, allowed: &std::collections::HashSet<String>) -> Vec<MenuItem> {
+    items
+        .into_iter()
+        .filter_map(|mut item| {
+            item.children = prune_menu(item.children, allowed);
+            let can_open = item.action.as_ref().is_some_and(|a| allowed.contains(a));
+            if can_open || !item.children.is_empty() {
+                Some(item)
+            } else {
+                None
+            }
+        })
+        .collect()
 }

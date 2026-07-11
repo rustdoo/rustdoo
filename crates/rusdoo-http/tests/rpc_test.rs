@@ -623,6 +623,7 @@ async fn action_and_menu_navigation_live() {
             vec![
                 Field::new("name", FieldType::Char { size: None }),
                 Field::new("res_model", FieldType::Char { size: None }).required(),
+                Field::new("domain", FieldType::Text),
             ],
         ),
         (
@@ -694,8 +695,12 @@ async fn action_and_menu_navigation_live() {
     .await
     .unwrap();
 
-    // seed: a partner, a listing view, an action, its external id, a menu
+    // seed: two partners, a listing view, an action scoped by a domain,
+    // its external id, a menu
     reg.create(&pool, "res.partner", vec![("name", json!("Alice"))])
+        .await
+        .unwrap();
+    reg.create(&pool, "res.partner", vec![("name", json!("Bob"))])
         .await
         .unwrap();
     reg.create(
@@ -719,6 +724,8 @@ async fn action_and_menu_navigation_live() {
             vec![
                 ("name", json!("Parceiros")),
                 ("res_model", json!("res.partner")),
+                // scope the action to Alice only
+                ("domain", json!(r#"[["name", "=", "Alice"]]"#)),
             ],
         )
         .await
@@ -745,12 +752,17 @@ async fn action_and_menu_navigation_live() {
 
     let service = OrmService::insecure(Arc::new(reg), pool);
 
-    // clicking the action renders the partner list
+    // clicking the action renders the partner list, scoped by the domain:
+    // Alice is shown, Bob (filtered out by the domain) is not
     let (status, html) = get_html(router(service.clone()), "/web/action/test.act_partners").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         html.contains("Alice"),
         "action page must render records: {html}"
+    );
+    assert!(
+        !html.contains("Bob"),
+        "action domain must scope the rows (Bob filtered out): {html}"
     );
 
     // /web shows the menu linking to that action
