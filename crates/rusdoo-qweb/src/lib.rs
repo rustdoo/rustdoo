@@ -15,8 +15,31 @@ use rusdoo_core::RusdooError;
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// Named templates available to `t-call`.
+/// Named templates available to `t-call` (raw source).
 pub type Templates = HashMap<String, String>;
+
+/// Templates parsed once for a render pass, so t-call never re-parses.
+type Compiled = HashMap<String, Vec<Node>>;
+
+/// The `t-call` targets referenced anywhere in a template — used by
+/// callers to resolve (and access-check) only the templates in use.
+pub fn t_call_refs(template: &str) -> Result<Vec<String>, RusdooError> {
+    let nodes = parse(template)?;
+    let mut refs = Vec::new();
+    collect_t_calls(&nodes, &mut refs);
+    Ok(refs)
+}
+
+fn collect_t_calls(nodes: &[Node], out: &mut Vec<String>) {
+    for node in nodes {
+        if let Node::Element(el) = node {
+            if let Some(name) = el.attr("t-call") {
+                out.push(name.to_string());
+            }
+            collect_t_calls(&el.children, out);
+        }
+    }
+}
 
 const MAX_RENDER_DEPTH: usize = 100;
 
@@ -53,9 +76,13 @@ pub fn render_with(
     context: &Value,
     templates: &Templates,
 ) -> Result<String, RusdooError> {
+    let mut compiled = Compiled::new();
+    for (name, source) in templates {
+        compiled.insert(name.clone(), parse(source)?);
+    }
     let nodes = parse(template)?;
     let mut out = String::new();
-    render_nodes(&nodes, context, &mut out, 0, templates)?;
+    render_nodes(&nodes, context, &mut out, 0, &compiled)?;
     Ok(out)
 }
 
@@ -133,7 +160,7 @@ fn render_nodes(
     ctx: &Value,
     out: &mut String,
     depth: usize,
-    templates: &Templates,
+    templates: &Compiled,
 ) -> Result<(), RusdooError> {
     if depth > MAX_RENDER_DEPTH {
         return Err(RusdooError::Validation(
@@ -173,7 +200,7 @@ fn render_element(
     ctx: &Value,
     out: &mut String,
     depth: usize,
-    templates: &Templates,
+    templates: &Compiled,
 ) -> Result<(), RusdooError> {
     if let Some(foreach) = el.attr("t-foreach") {
         let as_name = el
@@ -216,7 +243,7 @@ fn render_body(
     ctx: &Value,
     out: &mut String,
     depth: usize,
-    templates: &Templates,
+    templates: &Compiled,
 ) -> Result<(), RusdooError> {
     let transparent = el.tag == "t";
     if !transparent {
@@ -244,11 +271,10 @@ fn render_body(
     }
 
     if let Some(name) = el.attr("t-call") {
-        let sub = templates.get(name).ok_or_else(|| {
+        let nodes = templates.get(name).ok_or_else(|| {
             RusdooError::Validation(format!("qweb: unknown template {name:?} (t-call)"))
         })?;
-        let nodes = parse(sub)?;
-        render_nodes(&nodes, ctx, out, depth + 1, templates)?;
+        render_nodes(nodes, ctx, out, depth + 1, templates)?;
     } else if let Some(e) = el.attr("t-esc") {
         out.push_str(&escape_text(&value_to_string(&expr::eval(e, ctx)?)));
     } else if let Some(e) = el.attr("t-out") {

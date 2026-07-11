@@ -231,37 +231,66 @@ impl OrmService {
             let records = self.registry.read(&self.pool, target, &ids, &names).await?;
             ctx.insert("records".into(), json!(records));
         }
-        // preload every ir.ui.view so t-call can reference them by
-        // external id (e.g. t-call="module.other_view")
-        let view_ids: Vec<(String, String, i32)> = sqlx::query_as(
-            r#"SELECT "module", "name", "res_id" FROM "ir_model_data" WHERE "model" = 'ir.ui.view'"#,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| RpcError { code: crate::jsonrpc::SERVER_ERROR, message: e.to_string() })?;
-        let ids: Vec<i64> = view_ids.iter().map(|(_, _, r)| i64::from(*r)).collect();
-        let mut templates = rusdoo_qweb::Templates::new();
-        if !ids.is_empty() {
-            let rows = self
-                .registry
-                .read(&self.pool, "ir.ui.view", &ids, &["arch"])
-                .await?;
-            let arch_by_id: HashMap<i64, String> = rows
-                .iter()
-                .filter_map(|r| {
-                    Some((r.get("id")?.as_i64()?, r.get("arch")?.as_str()?.to_string()))
-                })
-                .collect();
-            for (m, n, rid) in &view_ids {
-                if let Some(a) = arch_by_id.get(&i64::from(*rid)) {
-                    templates.insert(format!("{m}.{n}"), a.clone());
-                }
-            }
-        }
+        // Load only the templates actually referenced by t-call (the
+        // transitive closure), and access-check each called view's own
+        // model — never preload every arch (leak + full-table read).
+        let templates = self.collect_templates(arch, session).await?;
         rusdoo_qweb::render_with(arch, &Value::Object(ctx), &templates).map_err(|e| RpcError {
             code: crate::jsonrpc::SERVER_ERROR,
             message: e.to_string(),
         })
+    }
+
+    /// Resolve the transitive closure of `t-call` targets referenced from
+    /// `arch`, reading each referenced view's arch only after checking the
+    /// caller may read that view's target model.
+    async fn collect_templates(
+        &self,
+        arch: &str,
+        session: Option<&crate::session::Session>,
+    ) -> Result<rusdoo_qweb::Templates, RpcError> {
+        let mut templates = rusdoo_qweb::Templates::new();
+        let mut queue = rusdoo_qweb::t_call_refs(arch).map_err(RpcError::from)?;
+        let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+        while let Some(name) = queue.pop() {
+            if !visited.insert(name.clone()) {
+                continue;
+            }
+            let Some((module, view_name)) = name.split_once('.') else {
+                continue; // malformed ref surfaces at render as unknown template
+            };
+            let row: Option<(i32,)> = sqlx::query_as(
+                r#"SELECT "res_id" FROM "ir_model_data"
+                   WHERE "module" = $1 AND "name" = $2 AND "model" = 'ir.ui.view'"#,
+            )
+            .bind(module)
+            .bind(view_name)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| RpcError { code: crate::jsonrpc::SERVER_ERROR, message: e.to_string() })?;
+            let Some((res_id,)) = row else {
+                continue;
+            };
+            let views = self
+                .registry
+                .read(&self.pool, "ir.ui.view", &[i64::from(res_id)], &["model", "arch"])
+                .await?;
+            let Some(view) = views.first() else {
+                continue;
+            };
+            let target = view.get("model").and_then(Value::as_str).unwrap_or("");
+            // a called view carrying a model requires read access to it;
+            // model-less layout templates are shareable
+            if let Some(s) = session {
+                if !target.is_empty() {
+                    self.check_access(target, "read", s)?;
+                }
+            }
+            let sub_arch = view.get("arch").and_then(Value::as_str).unwrap_or("").to_string();
+            queue.extend(rusdoo_qweb::t_call_refs(&sub_arch).map_err(RpcError::from)?);
+            templates.insert(name, sub_arch);
+        }
+        Ok(templates)
     }
 
     /// Resolve a user's `res.groups` ids from the `groups_id` m2m field,
