@@ -1091,3 +1091,189 @@ async fn create_and_write_stamp_the_acting_user() {
     assert_eq!(cuid, Some(7), "create_uid must not change on write");
     assert_eq!(wuid, Some(9), "write_uid should record the last writer");
 }
+
+/// Linking a child through a one2many command writes the child's inverse
+/// FK, so the child's write_uid/write_date must record the acting user —
+/// the apply_x2many path bypasses write_conn, so this needs its own probe.
+#[tokio::test]
+async fn one2many_link_stamps_the_child_writer() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.o2m_audit".into(),
+            table: "rusdoo_test_o2m_audit".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "parent_id",
+                FieldType::Many2one {
+                    comodel: "rusdoo.test.o2m_audit".into(),
+                },
+            ),
+            Field::new(
+                "child_ids",
+                FieldType::One2many {
+                    comodel: "rusdoo.test.o2m_audit".into(),
+                    inverse: "parent_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_o2m_audit""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.o2m_audit")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    // parent and child both created by user 3
+    let parent = reg
+        .create_as(
+            &pool,
+            3,
+            "rusdoo.test.o2m_audit",
+            vec![("name", json!("p"))],
+        )
+        .await
+        .unwrap();
+    let child = reg
+        .create_as(
+            &pool,
+            3,
+            "rusdoo.test.o2m_audit",
+            vec![("name", json!("c"))],
+        )
+        .await
+        .unwrap();
+
+    // user 8 links the child into the parent's one2many
+    reg.write_as(
+        &pool,
+        8,
+        "rusdoo.test.o2m_audit",
+        &[parent],
+        vec![("child_ids", json!([[4, child, 0]]))],
+    )
+    .await
+    .unwrap();
+
+    let (wuid,): (Option<i32>,) =
+        sqlx::query_as(r#"SELECT "write_uid" FROM "rusdoo_test_o2m_audit" WHERE "id" = $1"#)
+            .bind(child as i32)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(wuid, Some(8), "o2m link must stamp the child's write_uid");
+}
+
+/// A write to a delegated (`_inherits`) field updates the parent row via
+/// the inline delegated UPDATE; that path must stamp the parent's
+/// write_uid with the acting user too.
+#[tokio::test]
+async fn delegated_write_stamps_the_parent_writer() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.dperson".into(),
+            table: "rusdoo_test_dperson".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.daccount".into(),
+            table: "rusdoo_test_daccount".into(),
+            inherit: vec![],
+            inherits: vec![("rusdoo.test.dperson".into(), "person_id".into())],
+        },
+        vec![
+            Field::new("login", FieldType::Char { size: None }),
+            Field::new(
+                "person_id",
+                FieldType::Many2one {
+                    comodel: "rusdoo.test.dperson".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    for t in ["rusdoo_test_daccount", "rusdoo_test_dperson"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    reg.get("rusdoo.test.dperson")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.daccount")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    // create as user 3 (auto-creates the delegated person parent)
+    let acc = reg
+        .create_as(
+            &pool,
+            3,
+            "rusdoo.test.daccount",
+            vec![("login", json!("bob")), ("name", json!("Bob"))],
+        )
+        .await
+        .unwrap();
+    // the delegated parent id, to inspect its row directly
+    let (person_id,): (i32,) =
+        sqlx::query_as(r#"SELECT "person_id" FROM "rusdoo_test_daccount" WHERE "id" = $1"#)
+            .bind(acc as i32)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    // user 8 writes the delegated field `name` (owned by the parent)
+    reg.write_as(
+        &pool,
+        8,
+        "rusdoo.test.daccount",
+        &[acc],
+        vec![("name", json!("Bob II"))],
+    )
+    .await
+    .unwrap();
+
+    let (wuid,): (Option<i32>,) =
+        sqlx::query_as(r#"SELECT "write_uid" FROM "rusdoo_test_dperson" WHERE "id" = $1"#)
+            .bind(person_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        wuid,
+        Some(8),
+        "delegated write must stamp the parent's write_uid"
+    );
+}

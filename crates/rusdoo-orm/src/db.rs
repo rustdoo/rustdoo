@@ -293,7 +293,7 @@ impl Registry {
             let (values, x2many) = self.split_x2many(model, values)?;
             if model.meta.inherits.is_empty() {
                 let id = model.create_conn(&mut *tx, uid, values).await?;
-                self.apply_x2many_all(&mut *tx, &x2many, id).await?;
+                self.apply_x2many_all(&mut *tx, uid, &x2many, id).await?;
                 return Ok(id);
             }
             let mut local: Vec<(&str, Value)> = Vec::new();
@@ -342,7 +342,7 @@ impl Registry {
                 local.push((link.as_str(), Value::from(parent_id)));
             }
             let id = model.create_conn(&mut *tx, uid, local).await?;
-            self.apply_x2many_all(&mut *tx, &x2many, id).await?;
+            self.apply_x2many_all(&mut *tx, uid, &x2many, id).await?;
             Ok(id)
         })
     }
@@ -676,7 +676,8 @@ impl Registry {
         }
         for (field, commands) in &x2many_local {
             for id in ids {
-                self.apply_x2many(&mut *tx, field, *id, commands).await?;
+                self.apply_x2many(&mut *tx, uid, field, *id, commands)
+                    .await?;
             }
         }
         Ok(())
@@ -737,20 +738,25 @@ impl Registry {
     async fn apply_x2many_all(
         &self,
         tx: &mut Transaction<'static, Postgres>,
+        uid: i64,
         x2many: &X2manyCommands,
         owner: i64,
     ) -> Result<(), RusdooError> {
         for (field, commands) in x2many {
-            self.apply_x2many(tx, field, owner, commands).await?;
+            self.apply_x2many(tx, uid, field, owner, commands).await?;
         }
         Ok(())
     }
 
     /// Apply x2many write commands (Odoo's `(code, id, values)` tuples) to
     /// the relation table (many2many) or inverse column (one2many).
+    /// A one2many reassignment writes the child row, so it stamps the
+    /// child's `write_uid`/`write_date` with `uid` (LOG_ACCESS), like a
+    /// direct write; many2many relation rows have no audit columns.
     async fn apply_x2many(
         &self,
         tx: &mut Transaction<'static, Postgres>,
+        uid: i64,
         field: &Field,
         owner: i64,
         commands: &[Value],
@@ -839,14 +845,18 @@ impl Registry {
                     })?;
                     let table = quote_ident(&co.meta.table)?;
                     let inv = quote_ident(inverse)?;
+                    // one2many reassignment writes the child row, so stamp
+                    // its LOG_ACCESS columns (uid bound as the last param)
                     match code {
                         4 => {
                             let rid = want_id(arr)?;
                             sqlx::query(&format!(
-                                r#"UPDATE {table} SET {inv} = $1 WHERE "id" = $2"#
+                                r#"UPDATE {table} SET {inv} = $1, "write_uid" = $3,
+                                   "write_date" = CURRENT_TIMESTAMP WHERE "id" = $2"#
                             ))
                             .bind(owner as i32)
                             .bind(rid as i32)
+                            .bind(uid as i32)
                             .execute(&mut **tx)
                             .await
                             .map_err(db_err)?;
@@ -856,28 +866,34 @@ impl Registry {
                             // scope to this owner: never sever another
                             // record's link (a cross-record corruption)
                             sqlx::query(&format!(
-                                r#"UPDATE {table} SET {inv} = NULL WHERE "id" = $1 AND {inv} = $2"#
+                                r#"UPDATE {table} SET {inv} = NULL, "write_uid" = $3,
+                                   "write_date" = CURRENT_TIMESTAMP WHERE "id" = $1 AND {inv} = $2"#
                             ))
                             .bind(rid as i32)
                             .bind(owner as i32)
+                            .bind(uid as i32)
                             .execute(&mut **tx)
                             .await
                             .map_err(db_err)?;
                         }
                         5 => {
                             sqlx::query(&format!(
-                                "UPDATE {table} SET {inv} = NULL WHERE {inv} = $1"
+                                r#"UPDATE {table} SET {inv} = NULL, "write_uid" = $2,
+                                   "write_date" = CURRENT_TIMESTAMP WHERE {inv} = $1"#
                             ))
                             .bind(owner as i32)
+                            .bind(uid as i32)
                             .execute(&mut **tx)
                             .await
                             .map_err(db_err)?;
                         }
                         6 => {
                             sqlx::query(&format!(
-                                "UPDATE {table} SET {inv} = NULL WHERE {inv} = $1"
+                                r#"UPDATE {table} SET {inv} = NULL, "write_uid" = $2,
+                                   "write_date" = CURRENT_TIMESTAMP WHERE {inv} = $1"#
                             ))
                             .bind(owner as i32)
+                            .bind(uid as i32)
                             .execute(&mut **tx)
                             .await
                             .map_err(db_err)?;
@@ -886,10 +902,12 @@ impl Registry {
                                     RusdooError::Validation("set() ids must be integers".into())
                                 })?;
                                 sqlx::query(&format!(
-                                    r#"UPDATE {table} SET {inv} = $1 WHERE "id" = $2"#
+                                    r#"UPDATE {table} SET {inv} = $1, "write_uid" = $3,
+                                       "write_date" = CURRENT_TIMESTAMP WHERE "id" = $2"#
                                 ))
                                 .bind(owner as i32)
                                 .bind(rid as i32)
+                                .bind(uid as i32)
                                 .execute(&mut **tx)
                                 .await
                                 .map_err(db_err)?;

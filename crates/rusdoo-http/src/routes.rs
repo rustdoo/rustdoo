@@ -119,8 +119,22 @@ async fn call_kw(
         .as_ref()
         .map(|s| s.uid)
         .unwrap_or(crate::session::SUPERUSER_ID);
+    warn_unverified_attribution(&service, uid);
     let outcome = service.call_kw(uid, model, method, &args, &kwargs).await;
     respond(request.id, outcome)
+}
+
+/// In insecure mode (`require_auth = false`) the acting uid is taken
+/// unverified from the caller, yet still stamped into create_uid/write_uid.
+/// Flag any non-superuser attribution so a misconfigured deployment can't
+/// silently forge an audit trail without a trace.
+fn warn_unverified_attribution(service: &OrmService, uid: i64) {
+    if !service.require_auth && uid != crate::session::SUPERUSER_ID {
+        tracing::warn!(
+            uid,
+            "insecure mode: stamping unverified user id into LOG_ACCESS audit columns"
+        );
+    }
 }
 
 /// `/jsonrpc` — classic RPC: `{service: "object", method: "execute_kw",
@@ -205,6 +219,7 @@ async fn jsonrpc_endpoint(
         .get(1)
         .and_then(Value::as_i64)
         .unwrap_or(crate::session::SUPERUSER_ID);
+    warn_unverified_attribution(&service, uid);
     let outcome = service.call_kw(uid, model, method, &args, &kwargs).await;
     respond(request.id, outcome)
 }
