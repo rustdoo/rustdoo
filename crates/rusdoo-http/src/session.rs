@@ -35,7 +35,7 @@ impl SessionStore {
         Self::default()
     }
 
-    pub fn open(&self, uid: i64, login: &str) -> String {
+    pub fn open(&self, uid: i64, login: &str, groups: Vec<i64>) -> String {
         let token = uuid::Uuid::new_v4().to_string();
         self.inner
             .write()
@@ -46,7 +46,7 @@ impl SessionStore {
                     uid,
                     login: to_owned_login(login),
                     is_superuser: uid == SUPERUSER_ID,
-                    groups: Vec::new(),
+                    groups,
                 },
             );
         token

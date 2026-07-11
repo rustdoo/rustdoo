@@ -348,12 +348,30 @@ impl Registry {
         ids: &[i64],
         fields: &[&str],
     ) -> Result<Vec<Map<String, Value>>, RusdooError> {
-        let (sql, params, resolved) = self.read_query(model_name, ids, fields)?;
+        let model = self
+            .get(model_name)
+            .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
+
+        // x2many fields have no column: split them out and fetch their
+        // ids from the relation table / inverse column separately
+        let mut scalar: Vec<&str> = Vec::new();
+        let mut x2many: Vec<&Field> = Vec::new();
+        for name in fields {
+            match model.field(name).map(|f| &f.ty) {
+                Some(FieldType::Many2many { .. } | FieldType::One2many { .. }) => {
+                    x2many.push(model.field(name).expect("just matched"));
+                }
+                _ => scalar.push(name),
+            }
+        }
+
+        let (sql, params, resolved) = self.read_query(model_name, ids, &scalar)?;
         let rows = build_query(&sql, &params)?
             .fetch_all(pool)
             .await
             .map_err(db_err)?;
-        rows.iter()
+        let mut records: Vec<Map<String, Value>> = rows
+            .iter()
             .map(|row| {
                 let mut record = Map::new();
                 record.insert("id".into(), Value::from(row_id(row)?));
@@ -365,7 +383,75 @@ impl Registry {
                 }
                 Ok(record)
             })
-            .collect()
+            .collect::<Result<_, RusdooError>>()?;
+
+        for field in x2many {
+            let related = self.read_x2many(pool, field, ids).await?;
+            for record in &mut records {
+                let owner = record["id"].as_i64().expect("id present");
+                let list = related.get(&owner).cloned().unwrap_or_default();
+                record.insert(field.name.clone(), Value::from(list));
+            }
+        }
+        Ok(records)
+    }
+
+    /// Fetch the related ids of an x2many field for each owner id:
+    /// through the relation table (many2many) or the inverse column
+    /// (one2many). Owners with no relations are simply absent from the map.
+    async fn read_x2many(
+        &self,
+        pool: &PgPool,
+        field: &Field,
+        ids: &[i64],
+    ) -> Result<HashMap<i64, Vec<i64>>, RusdooError> {
+        if ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let placeholders: Vec<String> = (1..=ids.len()).map(|n| format!("${n}")).collect();
+        let in_list = placeholders.join(", ");
+        let sql = match &field.ty {
+            FieldType::Many2many {
+                relation,
+                column1,
+                column2,
+                ..
+            } => format!(
+                r#"SELECT {}, {} FROM {} WHERE {} IN ({in_list})"#,
+                quote_ident(column1)?,
+                quote_ident(column2)?,
+                quote_ident(relation)?,
+                quote_ident(column1)?,
+            ),
+            FieldType::One2many { comodel, inverse } => {
+                let co = self.get(comodel).ok_or_else(|| {
+                    RusdooError::Validation(format!("comodel not registered: {comodel}"))
+                })?;
+                format!(
+                    r#"SELECT {}, "id" FROM {} WHERE {} IN ({in_list})"#,
+                    quote_ident(inverse)?,
+                    quote_ident(&co.meta.table)?,
+                    quote_ident(inverse)?,
+                )
+            }
+            other => {
+                return Err(RusdooError::Validation(format!(
+                    "read_x2many called on non-x2many field type {other:?}"
+                )))
+            }
+        };
+        let mut query = sqlx::query_as::<_, (i32, i32)>(&sql);
+        for id in ids {
+            query = query.bind(*id as i32);
+        }
+        let pairs = query.fetch_all(pool).await.map_err(db_err)?;
+        let mut map: HashMap<i64, Vec<i64>> = HashMap::new();
+        for (owner, related) in pairs {
+            map.entry(i64::from(owner))
+                .or_default()
+                .push(i64::from(related));
+        }
+        Ok(map)
     }
 
     /// Write with `_inherits` delegation, atomically. Delegated fields

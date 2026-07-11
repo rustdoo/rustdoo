@@ -79,7 +79,9 @@ impl OrmService {
     }
 
     /// Enforce `ir.model.access` for the operation implied by `method`.
-    /// Methods with no CRUD mapping (custom actions) are not gated here.
+    /// Fail-closed: a method with no CRUD mapping is denied for
+    /// non-superusers (a future custom-method dispatch must map it or be
+    /// explicitly allowlisted, never silently bypass the ACL).
     pub(crate) fn check_access(
         &self,
         model: &str,
@@ -87,7 +89,13 @@ impl OrmService {
         session: &crate::session::Session,
     ) -> Result<(), RpcError> {
         let Some(op) = rusdoo_orm::access::Operation::for_method(method) else {
-            return Ok(());
+            if session.is_superuser {
+                return Ok(());
+            }
+            return Err(RpcError {
+                code: crate::jsonrpc::SERVER_ERROR,
+                message: format!("method {method:?} is not permitted on {model}"),
+            });
         };
         self.access
             .check(model, op, &session.groups, session.is_superuser)
@@ -95,6 +103,44 @@ impl OrmService {
                 code: crate::jsonrpc::SERVER_ERROR,
                 message: e.to_string(),
             })
+    }
+
+    /// Resolve a user's `res.groups` ids from the `groups_id` m2m field,
+    /// when the res.users model defines it. Empty otherwise (superuser
+    /// bypass keeps admin usable until groups are modelled).
+    pub(crate) async fn resolve_groups(&self, uid: i64) -> Vec<i64> {
+        let has_groups = self
+            .registry
+            .get("res.users")
+            .and_then(|m| m.field("groups_id"))
+            .is_some();
+        if !has_groups {
+            return Vec::new();
+        }
+        self.registry
+            .read(&self.pool, "res.users", &[uid], &["groups_id"])
+            .await
+            .ok()
+            .and_then(|rows| {
+                rows.into_iter().next().map(|row| {
+                    row.get("groups_id")
+                        .and_then(|v| v.as_array())
+                        .map(|ids| ids.iter().filter_map(|v| v.as_i64()).collect())
+                        .unwrap_or_default()
+                })
+            })
+            .unwrap_or_default()
+    }
+
+    /// Build a transient access identity for the classic RPC path, which
+    /// verifies credentials per call instead of holding a cookie session.
+    pub(crate) async fn identity(&self, uid: i64) -> crate::session::Session {
+        crate::session::Session {
+            uid,
+            login: uid.to_string(),
+            is_superuser: uid == crate::session::SUPERUSER_ID,
+            groups: self.resolve_groups(uid).await,
+        }
     }
 
     /// No authentication — tests and trusted tooling only.

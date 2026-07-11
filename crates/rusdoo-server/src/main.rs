@@ -41,6 +41,12 @@ async fn main() -> anyhow::Result<()> {
     if std::env::var("RUSDOO_INSECURE_COOKIES").is_ok() {
         service = service.allow_insecure_cookies();
     }
+    // no ir.model.access data is loaded yet: only the superuser reaches
+    // restricted models — warn so this fail-closed state is visible
+    tracing::warn!(
+        "nenhuma regra ir.model.access carregada: apenas o superusuário (uid 1) \
+         acessa modelos; usuários comuns ficam bloqueados até as ACLs serem carregadas"
+    );
     tracing::info!("rusdoo listening on {DEFAULT_ADDR} (/jsonrpc, /web/dataset/call_kw)");
     rusdoo_http::serve(DEFAULT_ADDR, service).await?;
     Ok(())

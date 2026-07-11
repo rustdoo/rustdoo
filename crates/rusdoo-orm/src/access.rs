@@ -1,11 +1,14 @@
 //! Access control, port of `ir.model.access` (`odoo/addons/base/models/
 //! ir_model.py`): per-model CRUD permissions granted through groups.
 //!
-//! Semantics mirror `ir.model.access.check`:
+//! Semantics mirror `ir.model.access.check` and are **fail-closed**:
 //! - the superuser (uid 1) bypasses every check;
-//! - a model with no ACL rules at all is unrestricted;
-//! - once a model has any rule, an operation is allowed only if one of
-//!   the user's groups grants that operation.
+//! - every other user is denied an operation on a model unless one of
+//!   their groups explicitly grants it.
+//!
+//! An empty table therefore locks every model to the superuser — the
+//! same safe default as an Odoo install whose `ir.model.access.csv`
+//! rows have not been loaded, never the fail-open "open to everyone".
 
 use rusdoo_core::RusdooError;
 use std::collections::{HashMap, HashSet};
@@ -44,9 +47,6 @@ impl Operation {
 /// In-memory ACL table. Rules are `(model, operation) -> {group ids}`.
 #[derive(Debug, Default, Clone)]
 pub struct AccessControl {
-    /// models that have at least one rule (so absence means unrestricted)
-    restricted: HashSet<String>,
-    /// (model, op) -> groups granting it
     grants: HashMap<(String, Operation), HashSet<i64>>,
 }
 
@@ -55,11 +55,14 @@ impl AccessControl {
         Self::default()
     }
 
-    /// Grant `group_id` the given operations on `model`. Marks the model
-    /// as restricted, so every operation on it now needs an explicit
-    /// grant.
+    /// Whether any rule has been loaded at all (used to warn operators
+    /// that non-superusers are locked out until ACL data is present).
+    pub fn is_empty(&self) -> bool {
+        self.grants.is_empty()
+    }
+
+    /// Grant `group_id` the given operations on `model`.
     pub fn grant(&mut self, model: &str, group_id: i64, operations: &[Operation]) {
-        self.restricted.insert(model.to_string());
         for op in operations {
             self.grants
                 .entry((model.to_string(), *op))
@@ -69,6 +72,7 @@ impl AccessControl {
     }
 
     /// Check whether a user in `groups` may perform `op` on `model`.
+    /// Fail-closed: denied unless a group grants it (superuser bypasses).
     pub fn check(
         &self,
         model: &str,
@@ -76,7 +80,7 @@ impl AccessControl {
         groups: &[i64],
         is_superuser: bool,
     ) -> Result<(), RusdooError> {
-        if is_superuser || !self.restricted.contains(model) {
+        if is_superuser {
             return Ok(());
         }
         let allowed = self

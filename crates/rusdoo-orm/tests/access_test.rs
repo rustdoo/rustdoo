@@ -34,12 +34,14 @@ fn superuser_bypasses_all_checks() {
 }
 
 #[test]
-fn model_without_rules_is_unrestricted() {
+fn model_without_rules_denies_regular_users() {
     let ac = ac();
-    // res.company has no ACL entries at all
+    // fail-closed: a model with no rule is superuser-only (Odoo default)
     assert!(ac
         .check("res.company", Operation::Write, &[], false)
-        .is_ok());
+        .is_err());
+    // ...but the superuser still passes
+    assert!(ac.check("res.company", Operation::Write, &[], true).is_ok());
 }
 
 #[test]

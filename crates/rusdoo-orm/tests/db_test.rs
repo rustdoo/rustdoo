@@ -559,3 +559,143 @@ async fn inherits_delegation_live() {
         "account now reads through the new parent"
     );
 }
+
+#[tokio::test]
+async fn x2many_read_returns_ids_live() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.grp".into(),
+            table: "rusdoo_test_grp".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.usr".into(),
+            table: "rusdoo_test_usr".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "group_ids",
+                FieldType::Many2many {
+                    comodel: "rusdoo.test.grp".into(),
+                    relation: "rusdoo_test_usr_grp_rel".into(),
+                    column1: "usr_id".into(),
+                    column2: "grp_id".into(),
+                },
+            ),
+            Field::new(
+                "post_ids",
+                FieldType::One2many {
+                    comodel: "rusdoo.test.post".into(),
+                    inverse: "author_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.post".into(),
+            table: "rusdoo_test_post".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("title", FieldType::Char { size: None }),
+            Field::new(
+                "author_id",
+                FieldType::Many2one {
+                    comodel: "rusdoo.test.usr".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+
+    for t in [
+        "rusdoo_test_usr_grp_rel",
+        "rusdoo_test_post",
+        "rusdoo_test_usr",
+        "rusdoo_test_grp",
+    ] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in ["rusdoo.test.grp", "rusdoo.test.usr", "rusdoo.test.post"] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+
+    let g1 = reg
+        .get("rusdoo.test.grp")
+        .unwrap()
+        .create(&pool, vec![("name", json!("admins"))])
+        .await
+        .unwrap();
+    let g2 = reg
+        .get("rusdoo.test.grp")
+        .unwrap()
+        .create(&pool, vec![("name", json!("users"))])
+        .await
+        .unwrap();
+    let ana = reg
+        .get("rusdoo.test.usr")
+        .unwrap()
+        .create(&pool, vec![("name", json!("Ana"))])
+        .await
+        .unwrap();
+    // link ana to both groups via the relation table
+    for g in [g1, g2] {
+        sqlx::query(r#"INSERT INTO "rusdoo_test_usr_grp_rel" VALUES ($1, $2)"#)
+            .bind(ana)
+            .bind(g)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let p1 = reg
+        .get("rusdoo.test.post")
+        .unwrap()
+        .create(
+            &pool,
+            vec![("title", json!("Oi")), ("author_id", json!(ana))],
+        )
+        .await
+        .unwrap();
+
+    // read m2m + o2m: both come back as arrays of ids
+    let rows = reg
+        .read(
+            &pool,
+            "rusdoo.test.usr",
+            &[ana],
+            &["name", "group_ids", "post_ids"],
+        )
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["name"], json!("Ana"));
+    let mut groups: Vec<i64> = rows[0]["group_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    groups.sort();
+    assert_eq!(groups, vec![g1, g2]);
+    assert_eq!(rows[0]["post_ids"], json!([p1]));
+}

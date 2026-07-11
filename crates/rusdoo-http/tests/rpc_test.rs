@@ -541,7 +541,7 @@ async fn access_control_enforced_live() {
     .await;
     let admin = cookie.unwrap().split(';').next().unwrap().to_string();
     let (_, resp, _) = rpc_full(
-        router(service),
+        router(service.clone()),
         "/web/dataset/call_kw",
         json!({"jsonrpc":"2.0","id":4,"method":"call","params":{
             "model":"res.users","method":"search","args":[[]],"kwargs":{}}}),
@@ -549,4 +549,33 @@ async fn access_control_enforced_live() {
     )
     .await;
     assert!(resp.get("result").is_some(), "superuser bypasses ACL");
+
+    // the classic /jsonrpc path enforces the ACL too (was a 100% bypass)
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/jsonrpc",
+        json!({"jsonrpc":"2.0","id":5,"method":"call","params":{
+            "service":"object","method":"execute_kw",
+            "args":["db", 2, "segredo", "res.users", "search", [[]]]}}),
+    )
+    .await;
+    assert_eq!(
+        resp["error"]["code"],
+        json!(-32000),
+        "ana denied over /jsonrpc"
+    );
+
+    // superuser over /jsonrpc is allowed
+    let (_, resp) = rpc(
+        router(service),
+        "/jsonrpc",
+        json!({"jsonrpc":"2.0","id":6,"method":"call","params":{
+            "service":"object","method":"execute_kw",
+            "args":["db", 1, "admin", "res.users", "search", [[]]]}}),
+    )
+    .await;
+    assert!(
+        resp.get("result").is_some(),
+        "superuser bypasses ACL over /jsonrpc"
+    );
 }

@@ -118,7 +118,8 @@ async fn call_kw(
 
 /// `/jsonrpc` — classic RPC: `{service: "object", method: "execute_kw",
 /// args: [db, uid, password, model, method, args, kwargs?]}`.
-/// Authentication is not implemented yet: db/uid/password are ignored.
+/// uid+password are verified per call and the ACL is enforced with the
+/// verified uid as a transient identity (db is not yet routed).
 async fn jsonrpc_endpoint(
     State(service): State<OrmService>,
     Json(body): Json<Value>,
@@ -168,6 +169,20 @@ async fn jsonrpc_endpoint(
             "execute_kw args must be [db, uid, password, model, method, args, kwargs?]",
         ));
     };
+    // ir.model.access enforcement on the classic RPC path too — the
+    // verified uid becomes a transient access identity
+    if service.require_auth {
+        if let Some(uid) = call.get(1).and_then(Value::as_i64) {
+            let identity = service.identity(uid).await;
+            if let Err(error) = service.check_access(model, method, &identity) {
+                return Json(JsonRpcResponse::error(
+                    request.id,
+                    error.code,
+                    error.message,
+                ));
+            }
+        }
+    }
     let args = call
         .get(5)
         .and_then(Value::as_array)
@@ -252,7 +267,8 @@ async fn authenticate(State(service): State<OrmService>, Json(body): Json<Value>
         ))
         .into_response(),
         Some(uid) => {
-            let token = service.sessions.open(uid, login);
+            let groups = service.resolve_groups(uid).await;
+            let token = service.sessions.open(uid, login, groups);
             (
                 AppendHeaders([(
                     header::SET_COOKIE,
