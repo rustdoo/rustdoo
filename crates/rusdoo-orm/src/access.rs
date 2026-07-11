@@ -26,7 +26,9 @@ impl Operation {
     /// The CRUD operation implied by an ORM method name, if any.
     pub fn for_method(method: &str) -> Option<Operation> {
         Some(match method {
-            "search" | "search_read" | "search_count" | "read" => Operation::Read,
+            "search" | "search_read" | "search_count" | "read" | "fields_get" | "default_get" => {
+                Operation::Read
+            }
             "create" => Operation::Create,
             "write" => Operation::Write,
             "unlink" => Operation::Unlink,

@@ -773,3 +773,42 @@ async fn action_and_menu_navigation_live() {
         "menu must link to the action: {html}"
     );
 }
+
+#[tokio::test]
+async fn fields_get_returns_field_metadata() {
+    // fields_get reads only the registry — no live DB needed
+    let app = router(test_service());
+    let (_, resp) = rpc(
+        app,
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "call",
+            "params": {"model": "res.partner", "method": "fields_get", "args": [], "kwargs": {}}
+        }),
+    )
+    .await;
+    let fields = &resp["result"];
+    assert_eq!(fields["name"]["type"], json!("char"));
+    assert_eq!(fields["name"]["required"], json!(true));
+    assert_eq!(fields["color"]["type"], json!("integer"));
+    // injected LOG_ACCESS fields surface as readonly many2one to res.users
+    assert_eq!(fields["create_uid"]["type"], json!("many2one"));
+    assert_eq!(fields["create_uid"]["relation"], json!("res.users"));
+    assert_eq!(fields["create_uid"]["readonly"], json!(true));
+}
+
+#[tokio::test]
+async fn default_get_returns_empty_when_no_defaults() {
+    let app = router(test_service());
+    let (_, resp) = rpc(
+        app,
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "call",
+            "params": {"model": "res.partner", "method": "default_get",
+                       "args": [["name", "color"]], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"], json!({}));
+}

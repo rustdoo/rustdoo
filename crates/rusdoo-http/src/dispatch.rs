@@ -4,7 +4,7 @@
 use rusdoo_core::RusdooError;
 use rusdoo_orm::crud::SearchOptions;
 use rusdoo_orm::domain::{parse_domain, Domain};
-use rusdoo_orm::fields::FieldType;
+use rusdoo_orm::fields::{Field, FieldType};
 use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
@@ -660,6 +660,43 @@ impl OrmService {
                 m.unlink(&self.pool, &ids).await?;
                 Ok(json!(true))
             }
+            // field metadata for the web client's form/list builder. An
+            // optional first arg (allfields) filters which fields to return.
+            "fields_get" => {
+                let m = self.registry.get(model).ok_or_else(|| {
+                    RpcError::from(RusdooError::Validation(format!("unknown model: {model}")))
+                })?;
+                let only: Vec<String> = args
+                    .first()
+                    .or_else(|| kwargs.get("allfields"))
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let mut out = Map::new();
+                for field in m.fields() {
+                    // don't leak private fields (e.g. password hashes)
+                    if !field.exposed {
+                        continue;
+                    }
+                    if !only.is_empty() && !only.contains(&field.name) {
+                        continue;
+                    }
+                    out.insert(field.name.clone(), field_metadata(field));
+                }
+                Ok(Value::Object(out))
+            }
+            // no field-level defaults are modeled yet; Odoo returns only
+            // fields carrying an explicit default, so {} is the faithful reply
+            "default_get" => {
+                self.registry.get(model).ok_or_else(|| {
+                    RpcError::from(RusdooError::Validation(format!("unknown model: {model}")))
+                })?;
+                Ok(json!({}))
+            }
             other => Err(RpcError::method_not_found(other)),
         }
     }
@@ -718,6 +755,65 @@ fn parse_values(raw: Option<&Value>) -> Result<Map<String, Value>, RpcError> {
 }
 
 /// Field types the view context can safely read (decodable scalars).
+/// The Odoo `fields_get` metadata dict for one field.
+fn field_metadata(field: &Field) -> Value {
+    let mut m = Map::new();
+    m.insert("type".into(), Value::from(field_type_name(&field.ty)));
+    m.insert("string".into(), Value::from(humanize(&field.name)));
+    m.insert("required".into(), Value::from(field.required));
+    m.insert("readonly".into(), Value::from(field.readonly));
+    m.insert("store".into(), Value::from(field.stored));
+    match &field.ty {
+        FieldType::Many2one { comodel }
+        | FieldType::One2many { comodel, .. }
+        | FieldType::Many2many { comodel, .. } => {
+            m.insert("relation".into(), Value::from(comodel.as_str()));
+        }
+        FieldType::Selection(options) => {
+            let pairs: Vec<Value> = options.iter().map(|(v, label)| json!([v, label])).collect();
+            m.insert("selection".into(), Value::from(pairs));
+        }
+        _ => {}
+    }
+    Value::Object(m)
+}
+
+/// Odoo's wire type name for a field type.
+fn field_type_name(ty: &FieldType) -> &'static str {
+    match ty {
+        FieldType::Boolean => "boolean",
+        FieldType::Integer => "integer",
+        FieldType::Float { .. } => "float",
+        FieldType::Monetary => "monetary",
+        FieldType::Char { .. } => "char",
+        FieldType::Text => "text",
+        FieldType::Html => "html",
+        FieldType::Date => "date",
+        FieldType::Datetime => "datetime",
+        FieldType::Binary => "binary",
+        FieldType::Selection(_) => "selection",
+        FieldType::Many2one { .. } => "many2one",
+        FieldType::One2many { .. } => "one2many",
+        FieldType::Many2many { .. } => "many2many",
+        FieldType::Json => "json",
+    }
+}
+
+/// Derive a human label from a field name (`company_id` -> "Company Id").
+/// A placeholder until per-field labels are modeled.
+fn humanize(name: &str) -> String {
+    name.split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn is_readable_scalar(ty: &FieldType) -> bool {
     matches!(
         ty,
