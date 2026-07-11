@@ -125,6 +125,11 @@ fn parse(src: &str) -> Result<Vec<Node>, RusdooError> {
                 let raw = String::from_utf8_lossy(&cdata.into_inner()).into_owned();
                 push_node(&mut stack, &mut roots, Node::Text(raw));
             }
+            // a general entity ref (&name;) — keep it as literal template text
+            Event::GeneralRef(r) => {
+                let name = String::from_utf8_lossy(r.as_ref()).into_owned();
+                push_node(&mut stack, &mut roots, Node::Text(format!("&{name};")));
+            }
         }
     }
     if !stack.is_empty() {
@@ -139,7 +144,10 @@ fn element_from(el: &quick_xml::events::BytesStart) -> Result<Element, RusdooErr
     for attr in el.attributes() {
         let attr = attr.map_err(qweb_err)?;
         let key = String::from_utf8_lossy(attr.key.as_ref()).into_owned();
-        let value = attr.unescape_value().map_err(qweb_err)?.into_owned();
+        let raw = String::from_utf8_lossy(&attr.value);
+        let value = quick_xml::escape::unescape(&raw)
+            .map_err(qweb_err)?
+            .into_owned();
         attrs.push((key, value));
     }
     Ok(Element {

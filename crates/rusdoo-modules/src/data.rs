@@ -39,8 +39,8 @@ fn attr_map(element: &quick_xml::events::BytesStart) -> Result<Vec<(String, Stri
     for attr in element.attributes() {
         let attr = attr.map_err(|e| xml_err("bad attribute", e))?;
         let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
-        let value = attr
-            .unescape_value()
+        let raw = String::from_utf8_lossy(&attr.value);
+        let value = quick_xml::escape::unescape(&raw)
             .map_err(|e| xml_err("bad attribute value", e))?
             .into_owned();
         attrs.push((key, value));
@@ -285,9 +285,10 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
             }
             Event::Text(text) => {
                 if let Some(pending) = field.as_mut() {
-                    pending
-                        .text
-                        .push_str(&text.unescape().map_err(|e| xml_err("text", e))?);
+                    let raw = String::from_utf8_lossy(text.as_ref());
+                    let decoded =
+                        quick_xml::escape::unescape(&raw).map_err(|e| xml_err("text", e))?;
+                    pending.text.push_str(&decoded);
                 }
             }
             Event::CData(cdata) => {
@@ -296,6 +297,15 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
                     pending
                         .text
                         .push_str(&String::from_utf8(bytes).map_err(|e| xml_err("cdata", e))?);
+                }
+            }
+            // a general entity ref (&amp;, &#123;, ...) inside field text
+            Event::GeneralRef(r) => {
+                if let Some(pending) = field.as_mut() {
+                    let entity = format!("&{};", String::from_utf8_lossy(r.as_ref()));
+                    let decoded =
+                        quick_xml::escape::unescape(&entity).map_err(|e| xml_err("entity", e))?;
+                    pending.text.push_str(&decoded);
                 }
             }
             Event::End(element) => match element.name().as_ref() {
