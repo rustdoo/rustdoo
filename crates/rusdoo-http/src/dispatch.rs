@@ -169,32 +169,13 @@ impl OrmService {
         let (module, name) = xml_id
             .split_once('.')
             .ok_or_else(|| RpcError::invalid_params("xml_id must be module.name"))?;
-        let row: Option<(String, i32)> = sqlx::query_as(
-            r#"SELECT "model", "res_id" FROM "ir_model_data" WHERE "module" = $1 AND "name" = $2"#,
-        )
-        .bind(module)
-        .bind(name)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| RpcError {
-            code: crate::jsonrpc::SERVER_ERROR,
-            message: e.to_string(),
-        })?;
-        let (model, res_id) = row.ok_or_else(|| RpcError {
-            code: crate::jsonrpc::SERVER_ERROR,
-            message: format!("unknown external id: {xml_id}"),
-        })?;
-        if model != "ir.ui.view" {
-            return Err(RpcError::invalid_params(format!(
-                "{xml_id} is a {model}, not an ir.ui.view"
-            )));
-        }
+        let res_id = self.resolve_external_id(module, name, "ir.ui.view").await?;
         let views = self
             .registry
             .read(
                 &self.pool,
                 "ir.ui.view",
-                &[i64::from(res_id)],
+                &[res_id],
                 &["name", "model", "arch"],
             )
             .await?;
@@ -205,7 +186,19 @@ impl OrmService {
         let arch = view.get("arch").and_then(Value::as_str).unwrap_or("");
         let target = view.get("model").and_then(Value::as_str).unwrap_or("");
         let title = view.get("name").and_then(Value::as_str).unwrap_or("");
+        self.render_arch(arch, target, title, session).await
+    }
 
+    /// Render a view arch against its target model's records: gather the
+    /// model's data fields as context and run QWeb. Shared by `render_view`
+    /// (view by external id) and `render_action` (view chosen by an action).
+    async fn render_arch(
+        &self,
+        arch: &str,
+        target: &str,
+        title: &str,
+        session: Option<&crate::session::Session>,
+    ) -> Result<String, RpcError> {
         let mut ctx = Map::new();
         ctx.insert("title".into(), Value::from(title));
         // the caller must be allowed to read the model the view renders
@@ -243,6 +236,127 @@ impl OrmService {
             code: crate::jsonrpc::SERVER_ERROR,
             message: e.to_string(),
         })
+    }
+
+    /// Render an `ir.actions.act_window` (by external id): read its target
+    /// model, pick a view for that model, and render it — Odoo's "open an
+    /// action opens the model in a view" navigation step.
+    pub(crate) async fn render_action(
+        &self,
+        xml_id: &str,
+        session: Option<&crate::session::Session>,
+    ) -> Result<String, RpcError> {
+        if let Some(s) = session {
+            self.check_access("ir.actions.act_window", "read", s)?;
+        }
+        let (module, name) = xml_id
+            .split_once('.')
+            .ok_or_else(|| RpcError::invalid_params("xml_id must be module.name"))?;
+        let res_id = self
+            .resolve_external_id(module, name, "ir.actions.act_window")
+            .await?;
+        let actions = self
+            .registry
+            .read(
+                &self.pool,
+                "ir.actions.act_window",
+                &[res_id],
+                &["name", "res_model"],
+            )
+            .await?;
+        let action = actions.first().ok_or_else(|| RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: "action record vanished".into(),
+        })?;
+        let title = action.get("name").and_then(Value::as_str).unwrap_or("");
+        let res_model = action
+            .get("res_model")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        // pick the first stored ir.ui.view for the action's model
+        let view: Option<(String,)> = sqlx::query_as(
+            r#"SELECT "arch" FROM "ir_ui_view" WHERE "model" = $1 ORDER BY "id" LIMIT 1"#,
+        )
+        .bind(res_model)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: e.to_string(),
+        })?;
+        let (arch,) = view.ok_or_else(|| RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: format!("no view for model {res_model:?}"),
+        })?;
+        self.render_arch(&arch, res_model, title, session).await
+    }
+
+    /// Resolve an external id to its `res_id`, asserting the record's model.
+    async fn resolve_external_id(
+        &self,
+        module: &str,
+        name: &str,
+        expected_model: &str,
+    ) -> Result<i64, RpcError> {
+        let row: Option<(String, i32)> = sqlx::query_as(
+            r#"SELECT "model", "res_id" FROM "ir_model_data" WHERE "module" = $1 AND "name" = $2"#,
+        )
+        .bind(module)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: e.to_string(),
+        })?;
+        let (model, res_id) = row.ok_or_else(|| RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: format!("unknown external id: {module}.{name}"),
+        })?;
+        if model != expected_model {
+            return Err(RpcError::invalid_params(format!(
+                "{module}.{name} is a {model}, not an {expected_model}"
+            )));
+        }
+        Ok(i64::from(res_id))
+    }
+
+    /// The `ir.ui.menu` tree as nested items for the navigation index:
+    /// each item carries its display name and, on leaves, the external id
+    /// of the action it opens. Ordered by (parent, sequence).
+    pub(crate) async fn menu_tree(
+        &self,
+        session: Option<&crate::session::Session>,
+    ) -> Result<Vec<MenuItem>, RpcError> {
+        if let Some(s) = session {
+            self.check_access("ir.ui.menu", "read", s)?;
+        }
+        // (id, name, parent_id, sequence, action external id)
+        let rows: Vec<MenuRow> = sqlx::query_as(
+            r#"SELECT "id", "name", "parent_id", "sequence", "action"
+                   FROM "ir_ui_menu" ORDER BY "sequence" NULLS FIRST, "id""#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: e.to_string(),
+        })?;
+        // group children by parent, preserving the query's order
+        let mut children: HashMap<Option<i64>, Vec<MenuItem>> = HashMap::new();
+        for (id, name, parent, _seq, action) in &rows {
+            let item = MenuItem {
+                id: i64::from(*id),
+                name: name.clone().unwrap_or_default(),
+                action: action.clone(),
+                children: Vec::new(),
+            };
+            children
+                .entry(parent.map(i64::from))
+                .or_default()
+                .push(item);
+        }
+        Ok(build_menu_forest(None, &mut children, 0))
     }
 
     /// Resolve the transitive closure of `t-call` targets referenced from
@@ -561,4 +675,45 @@ fn is_readable_scalar(ty: &FieldType) -> bool {
             | FieldType::Many2one { .. }
             | FieldType::Float { digits: None }
     )
+}
+
+/// A raw `ir.ui.menu` row: (id, name, parent_id, sequence, action xml_id).
+type MenuRow = (
+    i32,
+    Option<String>,
+    Option<i32>,
+    Option<i32>,
+    Option<String>,
+);
+
+/// One node of the `ir.ui.menu` navigation tree.
+#[derive(Debug, Clone)]
+pub struct MenuItem {
+    pub id: i64,
+    pub name: String,
+    /// external id of the action this leaf opens, if any
+    pub action: Option<String>,
+    pub children: Vec<MenuItem>,
+}
+
+/// Guards against a malformed (cyclic) menu parent chain.
+const MAX_MENU_DEPTH: usize = 16;
+
+/// Assemble the menu forest under `parent`, draining `by_parent` so each
+/// node is placed once; depth-capped against parent cycles.
+fn build_menu_forest(
+    parent: Option<i64>,
+    by_parent: &mut HashMap<Option<i64>, Vec<MenuItem>>,
+    depth: usize,
+) -> Vec<MenuItem> {
+    if depth > MAX_MENU_DEPTH {
+        return Vec::new();
+    }
+    let Some(mut items) = by_parent.remove(&parent) else {
+        return Vec::new();
+    };
+    for item in &mut items {
+        item.children = build_menu_forest(Some(item.id), by_parent, depth + 1);
+    }
+    items
 }

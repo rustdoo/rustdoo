@@ -579,3 +579,185 @@ async fn access_control_enforced_live() {
         "superuser bypasses ACL over /jsonrpc"
     );
 }
+
+async fn get_html(app: axum::Router, uri: &str) -> (StatusCode, String) {
+    let response = app
+        .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, String::from_utf8(bytes.to_vec()).unwrap())
+}
+
+/// End-to-end navigation: an ir.ui.menu links to an ir.actions.act_window
+/// which opens its res_model in a view. GET /web shows the menu; clicking
+/// through GET /web/action/<xml_id> renders the model's records.
+#[tokio::test]
+async fn action_and_menu_navigation_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    // isolate in a dedicated schema: this test uses the fixed table names
+    // (ir_ui_view, ir_act_window, ...) that dispatch queries literally, so
+    // it must not share `public` with the module-install tests
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                sqlx::Executor::execute(&mut *conn, "CREATE SCHEMA IF NOT EXISTS rusdoo_nav_test")
+                    .await?;
+                sqlx::Executor::execute(&mut *conn, "SET search_path TO rusdoo_nav_test").await?;
+                Ok(())
+            })
+        })
+        .connect_lazy(&url)
+        .unwrap();
+
+    let mut reg = Registry::new();
+    for (name, table, fields) in [
+        (
+            "ir.actions.act_window",
+            "ir_act_window",
+            vec![
+                Field::new("name", FieldType::Char { size: None }),
+                Field::new("res_model", FieldType::Char { size: None }).required(),
+            ],
+        ),
+        (
+            "ir.ui.menu",
+            "ir_ui_menu",
+            vec![
+                Field::new("name", FieldType::Char { size: None }),
+                Field::new(
+                    "parent_id",
+                    FieldType::Many2one {
+                        comodel: "ir.ui.menu".into(),
+                    },
+                ),
+                Field::new("sequence", FieldType::Integer),
+                Field::new("action", FieldType::Char { size: None }),
+            ],
+        ),
+        (
+            "ir.ui.view",
+            "ir_ui_view",
+            vec![
+                Field::new("name", FieldType::Char { size: None }),
+                Field::new("model", FieldType::Char { size: None }),
+                Field::new("arch", FieldType::Text),
+            ],
+        ),
+        (
+            "res.partner",
+            "res_partner",
+            vec![Field::new("name", FieldType::Char { size: None }).required()],
+        ),
+    ] {
+        reg.register(Model::new(
+            ModelMeta {
+                name: name.into(),
+                table: table.into(),
+                inherit: vec![],
+                inherits: vec![],
+            },
+            fields,
+        ))
+        .unwrap();
+    }
+
+    for t in ["ir_act_window", "ir_ui_menu", "ir_ui_view", "res_partner"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in [
+        "ir.actions.act_window",
+        "ir.ui.menu",
+        "ir.ui.view",
+        "res.partner",
+    ] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+    // ir_model_data is a raw system table (not a registered model here)
+    sqlx::query(r#"DROP TABLE IF EXISTS "ir_model_data""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"CREATE TABLE "ir_model_data" ("module" varchar, "name" varchar,
+           "model" varchar, "res_id" int4)"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // seed: a partner, a listing view, an action, its external id, a menu
+    reg.create(&pool, "res.partner", vec![("name", json!("Alice"))])
+        .await
+        .unwrap();
+    reg.create(
+        &pool,
+        "ir.ui.view",
+        vec![
+            ("name", json!("Parceiros")),
+            ("model", json!("res.partner")),
+            (
+                "arch",
+                json!(r#"<div><t t-foreach="records" t-as="p"><span t-esc="p.name"/></t></div>"#),
+            ),
+        ],
+    )
+    .await
+    .unwrap();
+    let action = reg
+        .create(
+            &pool,
+            "ir.actions.act_window",
+            vec![
+                ("name", json!("Parceiros")),
+                ("res_model", json!("res.partner")),
+            ],
+        )
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"INSERT INTO "ir_model_data" ("module", "name", "model", "res_id")
+           VALUES ('test', 'act_partners', 'ir.actions.act_window', $1)"#,
+    )
+    .bind(action as i32)
+    .execute(&pool)
+    .await
+    .unwrap();
+    reg.create(
+        &pool,
+        "ir.ui.menu",
+        vec![
+            ("name", json!("Parceiros")),
+            ("action", json!("test.act_partners")),
+            ("sequence", json!(1)),
+        ],
+    )
+    .await
+    .unwrap();
+
+    let service = OrmService::insecure(Arc::new(reg), pool);
+
+    // clicking the action renders the partner list
+    let (status, html) = get_html(router(service.clone()), "/web/action/test.act_partners").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        html.contains("Alice"),
+        "action page must render records: {html}"
+    );
+
+    // /web shows the menu linking to that action
+    let (status, html) = get_html(router(service), "/web").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        html.contains("/web/action/test.act_partners"),
+        "menu must link to the action: {html}"
+    );
+}

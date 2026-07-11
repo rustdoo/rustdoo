@@ -84,6 +84,41 @@ fn base_registry() -> anyhow::Result<Registry> {
     ))?;
     reg.register(Model::new(
         ModelMeta {
+            name: "ir.actions.act_window".into(),
+            table: "ir_act_window".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("res_model", FieldType::Char { size: None }).required(),
+            Field::new("view_mode", FieldType::Char { size: None }),
+            Field::new("domain", FieldType::Text),
+        ],
+    ))?;
+    reg.register(Model::new(
+        ModelMeta {
+            name: "ir.ui.menu".into(),
+            table: "ir_ui_menu".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "parent_id",
+                FieldType::Many2one {
+                    comodel: "ir.ui.menu".into(),
+                },
+            ),
+            Field::new("sequence", FieldType::Integer),
+            // external id of the act_window this menu opens (Odoo uses a
+            // reference field; we bridge with the xml_id string for now)
+            Field::new("action", FieldType::Char { size: None }),
+        ],
+    ))?;
+    reg.register(Model::new(
+        ModelMeta {
             name: "res.users".into(),
             table: "res_users".into(),
             inherit: vec![],

@@ -26,6 +26,7 @@ pub fn router(service: OrmService) -> Router {
         .route("/web/session/destroy", post(destroy))
         .route("/web", get(web_index))
         .route("/web/view/{xml_id}", get(render_view_page))
+        .route("/web/action/{xml_id}", get(render_action_page))
         .route("/jsonrpc", post(jsonrpc_endpoint))
         .with_state(service)
 }
@@ -365,6 +366,56 @@ async fn render_view_page(
     }
 }
 
+/// `GET /web/action/{xml_id}` — open an ir.actions.act_window: render its
+/// target model in a view. The navigation target of a menu click.
+async fn render_action_page(
+    State(service): State<OrmService>,
+    headers: HeaderMap,
+    Path(xml_id): Path<String>,
+) -> Response {
+    let session = current_session(&service, &headers);
+    if service.require_auth && session.is_none() {
+        return (
+            axum::http::StatusCode::UNAUTHORIZED,
+            Html("<h1>401</h1><p>faça login em /web/session/authenticate</p>".to_string()),
+        )
+            .into_response();
+    }
+    match service.render_action(&xml_id, session.as_ref()).await {
+        Ok(html) => Html(html).into_response(),
+        Err(err) => {
+            tracing::warn!("render_action {xml_id:?} failed: {}", err.message);
+            (
+                axum::http::StatusCode::BAD_REQUEST,
+                Html("<h1>erro</h1><p>não foi possível abrir a ação</p>".to_string()),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Render the menu forest as nested `<ul>`; leaves with an action link to
+/// `/web/action/{xml_id}`.
+fn render_menu(items: &[crate::dispatch::MenuItem], out: &mut String) {
+    out.push_str("<ul>");
+    for item in items {
+        out.push_str("<li>");
+        match &item.action {
+            Some(action) => out.push_str(&format!(
+                "<a href=\"/web/action/{}\">{}</a>",
+                html_escape(action),
+                html_escape(&item.name)
+            )),
+            None => out.push_str(&html_escape(&item.name)),
+        }
+        if !item.children.is_empty() {
+            render_menu(&item.children, out);
+        }
+        out.push_str("</li>");
+    }
+    out.push_str("</ul>");
+}
+
 /// Minimal HTML escaping for text interpolated into pages.
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -388,8 +439,18 @@ async fn web_index(State(service): State<OrmService>, headers: HeaderMap) -> Res
             let mut body = String::from(
                 "<!doctype html><meta charset=\"utf-8\"><title>rusdoo</title>\
                  <div style=\"font-family:system-ui;max-width:640px;margin:3rem auto\">\
-                 <h1>&#129408; rusdoo</h1><p>Views disponíveis:</p><ul>",
+                 <h1>&#129408; rusdoo</h1>",
             );
+            // the menu tree, when present, is the primary navigation
+            match service.menu_tree(session.as_ref()).await {
+                Ok(menu) if !menu.is_empty() => {
+                    body.push_str("<p>Menu:</p>");
+                    render_menu(&menu, &mut body);
+                }
+                Ok(_) => {}
+                Err(err) => tracing::warn!("menu_tree failed: {}", err.message),
+            }
+            body.push_str("<p>Views disponíveis:</p><ul>");
             if views.is_empty() {
                 body.push_str("<li>nenhuma view instalada (rode --init sobre um addon)</li>");
             }
