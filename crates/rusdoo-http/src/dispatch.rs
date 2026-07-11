@@ -8,6 +8,7 @@ use rusdoo_orm::fields::FieldType;
 use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
@@ -186,7 +187,34 @@ impl OrmService {
             let records = self.registry.read(&self.pool, target, &ids, &names).await?;
             ctx.insert("records".into(), json!(records));
         }
-        rusdoo_qweb::render(arch, &Value::Object(ctx)).map_err(|e| RpcError {
+        // preload every ir.ui.view so t-call can reference them by
+        // external id (e.g. t-call="module.other_view")
+        let view_ids: Vec<(String, String, i32)> = sqlx::query_as(
+            r#"SELECT "module", "name", "res_id" FROM "ir_model_data" WHERE "model" = 'ir.ui.view'"#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RpcError { code: crate::jsonrpc::SERVER_ERROR, message: e.to_string() })?;
+        let ids: Vec<i64> = view_ids.iter().map(|(_, _, r)| i64::from(*r)).collect();
+        let mut templates = rusdoo_qweb::Templates::new();
+        if !ids.is_empty() {
+            let rows = self
+                .registry
+                .read(&self.pool, "ir.ui.view", &ids, &["arch"])
+                .await?;
+            let arch_by_id: HashMap<i64, String> = rows
+                .iter()
+                .filter_map(|r| {
+                    Some((r.get("id")?.as_i64()?, r.get("arch")?.as_str()?.to_string()))
+                })
+                .collect();
+            for (m, n, rid) in &view_ids {
+                if let Some(a) = arch_by_id.get(&i64::from(*rid)) {
+                    templates.insert(format!("{m}.{n}"), a.clone());
+                }
+            }
+        }
+        rusdoo_qweb::render_with(arch, &Value::Object(ctx), &templates).map_err(|e| RpcError {
             code: crate::jsonrpc::SERVER_ERROR,
             message: e.to_string(),
         })

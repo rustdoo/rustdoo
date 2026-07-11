@@ -1,8 +1,9 @@
 //! QWeb rendering: the core directives (t-esc/t-out, t-if/t-else,
 //! t-foreach/t-as, t-att-*) against a JSON context.
 
-use rusdoo_qweb::render;
+use rusdoo_qweb::{render, render_with};
 use serde_json::json;
+use std::collections::HashMap;
 
 fn r(tpl: &str, ctx: serde_json::Value) -> String {
     render(tpl, &ctx).unwrap()
@@ -129,4 +130,55 @@ fn t_field_renders_field_values() {
         r(r#"<i t-field="p.missing"/>"#, json!({"p": {}})),
         "<i></i>"
     );
+}
+
+fn tpls(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+#[test]
+fn t_call_includes_a_named_template() {
+    let t = tpls(&[("card", r#"<div class="card"><t t-esc="name"/></div>"#)]);
+    let out = render_with(
+        r#"<section><t t-call="card"/></section>"#,
+        &json!({"name": "Ana"}),
+        &t,
+    )
+    .unwrap();
+    assert_eq!(out, r#"<section><div class="card">Ana</div></section>"#);
+}
+
+#[test]
+fn t_call_sees_the_loop_context() {
+    let t = tpls(&[("row", r#"<li t-field="i.name"/>"#)]);
+    let out = render_with(
+        r#"<ul><t t-foreach="items" t-as="i"><t t-call="row"/></t></ul>"#,
+        &json!({"items": [{"name": "Um"}, {"name": "Dois"}]}),
+        &t,
+    )
+    .unwrap();
+    assert_eq!(out, "<ul><li>Um</li><li>Dois</li></ul>");
+}
+
+#[test]
+fn t_call_to_unknown_template_errors() {
+    let t = tpls(&[]);
+    assert!(render_with(r#"<t t-call="ghost"/>"#, &json!({}), &t).is_err());
+}
+
+#[test]
+fn nested_t_call_layout_pattern() {
+    // a base layout t-calling nothing, a page t-calling the base is common
+    let t = tpls(&[
+        (
+            "layout",
+            r#"<html><body><t t-call="content"/></body></html>"#,
+        ),
+        ("content", r#"<h1 t-esc="title"/>"#),
+    ]);
+    let out = render_with(r#"<t t-call="layout"/>"#, &json!({"title": "Oi"}), &t).unwrap();
+    assert_eq!(out, "<html><body><h1>Oi</h1></body></html>");
 }

@@ -4,7 +4,8 @@
 //!
 //! Supported directives: `t-esc`/`t-out`, `t-if`/`t-else`,
 //! `t-foreach`/`t-as`, `t-att-*`, `t-field`, and the transparent `<t>`
-//! element. Not yet ported: `t-call`, `t-set`, `t-elif`, `t-attf-*`.
+//! element, plus `t-call` (named sub-templates via `render_with`).
+//! Not yet ported: `t-set`, `t-elif`, `t-attf-*`.
 
 mod expr;
 
@@ -12,6 +13,10 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 use rusdoo_core::RusdooError;
 use serde_json::Value;
+use std::collections::HashMap;
+
+/// Named templates available to `t-call`.
+pub type Templates = HashMap<String, String>;
 
 const MAX_RENDER_DEPTH: usize = 100;
 
@@ -39,9 +44,18 @@ impl Element {
 
 /// Render `template` against `context`, returning HTML.
 pub fn render(template: &str, context: &Value) -> Result<String, RusdooError> {
+    render_with(template, context, &Templates::new())
+}
+
+/// Render with a set of named templates available to `t-call`.
+pub fn render_with(
+    template: &str,
+    context: &Value,
+    templates: &Templates,
+) -> Result<String, RusdooError> {
     let nodes = parse(template)?;
     let mut out = String::new();
-    render_nodes(&nodes, context, &mut out, 0)?;
+    render_nodes(&nodes, context, &mut out, 0, templates)?;
     Ok(out)
 }
 
@@ -119,6 +133,7 @@ fn render_nodes(
     ctx: &Value,
     out: &mut String,
     depth: usize,
+    templates: &Templates,
 ) -> Result<(), RusdooError> {
     if depth > MAX_RENDER_DEPTH {
         return Err(RusdooError::Validation(
@@ -133,17 +148,17 @@ fn render_nodes(
                 let has_foreach = el.attr("t-foreach").is_some();
                 if !has_foreach && el.attr("t-else").is_some() {
                     if last_if == Some(false) {
-                        render_body(el, ctx, out, depth)?;
+                        render_body(el, ctx, out, depth, templates)?;
                     }
                     last_if = None;
                 } else if let (false, Some(cond)) = (has_foreach, el.attr("t-if")) {
                     let taken = expr::truthy(&expr::eval(cond, ctx)?);
                     if taken {
-                        render_body(el, ctx, out, depth)?;
+                        render_body(el, ctx, out, depth, templates)?;
                     }
                     last_if = Some(taken);
                 } else {
-                    render_element(el, ctx, out, depth)?;
+                    render_element(el, ctx, out, depth, templates)?;
                     last_if = None;
                 }
             }
@@ -158,6 +173,7 @@ fn render_element(
     ctx: &Value,
     out: &mut String,
     depth: usize,
+    templates: &Templates,
 ) -> Result<(), RusdooError> {
     if let Some(foreach) = el.attr("t-foreach") {
         let as_name = el
@@ -181,7 +197,7 @@ fn render_element(
             child.insert(format!("{as_name}_size"), Value::from(size));
             child.insert(format!("{as_name}_first"), Value::from(index == 0));
             child.insert(format!("{as_name}_last"), Value::from(index + 1 == size));
-            render_body(el, &Value::Object(child), out, depth)?;
+            render_body(el, &Value::Object(child), out, depth, templates)?;
         }
         return Ok(());
     }
@@ -190,7 +206,7 @@ fn render_element(
             return Ok(());
         }
     }
-    render_body(el, ctx, out, depth)
+    render_body(el, ctx, out, depth, templates)
 }
 
 /// Emit the element's tag, attributes and content (t-if/t-foreach are
@@ -200,6 +216,7 @@ fn render_body(
     ctx: &Value,
     out: &mut String,
     depth: usize,
+    templates: &Templates,
 ) -> Result<(), RusdooError> {
     let transparent = el.tag == "t";
     if !transparent {
@@ -226,14 +243,20 @@ fn render_body(
         out.push('>');
     }
 
-    if let Some(e) = el.attr("t-esc") {
+    if let Some(name) = el.attr("t-call") {
+        let sub = templates.get(name).ok_or_else(|| {
+            RusdooError::Validation(format!("qweb: unknown template {name:?} (t-call)"))
+        })?;
+        let nodes = parse(sub)?;
+        render_nodes(&nodes, ctx, out, depth + 1, templates)?;
+    } else if let Some(e) = el.attr("t-esc") {
         out.push_str(&escape_text(&value_to_string(&expr::eval(e, ctx)?)));
     } else if let Some(e) = el.attr("t-out") {
         out.push_str(&value_to_string(&expr::eval(e, ctx)?));
     } else if let Some(e) = el.attr("t-field") {
         out.push_str(&escape_text(&field_display(&expr::eval(e, ctx)?)));
     } else {
-        render_nodes(&el.children, ctx, out, depth + 1)?;
+        render_nodes(&el.children, ctx, out, depth + 1, templates)?;
     }
 
     if !transparent {
