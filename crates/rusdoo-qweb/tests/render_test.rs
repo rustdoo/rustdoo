@@ -182,3 +182,39 @@ fn nested_t_call_layout_pattern() {
     let out = render_with(r#"<t t-call="layout"/>"#, &json!({"title": "Oi"}), &t).unwrap();
     assert_eq!(out, "<html><body><h1>Oi</h1></body></html>");
 }
+
+#[test]
+fn t_set_defines_a_variable() {
+    let out = r(
+        r#"<div><t t-set="x" t-value="'A'"/><p t-esc="x"/></div>"#,
+        json!({}),
+    );
+    assert_eq!(out, "<div><p>A</p></div>");
+}
+
+#[test]
+fn t_set_body_captures_rendered_content() {
+    let out = r(
+        r#"<div><t t-set="g">Ola <t t-esc="name"/></t><p t-esc="g"/></div>"#,
+        json!({"name": "Ana"}),
+    );
+    assert_eq!(out, "<div><p>Ola Ana</p></div>");
+}
+
+#[test]
+fn t_set_is_visible_to_later_siblings_only() {
+    let out = r(
+        r#"<div><span t-esc="x"/><t t-set="x" t-value="1"/><b t-esc="x"/></div>"#,
+        json!({}),
+    );
+    assert_eq!(out, "<div><span></span><b>1</b></div>");
+}
+
+#[test]
+fn t_set_can_compute_from_context() {
+    let out = r(
+        r#"<t t-set="total" t-value="a + b"/><p t-esc="total"/>"#,
+        json!({"a": 40, "b": 2}),
+    );
+    assert_eq!(out, "<p>42</p>");
+}

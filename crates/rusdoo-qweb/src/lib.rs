@@ -4,15 +4,16 @@
 //!
 //! Supported directives: `t-esc`/`t-out`, `t-if`/`t-else`,
 //! `t-foreach`/`t-as`, `t-att-*`, `t-field`, and the transparent `<t>`
-//! element, plus `t-call` (named sub-templates via `render_with`).
-//! Not yet ported: `t-set`, `t-elif`, `t-attf-*`.
+//! element, plus `t-call` (named sub-templates via `render_with`) and
+//! `t-set`. Not yet ported: `t-elif`, `t-attf-*`.
 
 mod expr;
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use rusdoo_core::RusdooError;
-use serde_json::Value;
+use serde_json::{Map, Value};
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 /// Named templates available to `t-call` (raw source).
@@ -167,25 +168,52 @@ fn render_nodes(
             "qweb: template nested too deep".into(),
         ));
     }
+    // t-set defines variables visible to later siblings; accumulate them
+    // in an overlay applied on top of the incoming context
+    let mut overlay: Option<Map<String, Value>> = None;
     let mut last_if: Option<bool> = None;
     for node in nodes {
+        let effective: Cow<Value> = match &overlay {
+            None => Cow::Borrowed(ctx),
+            Some(vars) => {
+                let mut merged = ctx.as_object().cloned().unwrap_or_default();
+                for (k, v) in vars {
+                    merged.insert(k.clone(), v.clone());
+                }
+                Cow::Owned(Value::Object(merged))
+            }
+        };
+        let cx: &Value = &effective;
         match node {
             Node::Text(text) => out.push_str(text),
             Node::Element(el) => {
+                if let Some(var) = el.attr("t-set") {
+                    let value = if let Some(v) = el.attr("t-value") {
+                        expr::eval(v, cx)?
+                    } else {
+                        let mut buf = String::new();
+                        render_nodes(&el.children, cx, &mut buf, depth + 1, templates)?;
+                        Value::String(buf)
+                    };
+                    overlay
+                        .get_or_insert_with(Map::new)
+                        .insert(var.to_string(), value);
+                    continue;
+                }
                 let has_foreach = el.attr("t-foreach").is_some();
                 if !has_foreach && el.attr("t-else").is_some() {
                     if last_if == Some(false) {
-                        render_body(el, ctx, out, depth, templates)?;
+                        render_body(el, cx, out, depth, templates)?;
                     }
                     last_if = None;
                 } else if let (false, Some(cond)) = (has_foreach, el.attr("t-if")) {
-                    let taken = expr::truthy(&expr::eval(cond, ctx)?);
+                    let taken = expr::truthy(&expr::eval(cond, cx)?);
                     if taken {
-                        render_body(el, ctx, out, depth, templates)?;
+                        render_body(el, cx, out, depth, templates)?;
                     }
                     last_if = Some(taken);
                 } else {
-                    render_element(el, ctx, out, depth, templates)?;
+                    render_element(el, cx, out, depth, templates)?;
                     last_if = None;
                 }
             }

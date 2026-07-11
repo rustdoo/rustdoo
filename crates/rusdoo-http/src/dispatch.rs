@@ -267,13 +267,21 @@ impl OrmService {
             .bind(view_name)
             .fetch_optional(&self.pool)
             .await
-            .map_err(|e| RpcError { code: crate::jsonrpc::SERVER_ERROR, message: e.to_string() })?;
+            .map_err(|e| RpcError {
+                code: crate::jsonrpc::SERVER_ERROR,
+                message: e.to_string(),
+            })?;
             let Some((res_id,)) = row else {
                 continue;
             };
             let views = self
                 .registry
-                .read(&self.pool, "ir.ui.view", &[i64::from(res_id)], &["model", "arch"])
+                .read(
+                    &self.pool,
+                    "ir.ui.view",
+                    &[i64::from(res_id)],
+                    &["model", "arch"],
+                )
                 .await?;
             let Some(view) = views.first() else {
                 continue;
@@ -286,7 +294,11 @@ impl OrmService {
                     self.check_access(target, "read", s)?;
                 }
             }
-            let sub_arch = view.get("arch").and_then(Value::as_str).unwrap_or("").to_string();
+            let sub_arch = view
+                .get("arch")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
             queue.extend(rusdoo_qweb::t_call_refs(&sub_arch).map_err(RpcError::from)?);
             templates.insert(name, sub_arch);
         }
