@@ -112,12 +112,17 @@ fn log_access_fields() -> [Field; 4] {
     ]
 }
 
-/// Add the LOG_ACCESS fields unless the model already declares them (a
-/// model is free to override, e.g. res.users' own create_uid).
+/// Install the LOG_ACCESS fields as system-owned: they are framework
+/// managed (created by the DDL layer, stamped by the write path), so any
+/// same-named field a model declares is REPLACED by the canonical
+/// definition. This keeps field metadata in lockstep with the fixed audit
+/// columns — a model cannot silently redefine their type or drop the audit
+/// trail by colliding on the name.
 fn ensure_log_access(fields: &mut Vec<Field>) {
     for field in log_access_fields() {
-        if !fields.iter().any(|f| f.name == field.name) {
-            fields.push(field);
+        match fields.iter_mut().find(|f| f.name == field.name) {
+            Some(slot) => *slot = field,
+            None => fields.push(field),
         }
     }
 }

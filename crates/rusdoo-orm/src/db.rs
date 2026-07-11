@@ -22,20 +22,28 @@ type PgQuery<'q> = sqlx::query::Query<'q, Postgres, PgArguments>;
 
 const MAX_POOL_CONNECTIONS: u32 = 5;
 
-pub async fn connect(url: &str) -> Result<PgPool, RusdooError> {
+/// Pool options shared by every connector. Pins each connection's session
+/// timezone to UTC so `CURRENT_TIMESTAMP` (a `timestamptz`) lands in our
+/// `timestamp` audit columns as UTC wall-clock, not the server's local
+/// zone — otherwise `create_date`/`write_date` would silently drift.
+fn pool_options() -> PgPoolOptions {
     PgPoolOptions::new()
         .max_connections(MAX_POOL_CONNECTIONS)
-        .connect(url)
-        .await
-        .map_err(db_err)
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                sqlx::Executor::execute(conn, "SET TIME ZONE 'UTC'").await?;
+                Ok(())
+            })
+        })
+}
+
+pub async fn connect(url: &str) -> Result<PgPool, RusdooError> {
+    pool_options().connect(url).await.map_err(db_err)
 }
 
 /// Pool that only connects on first use — for tests and tooling.
 pub fn lazy_pool(url: &str) -> Result<PgPool, RusdooError> {
-    PgPoolOptions::new()
-        .max_connections(MAX_POOL_CONNECTIONS)
-        .connect_lazy(url)
-        .map_err(db_err)
+    pool_options().connect_lazy(url).map_err(db_err)
 }
 
 fn db_err(e: sqlx::Error) -> RusdooError {
@@ -472,9 +480,12 @@ impl Registry {
         comodel: &str,
         ids: &[i64],
     ) -> Result<HashMap<i64, String>, RusdooError> {
-        let model = self
-            .get(comodel)
-            .ok_or_else(|| RusdooError::Validation(format!("comodel not registered: {comodel}")))?;
+        // an unregistered comodel (e.g. reading create_uid in a registry
+        // without res.users) degrades to id-only display, like a missing
+        // name field — never a hard failure of the whole read
+        let Some(model) = self.get(comodel) else {
+            return Ok(ids.iter().map(|id| (*id, id.to_string())).collect());
+        };
         let rec_name = if model.field("name").is_some() {
             "name"
         } else if model.field("display_name").is_some() {
@@ -629,6 +640,13 @@ impl Registry {
             let mut params: Vec<Value> = Vec::new();
             let mut assignments = Vec::new();
             for (name, value) in chain_values {
+                // a readonly field is client-write-protected on the
+                // delegated path too, not only the local one
+                if owner.field(name).is_some_and(|f| f.readonly) {
+                    return Err(RusdooError::Validation(format!(
+                        "field is readonly: {name:?}"
+                    )));
+                }
                 match owner.field(name) {
                     Some(field) if field.stored => {}
                     Some(field)

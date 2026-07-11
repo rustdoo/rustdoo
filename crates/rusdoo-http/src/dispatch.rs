@@ -213,10 +213,14 @@ impl OrmService {
             self.check_access(target, "read", s)?;
         }
         if let Some(m) = self.registry.get(target) {
+            // a generic list shows data fields, not the system audit
+            // columns (readonly) — this also avoids pulling create_uid/
+            // write_uid (m2o -> res.users) and their name-resolution
+            // round-trips into every auto-rendered view
             let names: Vec<&str> = m
                 .fields()
                 .iter()
-                .filter(|f| f.stored && f.exposed && is_readable_scalar(&f.ty))
+                .filter(|f| f.stored && f.exposed && !f.readonly && is_readable_scalar(&f.ty))
                 .map(|f| f.name.as_str())
                 .collect();
             // cap the rows a single page renders (no full-table dumps)

@@ -1368,3 +1368,124 @@ async fn log_access_columns_are_readable_orm_fields() {
         "writing a readonly LOG_ACCESS field must fail"
     );
 }
+
+/// Reading a many2one (here create_uid -> res.users) when the comodel is
+/// not registered must degrade to id-only display, never hard-fail the
+/// whole read.
+#[tokio::test]
+async fn m2o_read_without_comodel_registered_is_graceful() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    // note: res.users is deliberately NOT registered here
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.lonely".into(),
+            table: "rusdoo_test_lonely".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_lonely""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.lonely")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    let id = reg
+        .create_as(&pool, 5, "rusdoo.test.lonely", vec![("name", json!("x"))])
+        .await
+        .unwrap();
+    let rows = reg
+        .read(&pool, "rusdoo.test.lonely", &[id], &["create_uid"])
+        .await
+        .expect("read must not fail when res.users is absent");
+    // graceful fallback: [id, "id"] rather than a resolved display name
+    assert_eq!(rows[0]["create_uid"], json!([5, "5"]));
+}
+
+/// A readonly field owned by an _inherits parent is write-protected on the
+/// delegated path too, not only the local one.
+#[tokio::test]
+async fn readonly_delegated_field_write_is_rejected() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.rparent".into(),
+            table: "rusdoo_test_rparent".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            // a non-magic readonly field, owned by the parent
+            Field::new("code", FieldType::Char { size: None }).readonly(),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.rchild".into(),
+            table: "rusdoo_test_rchild".into(),
+            inherit: vec![],
+            inherits: vec![("rusdoo.test.rparent".into(), "parent_id".into())],
+        },
+        vec![Field::new(
+            "parent_id",
+            FieldType::Many2one {
+                comodel: "rusdoo.test.rparent".into(),
+            },
+        )],
+    ))
+    .unwrap();
+    for t in ["rusdoo_test_rchild", "rusdoo_test_rparent"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    reg.get("rusdoo.test.rparent")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.rchild")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    let child = reg
+        .create(&pool, "rusdoo.test.rchild", vec![("name", json!("c"))])
+        .await
+        .unwrap();
+    // writing the delegated readonly `code` must be rejected
+    let err = reg
+        .write(
+            &pool,
+            "rusdoo.test.rchild",
+            &[child],
+            vec![("code", json!("HACK"))],
+        )
+        .await;
+    assert!(
+        err.is_err(),
+        "readonly field must be write-protected through _inherits delegation"
+    );
+}
