@@ -432,3 +432,22 @@ fn markup_close_tag_with_whitespace() {
         other => panic!("expected clean markup, got {other:?}"),
     }
 }
+
+#[test]
+fn access_csv_on_unknown_model_errors() {
+    use rusdoo_modules::installer::{apply_access_records, XmlIds};
+    use rusdoo_orm::access::AccessControl;
+
+    let reg = Registry::new(); // no models registered
+    let rec = rusdoo_modules::data::DataRecord {
+        xml_id: Some("acc".into()),
+        model: "ir.model.access".into(),
+        fields: vec![("model".into(), FieldValue::Text("ghost.model".into()))],
+        noupdate: false,
+    };
+    let mut ac = AccessControl::new();
+
+    let err = apply_access_records(&mut ac, &reg, &[rec], "m", &XmlIds::new()).unwrap_err();
+
+    assert!(err.to_string().contains("unknown model"));
+}

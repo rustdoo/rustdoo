@@ -271,7 +271,8 @@ pub async fn install_modules(
             }
             // ir.model.access records become AccessControl grants; the
             // group refs they use are already published by earlier files
-            let records = apply_access_records(&mut report.access, &records, name, xml_ids)?;
+            let records =
+                apply_access_records(&mut report.access, registry, &records, name, xml_ids)?;
             let stats = load_records(pool, registry, name, &records, xml_ids).await?;
             totals.created += stats.created;
             totals.updated += stats.updated;
@@ -463,6 +464,7 @@ fn perm_true(value: Option<&FieldValue>) -> bool {
 /// yet — a documented gap, kept fail-closed).
 pub fn apply_access_records(
     access: &mut AccessControl,
+    registry: &Registry,
     records: &[DataRecord],
     module: &str,
     xml_ids: &XmlIds,
@@ -481,6 +483,13 @@ pub fn apply_access_records(
                 ))
             }
         };
+        // a grant on a model that does not exist is a data-file typo, not
+        // a silent no-op (which would leave the real model unreachable)
+        if registry.get(&model).is_none() {
+            return Err(RusdooError::Validation(format!(
+                "ir.model.access grants on unknown model {model:?}"
+            )));
+        }
         let Some(FieldValue::Ref(group_ref)) = record_field(record, "group_id") else {
             // no group: global grant, not supported yet — skip, stay closed
             tracing::warn!("ir.model.access without group_id skipped on {model}");
@@ -491,9 +500,15 @@ pub fn apply_access_records(
         } else {
             format!("{module}.{group_ref}")
         };
-        let (_, group_id) = xml_ids.get(&key).ok_or_else(|| {
+        let (group_model, group_id) = xml_ids.get(&key).ok_or_else(|| {
             RusdooError::Validation(format!("ir.model.access: unknown group ref {key}"))
         })?;
+        // the ref must point at a real group, not any resolvable external id
+        if group_model != "res.groups" {
+            return Err(RusdooError::Validation(format!(
+                "ir.model.access group_id {key} is a {group_model}, not a res.groups"
+            )));
+        }
         let mut ops = Vec::new();
         if perm_true(record_field(record, "perm_read")) {
             ops.push(Operation::Read);

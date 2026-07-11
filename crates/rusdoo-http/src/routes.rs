@@ -316,19 +316,25 @@ async fn render_view_page(
     headers: HeaderMap,
     Path(xml_id): Path<String>,
 ) -> Response {
-    if service.require_auth && current_session(&service, &headers).is_none() {
+    let session = current_session(&service, &headers);
+    if service.require_auth && session.is_none() {
         return (
             axum::http::StatusCode::UNAUTHORIZED,
             Html("<h1>401</h1><p>faça login em /web/session/authenticate</p>".to_string()),
         )
             .into_response();
     }
-    match service.render_view(&xml_id).await {
+    match service.render_view(&xml_id, session.as_ref()).await {
         Ok(html) => Html(html).into_response(),
-        Err(err) => (
-            axum::http::StatusCode::BAD_REQUEST,
-            Html(format!("<h1>erro</h1><pre>{}</pre>", err.message)),
-        )
-            .into_response(),
+        Err(err) => {
+            // never reflect the request or internal error text into HTML
+            // (XSS / info leak): log server-side, return a generic page
+            tracing::warn!("render_view {xml_id:?} failed: {}", err.message);
+            (
+                axum::http::StatusCode::BAD_REQUEST,
+                Html("<h1>erro</h1><p>não foi possível renderizar a view</p>".to_string()),
+            )
+                .into_response()
+        }
     }
 }

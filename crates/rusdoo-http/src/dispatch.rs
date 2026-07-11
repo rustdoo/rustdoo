@@ -48,6 +48,9 @@ impl From<RusdooError> for RpcError {
 /// cannot exhaust memory (each verify is memory-hard).
 const MAX_CONCURRENT_VERIFY: usize = 8;
 
+/// Hard cap on rows rendered into a single view page.
+const VIEW_RECORD_LIMIT: u64 = 200;
+
 #[derive(Clone)]
 pub struct OrmService {
     pub(crate) registry: Arc<Registry>,
@@ -109,7 +112,15 @@ impl OrmService {
     /// Render an `ir.ui.view` (resolved by external id) to HTML: read the
     /// view's arch, gather its target model's records as the context, and
     /// run them through QWeb. The Rust side of an Odoo QWeb report/list.
-    pub(crate) async fn render_view(&self, xml_id: &str) -> Result<String, RpcError> {
+    pub(crate) async fn render_view(
+        &self,
+        xml_id: &str,
+        session: Option<&crate::session::Session>,
+    ) -> Result<String, RpcError> {
+        // read access on the view record itself
+        if let Some(s) = session {
+            self.check_access("ir.ui.view", "read", s)?;
+        }
         let (module, name) = xml_id
             .split_once('.')
             .ok_or_else(|| RpcError::invalid_params("xml_id must be module.name"))?;
@@ -152,6 +163,10 @@ impl OrmService {
 
         let mut ctx = Map::new();
         ctx.insert("title".into(), Value::from(title));
+        // the caller must be allowed to read the model the view renders
+        if let (Some(s), false) = (session, target.is_empty()) {
+            self.check_access(target, "read", s)?;
+        }
         if let Some(m) = self.registry.get(target) {
             let names: Vec<&str> = m
                 .fields()
@@ -159,9 +174,14 @@ impl OrmService {
                 .filter(|f| f.stored && f.exposed && is_readable_scalar(&f.ty))
                 .map(|f| f.name.as_str())
                 .collect();
+            // cap the rows a single page renders (no full-table dumps)
+            let opts = SearchOptions {
+                limit: Some(VIEW_RECORD_LIMIT),
+                ..SearchOptions::default()
+            };
             let ids = self
                 .registry
-                .search(&self.pool, target, &Domain::True, &SearchOptions::default())
+                .search(&self.pool, target, &Domain::True, &opts)
                 .await?;
             let records = self.registry.read(&self.pool, target, &ids, &names).await?;
             ctx.insert("records".into(), json!(records));
