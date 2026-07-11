@@ -1,5 +1,6 @@
 //! rusdoo-orm — port of `odoo/orm/` (models, fields, domains) on PostgreSQL.
 
+pub mod access;
 pub mod crud;
 pub mod db;
 pub mod ddl;

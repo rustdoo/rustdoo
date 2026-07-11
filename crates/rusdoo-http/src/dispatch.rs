@@ -55,6 +55,7 @@ pub struct OrmService {
     pub(crate) require_auth: bool,
     pub(crate) secure_cookies: bool,
     pub(crate) verify_gate: Arc<Semaphore>,
+    pub(crate) access: Arc<rusdoo_orm::access::AccessControl>,
 }
 
 impl OrmService {
@@ -67,7 +68,33 @@ impl OrmService {
             require_auth: true,
             secure_cookies: true,
             verify_gate: Arc::new(Semaphore::new(MAX_CONCURRENT_VERIFY)),
+            access: Arc::new(rusdoo_orm::access::AccessControl::new()),
         }
+    }
+
+    /// Install the access-control table (`ir.model.access`).
+    pub fn with_access(mut self, access: rusdoo_orm::access::AccessControl) -> Self {
+        self.access = Arc::new(access);
+        self
+    }
+
+    /// Enforce `ir.model.access` for the operation implied by `method`.
+    /// Methods with no CRUD mapping (custom actions) are not gated here.
+    pub(crate) fn check_access(
+        &self,
+        model: &str,
+        method: &str,
+        session: &crate::session::Session,
+    ) -> Result<(), RpcError> {
+        let Some(op) = rusdoo_orm::access::Operation::for_method(method) else {
+            return Ok(());
+        };
+        self.access
+            .check(model, op, &session.groups, session.is_superuser)
+            .map_err(|e| RpcError {
+                code: crate::jsonrpc::SERVER_ERROR,
+                message: e.to_string(),
+            })
     }
 
     /// No authentication — tests and trusted tooling only.

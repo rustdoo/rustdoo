@@ -452,3 +452,101 @@ async fn password_field_is_never_readable_over_rpc() {
         .unwrap()
         .contains("password"));
 }
+
+#[tokio::test]
+async fn access_control_enforced_live() {
+    use rusdoo_orm::access::{AccessControl, Operation};
+
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.users".into(),
+            table: "rusdoo_test_acl_users".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("login", FieldType::Char { size: None }).required(),
+            Field::new("password", FieldType::Char { size: None }).private(),
+        ],
+    ))
+    .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_acl_users""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("res.users")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+    // first user is uid 1 (superuser), second is uid 2 (regular)
+    let admin_hash = rusdoo_http::session::hash_password("admin").unwrap();
+    let ana_hash = rusdoo_http::session::hash_password("segredo").unwrap();
+    reg.create(
+        &pool,
+        "res.users",
+        vec![("login", json!("admin")), ("password", json!(admin_hash))],
+    )
+    .await
+    .unwrap();
+    reg.create(
+        &pool,
+        "res.users",
+        vec![("login", json!("ana")), ("password", json!(ana_hash))],
+    )
+    .await
+    .unwrap();
+
+    // res.users is readable only by group 99 (which nobody belongs to)
+    let mut acl = AccessControl::new();
+    acl.grant("res.users", 99, &[Operation::Read]);
+    let service = OrmService::new(Arc::new(reg), pool).with_access(acl);
+
+    // ana (uid 2, no groups): read denied
+    let (_, _, cookie) = rpc_full(
+        router(service.clone()),
+        "/web/session/authenticate",
+        json!({"jsonrpc":"2.0","id":1,"method":"call","params":{"login":"ana","password":"segredo"}}),
+        None,
+    )
+    .await;
+    let ana = cookie.unwrap().split(';').next().unwrap().to_string();
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":2,"method":"call","params":{
+            "model":"res.users","method":"search","args":[[]],"kwargs":{}}}),
+        Some(&ana),
+    )
+    .await;
+    assert_eq!(resp["error"]["code"], json!(-32000));
+    assert!(resp["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("not allowed"));
+
+    // admin (uid 1, superuser): allowed
+    let (_, _, cookie) = rpc_full(
+        router(service.clone()),
+        "/web/session/authenticate",
+        json!({"jsonrpc":"2.0","id":3,"method":"call","params":{"login":"admin","password":"admin"}}),
+        None,
+    )
+    .await;
+    let admin = cookie.unwrap().split(';').next().unwrap().to_string();
+    let (_, resp, _) = rpc_full(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":4,"method":"call","params":{
+            "model":"res.users","method":"search","args":[[]],"kwargs":{}}}),
+        Some(&admin),
+    )
+    .await;
+    assert!(resp.get("result").is_some(), "superuser bypasses ACL");
+}

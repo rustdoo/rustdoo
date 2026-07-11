@@ -73,7 +73,8 @@ async fn call_kw(
         Ok(request) => request,
         Err(error) => return Json(error),
     };
-    if service.require_auth && current_session(&service, &headers).is_none() {
+    let session = current_session(&service, &headers);
+    if service.require_auth && session.is_none() {
         return Json(JsonRpcResponse::error(
             request.id,
             SESSION_EXPIRED,
@@ -91,6 +92,16 @@ async fn call_kw(
             "params must include model and method",
         ));
     };
+    // ir.model.access enforcement (skipped for insecure/no-session tooling)
+    if let Some(session) = &session {
+        if let Err(error) = service.check_access(model, method, session) {
+            return Json(JsonRpcResponse::error(
+                request.id,
+                error.code,
+                error.message,
+            ));
+        }
+    }
     let args = params
         .get("args")
         .and_then(Value::as_array)

@@ -11,10 +11,17 @@ use rusdoo_core::RusdooError;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 
+/// Odoo's SUPERUSER_ID — bypasses access control.
+pub const SUPERUSER_ID: i64 = 1;
+
 #[derive(Debug, Clone)]
 pub struct Session {
     pub uid: i64,
     pub login: String,
+    pub is_superuser: bool,
+    /// res.groups ids the user belongs to (empty until group m2m read
+    /// lands; superuser bypass keeps admin usable meanwhile)
+    pub groups: Vec<i64>,
 }
 
 /// In-memory session store (server restarts log everyone out).
@@ -38,6 +45,8 @@ impl SessionStore {
                 Session {
                     uid,
                     login: to_owned_login(login),
+                    is_superuser: uid == SUPERUSER_ID,
+                    groups: Vec::new(),
                 },
             );
         token
