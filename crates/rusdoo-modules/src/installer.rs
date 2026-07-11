@@ -333,7 +333,7 @@ fn field_from_ttype(
 /// Consume `ir.model` / `ir.model.fields` records, registering the
 /// declared models (or extending existing ones); everything else is
 /// returned for normal data loading. Returns the touched model names.
-fn apply_model_definitions(
+pub fn apply_model_definitions(
     registry: &mut Registry,
     records: &[DataRecord],
 ) -> Result<(Vec<DataRecord>, Vec<String>), RusdooError> {
@@ -376,6 +376,14 @@ fn apply_model_definitions(
                 let name = text_of(record_field(record, "name")).ok_or_else(|| {
                     RusdooError::Validation("ir.model.fields requires 'name'".into())
                 })?;
+                if matches!(
+                    name.as_str(),
+                    "id" | "create_uid" | "create_date" | "write_uid" | "write_date"
+                ) {
+                    return Err(RusdooError::Validation(format!(
+                        "ir.model.fields cannot redefine reserved column {name:?}"
+                    )));
+                }
                 let ttype = text_of(record_field(record, "ttype")).ok_or_else(|| {
                     RusdooError::Validation("ir.model.fields requires 'ttype'".into())
                 })?;
@@ -396,28 +404,25 @@ fn apply_model_definitions(
     let mut touched = Vec::new();
     for model_def in pending {
         if registry.get(&model_def.tech_name).is_some() {
-            // in-place extension keeps the existing table
-            registry.register(Model::new(
-                ModelMeta {
-                    name: model_def.tech_name.clone(),
-                    table: String::new(),
-                    inherit: vec![model_def.tech_name.clone()],
-                    inherits: vec![],
-                },
-                model_def.fields,
-            ))?;
-        } else {
-            let table = model_def.tech_name.replace('.', "_");
-            registry.register(Model::new(
-                ModelMeta {
-                    name: model_def.tech_name.clone(),
-                    table,
-                    inherit: vec![],
-                    inherits: vec![],
-                },
-                model_def.fields,
-            ))?;
+            // extending an existing model needs ALTER TABLE ADD COLUMN,
+            // not implemented yet — fail loudly instead of registering a
+            // field whose column never gets created
+            return Err(RusdooError::Validation(format!(
+                "extending existing model {:?} via ir.model is not yet supported \
+                 (no schema migration)",
+                model_def.tech_name
+            )));
         }
+        let table = model_def.tech_name.replace('.', "_");
+        registry.register(Model::new(
+            ModelMeta {
+                name: model_def.tech_name.clone(),
+                table,
+                inherit: vec![],
+                inherits: vec![],
+            },
+            model_def.fields,
+        ))?;
         touched.push(model_def.tech_name);
     }
     Ok((remaining, touched))

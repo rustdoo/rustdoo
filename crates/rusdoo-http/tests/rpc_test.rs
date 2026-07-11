@@ -404,3 +404,51 @@ async fn session_auth_flow_live() {
     .await;
     assert_eq!(resp["error"]["code"], json!(100));
 }
+
+#[tokio::test]
+async fn password_field_is_never_readable_over_rpc() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.users".into(),
+            table: "rusdoo_test_secret_users".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("login", FieldType::Char { size: None }),
+            Field::new("password", FieldType::Char { size: None }).private(),
+        ],
+    ))
+    .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_secret_users""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("res.users")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+    let service = OrmService::insecure(Arc::new(reg), pool);
+
+    let (_, resp) = rpc(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":1,"method":"call","params":{
+            "model":"res.users","method":"search_read","args":[],
+            "kwargs":{"fields":["login","password"]}}}),
+    )
+    .await;
+
+    assert_eq!(resp["error"]["code"], json!(-32602));
+    assert!(resp["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("password"));
+}

@@ -200,7 +200,8 @@ async fn authenticate(State(service): State<OrmService>, Json(body): Json<Value>
         .into_response();
     };
 
-    let mut authenticated_uid = None;
+    // resolve the user (if any), then always spend the same verify work
+    let mut candidate: Option<(i64, String)> = None;
     if let Ok(domain) = parse_domain(&json!([["login", "=", login]])) {
         if let Ok(ids) = service
             .registry
@@ -218,17 +219,19 @@ async fn authenticate(State(service): State<OrmService>, Json(body): Json<Value>
                     .read(&service.pool, "res.users", &[*uid], &["password"])
                     .await
                 {
-                    let hashed = rows
-                        .first()
-                        .and_then(|row| row["password"].as_str())
-                        .unwrap_or("");
-                    if crate::session::verify_password(password, hashed) {
-                        authenticated_uid = Some(*uid);
+                    if let Some(hash) = rows.first().and_then(|row| row["password"].as_str()) {
+                        candidate = Some((*uid, hash.to_string()));
                     }
                 }
             }
         }
     }
+    let hash = candidate.as_ref().map(|(_, hash)| hash.as_str());
+    let authenticated_uid = if service.verify(password, hash).await {
+        candidate.as_ref().map(|(uid, _)| *uid)
+    } else {
+        None
+    };
 
     match authenticated_uid {
         None => Json(JsonRpcResponse::error(
@@ -242,7 +245,14 @@ async fn authenticate(State(service): State<OrmService>, Json(body): Json<Value>
             (
                 AppendHeaders([(
                     header::SET_COOKIE,
-                    format!("session_id={token}; HttpOnly; Path=/; SameSite=Lax"),
+                    format!(
+                        "session_id={token}; HttpOnly; Path=/; SameSite=Lax{}",
+                        if service.secure_cookies {
+                            "; Secure"
+                        } else {
+                            ""
+                        }
+                    ),
                 )]),
                 Json(JsonRpcResponse::result(
                     request.id,

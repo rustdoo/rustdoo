@@ -357,3 +357,42 @@ async fn failed_load_rolls_back_the_whole_file() {
     assert_eq!(count, 0);
     assert!(xml_ids.get("demo.good").is_none());
 }
+
+#[test]
+fn extending_existing_model_via_ir_model_is_rejected() {
+    use rusdoo_modules::installer::apply_model_definitions;
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.partner".into(),
+            table: "res_partner".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    let records = parse_xml_data(
+        r#"<odoo><record id="m" model="ir.model">
+            <field name="model">res.partner</field></record></odoo>"#,
+    )
+    .unwrap();
+    assert!(apply_model_definitions(&mut reg, &records).is_err());
+}
+
+#[test]
+fn reserved_field_names_are_rejected() {
+    use rusdoo_modules::installer::apply_model_definitions;
+    let mut reg = Registry::new();
+    let records = parse_xml_data(
+        r#"<odoo>
+        <record id="m" model="ir.model"><field name="model">x_demo.thing</field></record>
+        <record id="f" model="ir.model.fields">
+            <field name="model_id" ref="m"/>
+            <field name="name">id</field>
+            <field name="ttype">integer</field>
+        </record></odoo>"#,
+    )
+    .unwrap();
+    assert!(apply_model_definitions(&mut reg, &records).is_err());
+}

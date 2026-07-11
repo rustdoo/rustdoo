@@ -9,7 +9,7 @@ use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, Salt
 use argon2::Argon2;
 use rusdoo_core::RusdooError;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 #[derive(Debug, Clone)]
 pub struct Session {
@@ -30,20 +30,23 @@ impl SessionStore {
 
     pub fn open(&self, uid: i64, login: &str) -> String {
         let token = uuid::Uuid::new_v4().to_string();
-        self.inner.write().expect("session lock poisoned").insert(
-            token.clone(),
-            Session {
-                uid,
-                login: to_owned_login(login),
-            },
-        );
+        self.inner
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(
+                token.clone(),
+                Session {
+                    uid,
+                    login: to_owned_login(login),
+                },
+            );
         token
     }
 
     pub fn get(&self, token: &str) -> Option<Session> {
         self.inner
             .read()
-            .expect("session lock poisoned")
+            .unwrap_or_else(|p| p.into_inner())
             .get(token)
             .cloned()
     }
@@ -51,7 +54,7 @@ impl SessionStore {
     pub fn close(&self, token: &str) {
         self.inner
             .write()
-            .expect("session lock poisoned")
+            .unwrap_or_else(|p| p.into_inner())
             .remove(token);
     }
 }
@@ -66,6 +69,13 @@ pub fn hash_password(plain: &str) -> Result<String, RusdooError> {
         .hash_password(plain.as_bytes(), &salt)
         .map(|hash| hash.to_string())
         .map_err(|e| RusdooError::Validation(format!("password hash: {e}")))
+}
+
+/// A fixed valid Argon2 hash used to spend the same work on the
+/// user-not-found path, so login timing cannot enumerate accounts.
+pub fn dummy_hash() -> &'static str {
+    static DUMMY: OnceLock<String> = OnceLock::new();
+    DUMMY.get_or_init(|| hash_password("rusdoo-not-a-real-password").expect("hash dummy"))
 }
 
 pub fn verify_password(plain: &str, hashed: &str) -> bool {

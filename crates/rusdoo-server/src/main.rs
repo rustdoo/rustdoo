@@ -37,7 +37,10 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let service = OrmService::new(Arc::new(registry), pool);
+    let mut service = OrmService::new(Arc::new(registry), pool);
+    if std::env::var("RUSDOO_INSECURE_COOKIES").is_ok() {
+        service = service.allow_insecure_cookies();
+    }
     tracing::info!("rusdoo listening on {DEFAULT_ADDR} (/jsonrpc, /web/dataset/call_kw)");
     rusdoo_http::serve(DEFAULT_ADDR, service).await?;
     Ok(())
@@ -65,7 +68,7 @@ fn base_registry() -> anyhow::Result<Registry> {
         },
         vec![
             Field::new("login", FieldType::Char { size: None }).required(),
-            Field::new("password", FieldType::Char { size: None }),
+            Field::new("password", FieldType::Char { size: None }).private(),
             Field::new("active", FieldType::Boolean),
         ],
     ))?;

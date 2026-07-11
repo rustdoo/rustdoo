@@ -8,6 +8,7 @@ use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 
 use crate::jsonrpc::{INVALID_PARAMS, METHOD_NOT_FOUND, SERVER_ERROR};
 
@@ -42,12 +43,18 @@ impl From<RusdooError> for RpcError {
     }
 }
 
+/// Bounds concurrent Argon2id verifications so a flood of bad logins
+/// cannot exhaust memory (each verify is memory-hard).
+const MAX_CONCURRENT_VERIFY: usize = 8;
+
 #[derive(Clone)]
 pub struct OrmService {
     pub(crate) registry: Arc<Registry>,
     pub(crate) pool: PgPool,
     pub(crate) sessions: crate::session::SessionStore,
     pub(crate) require_auth: bool,
+    pub(crate) secure_cookies: bool,
+    pub(crate) verify_gate: Arc<Semaphore>,
 }
 
 impl OrmService {
@@ -58,10 +65,13 @@ impl OrmService {
             pool,
             sessions: crate::session::SessionStore::new(),
             require_auth: true,
+            secure_cookies: true,
+            verify_gate: Arc::new(Semaphore::new(MAX_CONCURRENT_VERIFY)),
         }
     }
 
     /// No authentication — tests and trusted tooling only.
+    #[doc(hidden)]
     pub fn insecure(registry: Arc<Registry>, pool: PgPool) -> Self {
         OrmService {
             require_auth: false,
@@ -69,19 +79,56 @@ impl OrmService {
         }
     }
 
-    /// Classic RPC credentials: uid + password verified per call.
+    /// Allow the session cookie over plain HTTP (local dev only).
+    pub fn allow_insecure_cookies(mut self) -> Self {
+        self.secure_cookies = false;
+        self
+    }
+
+    /// Verify a password in constant work whether or not the user exists,
+    /// under the concurrency gate. `hash == None` still spends a full
+    /// Argon2 verify against a dummy hash, then fails.
+    pub(crate) async fn verify(&self, password: &str, hash: Option<&str>) -> bool {
+        let _permit = self.verify_gate.acquire().await;
+        match hash {
+            Some(hash) => crate::session::verify_password(password, hash),
+            None => {
+                let _ = crate::session::verify_password(password, crate::session::dummy_hash());
+                false
+            }
+        }
+    }
+
+    /// Reject a read/search_read requesting a non-exposed field.
+    pub(crate) fn ensure_exposed(&self, model: &str, fields: &[String]) -> Result<(), RpcError> {
+        let Some(m) = self.registry.get(model) else {
+            return Ok(());
+        };
+        for name in fields {
+            if let Some(field) = m.field(name) {
+                if !field.exposed {
+                    return Err(RpcError::invalid_params(format!(
+                        "field {name:?} is not readable"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Classic RPC credentials: uid + password verified per call, in
+    /// constant work whether or not the uid exists.
     pub(crate) async fn check_credentials(&self, uid: i64, password: &str) -> bool {
-        let Ok(rows) = self
+        let hash = self
             .registry
             .read(&self.pool, "res.users", &[uid], &["password"])
             .await
-        else {
-            return false;
-        };
-        let Some(hashed) = rows.first().and_then(|r| r["password"].as_str()) else {
-            return false;
-        };
-        crate::session::verify_password(password, hashed)
+            .ok()
+            .and_then(|rows| {
+                rows.first()
+                    .and_then(|r| r["password"].as_str().map(str::to_string))
+            });
+        self.verify(password, hash.as_deref()).await
     }
 
     /// Dispatch an ORM method call, Odoo's `call_kw`.
@@ -113,6 +160,7 @@ impl OrmService {
             "search_read" => {
                 let domain = self.arg_domain(args.first().or_else(|| kwargs.get("domain")))?;
                 let fields = parse_fields(args.get(1).or_else(|| kwargs.get("fields")))?;
+                self.ensure_exposed(model, &fields)?;
                 let opts = search_options(kwargs)?;
                 let ids = self
                     .registry
@@ -128,6 +176,7 @@ impl OrmService {
             "read" => {
                 let ids = parse_ids(args.first())?;
                 let fields = parse_fields(args.get(1).or_else(|| kwargs.get("fields")))?;
+                self.ensure_exposed(model, &fields)?;
                 let names: Vec<&str> = fields.iter().map(String::as_str).collect();
                 let rows = self.registry.read(&self.pool, model, &ids, &names).await?;
                 Ok(json!(rows))

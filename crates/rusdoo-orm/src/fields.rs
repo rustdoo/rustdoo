@@ -45,6 +45,9 @@ pub struct Field {
     pub required: bool,
     pub readonly: bool,
     pub stored: bool,
+    /// whether the field may be returned through RPC read/search_read;
+    /// false for secrets like password hashes
+    pub exposed: bool,
 }
 
 impl Field {
@@ -56,6 +59,7 @@ impl Field {
             required: false,
             readonly: false,
             stored,
+            exposed: true,
         }
     }
 
@@ -69,6 +73,14 @@ impl Field {
     pub fn readonly(self) -> Self {
         Field {
             readonly: true,
+            ..self
+        }
+    }
+
+    /// Mark the field as never returned over RPC (secrets).
+    pub fn private(self) -> Self {
+        Field {
+            exposed: false,
             ..self
         }
     }
