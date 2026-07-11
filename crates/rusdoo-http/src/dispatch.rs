@@ -8,7 +8,7 @@ use rusdoo_orm::fields::{Field, FieldType};
 use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
@@ -666,23 +666,27 @@ impl OrmService {
                 let m = self.registry.get(model).ok_or_else(|| {
                     RpcError::from(RusdooError::Validation(format!("unknown model: {model}")))
                 })?;
-                let only: Vec<String> = args
-                    .first()
-                    .or_else(|| kwargs.get("allfields"))
-                    .and_then(Value::as_array)
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                // `allfields` filters which fields to return. Absent or the
+                // Odoo sentinels (null/false) mean "all"; a list restricts;
+                // anything else is a malformed arg — surface it, don't
+                // silently fall back to returning everything.
+                let raw = args.first().or_else(|| kwargs.get("allfields"));
+                let only: HashSet<&str> = match raw {
+                    None | Some(Value::Null) | Some(Value::Bool(false)) => HashSet::new(),
+                    Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).collect(),
+                    Some(_) => {
+                        return Err(RpcError::invalid_params(
+                            "fields_get: allfields must be a list of field names",
+                        ))
+                    }
+                };
                 let mut out = Map::new();
                 for field in m.fields() {
                     // don't leak private fields (e.g. password hashes)
                     if !field.exposed {
                         continue;
                     }
-                    if !only.is_empty() && !only.contains(&field.name) {
+                    if !only.is_empty() && !only.contains(field.name.as_str()) {
                         continue;
                     }
                     out.insert(field.name.clone(), field_metadata(field));

@@ -550,6 +550,39 @@ async fn access_control_enforced_live() {
     .await;
     assert!(resp.get("result").is_some(), "superuser bypasses ACL");
 
+    // fields_get is ACL-gated (mapped to read) and omits private fields
+    // ana (no grant) is denied
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":7,"method":"call","params":{
+            "model":"res.users","method":"fields_get","args":[],"kwargs":{}}}),
+        Some(&ana),
+    )
+    .await;
+    assert_eq!(
+        resp["error"]["code"],
+        json!(-32000),
+        "ana denied fields_get without a read grant"
+    );
+    // admin is allowed, and the private password field is NOT disclosed
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":8,"method":"call","params":{
+            "model":"res.users","method":"fields_get","args":[],"kwargs":{}}}),
+        Some(&admin),
+    )
+    .await;
+    assert!(
+        resp["result"]["login"].is_object(),
+        "admin sees login metadata"
+    );
+    assert!(
+        resp["result"].get("password").is_none(),
+        "private password field must be omitted from fields_get"
+    );
+
     // the classic /jsonrpc path enforces the ACL too (was a 100% bypass)
     let (_, resp) = rpc(
         router(service.clone()),
@@ -795,6 +828,24 @@ async fn fields_get_returns_field_metadata() {
     assert_eq!(fields["create_uid"]["type"], json!("many2one"));
     assert_eq!(fields["create_uid"]["relation"], json!("res.users"));
     assert_eq!(fields["create_uid"]["readonly"], json!(true));
+}
+
+#[tokio::test]
+async fn fields_get_rejects_malformed_allfields() {
+    // a bare string instead of a list is a client bug — surface it rather
+    // than silently returning every field
+    let app = router(test_service());
+    let (_, resp) = rpc(
+        app,
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 3, "method": "call",
+            "params": {"model": "res.partner", "method": "fields_get",
+                       "args": ["name"], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["error"]["code"], json!(-32602), "malformed allfields");
 }
 
 #[tokio::test]
