@@ -3,6 +3,7 @@
 //! of `ir.model.data` (in-memory until the base models are ported).
 
 use crate::data::{parse_csv_data, parse_xml_data, DataRecord, FieldValue};
+use crate::eval::eval_expr;
 use crate::graph::dependency_order;
 use crate::loader::discover_addons;
 use crate::manifest::Manifest;
@@ -112,6 +113,17 @@ pub async fn load_records(
             let value = match field_value {
                 FieldValue::Text(text) => Value::String(text.clone()),
                 FieldValue::Eval(value) => value.clone(),
+                FieldValue::Expr(expr) => {
+                    // ref('x') resolves against the ids staged/published so far
+                    let resolve = |name: &str| {
+                        let key = qualify(module, name);
+                        staged
+                            .get(&key)
+                            .map(|(_, id)| *id)
+                            .or_else(|| xml_ids.get(&key).map(|(_, id)| *id))
+                    };
+                    eval_expr(expr, &resolve)?
+                }
                 FieldValue::Ref(xml_id) => {
                     let key = qualify(module, xml_id);
                     let (_, id) =

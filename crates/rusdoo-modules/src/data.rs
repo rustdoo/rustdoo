@@ -15,6 +15,9 @@ pub enum FieldValue {
     Ref(String),
     /// `eval="..."` python literal, or a `type="int|float"` coercion
     Eval(Value),
+    /// `eval="..."` expression needing load-time context (ref/Command),
+    /// evaluated by the installer where external ids are available
+    Expr(String),
 }
 
 #[derive(Debug, Clone)]
@@ -79,14 +82,16 @@ fn finish_field(pending: PendingField) -> Result<(String, FieldValue), RusdooErr
     let value = if let Some(reference) = pending.reference {
         FieldValue::Ref(reference)
     } else if let Some(eval) = pending.eval {
-        FieldValue::Eval(
-            parse_py_literal(&eval).map_err(|e| {
-                RusdooError::Validation(format!("field {:?} eval: {e}", pending.name))
-            })?,
-        )
+        // pure literals resolve now; ref()/Command exprs defer to load time
+        match parse_py_literal(&eval) {
+            Ok(value) => FieldValue::Eval(value),
+            Err(_) => FieldValue::Expr(eval),
+        }
     } else {
         match pending.value_type.as_deref() {
-            None | Some("char") | Some("text") => FieldValue::Text(pending.text),
+            None | Some("char") | Some("text") | Some("base64") | Some("html") => {
+                FieldValue::Text(pending.text)
+            }
             Some("int") => FieldValue::Eval(Value::from(
                 pending.text.trim().parse::<i64>().map_err(|_| {
                     RusdooError::Validation(format!(

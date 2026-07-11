@@ -2,6 +2,7 @@
 //! (`__manifest__.py`), dependency graph, addon discovery.
 
 pub mod data;
+pub mod eval;
 pub mod graph;
 pub mod installer;
 pub mod loader;
