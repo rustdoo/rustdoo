@@ -13,6 +13,7 @@ axum.workspace = true
 tokio.workspace = true
 rusdoo-core = { path = "../rusdoo-core" }
 rusdoo-orm = { path = "../rusdoo-orm" }
+rusdoo-qweb = { path = "../rusdoo-qweb" }
 sqlx.workspace = true
 argon2.workspace = true
 uuid.workspace = true

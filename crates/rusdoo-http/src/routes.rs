@@ -1,7 +1,7 @@
 //! HTTP endpoints, mirroring the routes of `odoo/http.py` used by the
 //! web client and classic RPC clients.
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{header, HeaderMap};
 use axum::response::{AppendHeaders, Html, IntoResponse, Response};
 use axum::routing::{get, post};
@@ -24,6 +24,7 @@ pub fn router(service: OrmService) -> Router {
         .route("/web/dataset/call_kw", post(call_kw))
         .route("/web/session/authenticate", post(authenticate))
         .route("/web/session/destroy", post(destroy))
+        .route("/web/view/{xml_id}", get(render_view_page))
         .route("/jsonrpc", post(jsonrpc_endpoint))
         .with_state(service)
 }
@@ -307,4 +308,27 @@ async fn destroy(
         }
     }
     Json(JsonRpcResponse::result(id, Value::Bool(true)))
+}
+
+/// `GET /web/view/{xml_id}` — render a stored ir.ui.view to an HTML page.
+async fn render_view_page(
+    State(service): State<OrmService>,
+    headers: HeaderMap,
+    Path(xml_id): Path<String>,
+) -> Response {
+    if service.require_auth && current_session(&service, &headers).is_none() {
+        return (
+            axum::http::StatusCode::UNAUTHORIZED,
+            Html("<h1>401</h1><p>faça login em /web/session/authenticate</p>".to_string()),
+        )
+            .into_response();
+    }
+    match service.render_view(&xml_id).await {
+        Ok(html) => Html(html).into_response(),
+        Err(err) => (
+            axum::http::StatusCode::BAD_REQUEST,
+            Html(format!("<h1>erro</h1><pre>{}</pre>", err.message)),
+        )
+            .into_response(),
+    }
 }

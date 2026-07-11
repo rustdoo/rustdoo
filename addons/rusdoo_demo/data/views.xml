@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_partners" model="ir.ui.view">
+        <field name="name">Parceiros Rusdoo</field>
+        <field name="model">res.partner</field>
+        <field name="arch" type="xml"><div style="font-family:system-ui;max-width:640px;margin:3rem auto"><h1 t-esc="title"/><table border="1" cellpadding="6" style="border-collapse:collapse"><tr><th>Nome</th><th>E-mail</th></tr><tr t-foreach="records" t-as="p"><td t-esc="p.name"/><td t-esc="p.email"/></tr></table><p t-if="records">Parceiros carregados do banco via QWeb.</p></div></field>
+    </record>
+</odoo>

@@ -71,6 +71,19 @@ fn base_registry() -> anyhow::Result<Registry> {
     ))?;
     reg.register(Model::new(
         ModelMeta {
+            name: "ir.ui.view".into(),
+            table: "ir_ui_view".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("model", FieldType::Char { size: None }),
+            Field::new("arch", FieldType::Text),
+        ],
+    ))?;
+    reg.register(Model::new(
+        ModelMeta {
             name: "res.users".into(),
             table: "res_users".into(),
             inherit: vec![],

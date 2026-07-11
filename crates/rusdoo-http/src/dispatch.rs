@@ -4,6 +4,7 @@
 use rusdoo_core::RusdooError;
 use rusdoo_orm::crud::SearchOptions;
 use rusdoo_orm::domain::{parse_domain, Domain};
+use rusdoo_orm::fields::FieldType;
 use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
@@ -103,6 +104,72 @@ impl OrmService {
                 code: crate::jsonrpc::SERVER_ERROR,
                 message: e.to_string(),
             })
+    }
+
+    /// Render an `ir.ui.view` (resolved by external id) to HTML: read the
+    /// view's arch, gather its target model's records as the context, and
+    /// run them through QWeb. The Rust side of an Odoo QWeb report/list.
+    pub(crate) async fn render_view(&self, xml_id: &str) -> Result<String, RpcError> {
+        let (module, name) = xml_id
+            .split_once('.')
+            .ok_or_else(|| RpcError::invalid_params("xml_id must be module.name"))?;
+        let row: Option<(String, i32)> = sqlx::query_as(
+            r#"SELECT "model", "res_id" FROM "ir_model_data" WHERE "module" = $1 AND "name" = $2"#,
+        )
+        .bind(module)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: e.to_string(),
+        })?;
+        let (model, res_id) = row.ok_or_else(|| RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: format!("unknown external id: {xml_id}"),
+        })?;
+        if model != "ir.ui.view" {
+            return Err(RpcError::invalid_params(format!(
+                "{xml_id} is a {model}, not an ir.ui.view"
+            )));
+        }
+        let views = self
+            .registry
+            .read(
+                &self.pool,
+                "ir.ui.view",
+                &[i64::from(res_id)],
+                &["name", "model", "arch"],
+            )
+            .await?;
+        let view = views.first().ok_or_else(|| RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: "view record vanished".into(),
+        })?;
+        let arch = view.get("arch").and_then(Value::as_str).unwrap_or("");
+        let target = view.get("model").and_then(Value::as_str).unwrap_or("");
+        let title = view.get("name").and_then(Value::as_str).unwrap_or("");
+
+        let mut ctx = Map::new();
+        ctx.insert("title".into(), Value::from(title));
+        if let Some(m) = self.registry.get(target) {
+            let names: Vec<&str> = m
+                .fields()
+                .iter()
+                .filter(|f| f.stored && f.exposed && is_readable_scalar(&f.ty))
+                .map(|f| f.name.as_str())
+                .collect();
+            let ids = self
+                .registry
+                .search(&self.pool, target, &Domain::True, &SearchOptions::default())
+                .await?;
+            let records = self.registry.read(&self.pool, target, &ids, &names).await?;
+            ctx.insert("records".into(), json!(records));
+        }
+        rusdoo_qweb::render(arch, &Value::Object(ctx)).map_err(|e| RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: e.to_string(),
+        })
     }
 
     /// Resolve a user's `res.groups` ids from the `groups_id` m2m field,
@@ -336,4 +403,19 @@ fn parse_values(raw: Option<&Value>) -> Result<Map<String, Value>, RpcError> {
         Some(Value::Object(map)) => Ok(map.clone()),
         _ => Err(RpcError::invalid_params("expected a values object")),
     }
+}
+
+/// Field types the view context can safely read (decodable scalars).
+fn is_readable_scalar(ty: &FieldType) -> bool {
+    matches!(
+        ty,
+        FieldType::Char { .. }
+            | FieldType::Text
+            | FieldType::Html
+            | FieldType::Integer
+            | FieldType::Boolean
+            | FieldType::Selection(_)
+            | FieldType::Many2one { .. }
+            | FieldType::Float { digits: None }
+    )
 }
