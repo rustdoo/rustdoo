@@ -863,3 +863,621 @@ async fn default_get_returns_empty_when_no_defaults() {
     .await;
     assert_eq!(resp["result"], json!({}));
 }
+
+// ---------------------------------------------------------------------------
+// web_read / web_search_read — the Odoo 19 web client's read path
+// ---------------------------------------------------------------------------
+
+/// Registry with relational fields, for the web_read shaping tests.
+fn web_registry() -> Registry {
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.partner".into(),
+            table: "rusdoo_test_web_partner".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }).required(),
+            Field::new(
+                "country_id",
+                FieldType::Many2one {
+                    comodel: "res.country".into(),
+                },
+            ),
+            Field::new(
+                "category_ids",
+                FieldType::Many2many {
+                    comodel: "res.partner.category".into(),
+                    relation: "rusdoo_test_web_pc_rel".into(),
+                    column1: "partner_id".into(),
+                    column2: "category_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.country".into(),
+            table: "rusdoo_test_web_country".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("code", FieldType::Char { size: None }),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.partner.category".into(),
+            table: "rusdoo_test_web_category".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg
+}
+
+#[tokio::test]
+async fn web_read_refuses_unsupported_spec_keys() {
+    // `context`/`order` in a sub-spec change which rows come back; until
+    // they are implemented the server must refuse, never silently ignore
+    let app = router(test_service());
+    let (_, resp) = rpc(
+        app,
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "call",
+            "params": {"model": "res.partner", "method": "web_search_read", "args": [],
+                       "kwargs": {"domain": [],
+                                  "specification": {"name": {"context": {"lang": "pt_BR"}}}}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["error"]["code"], json!(-32602));
+    assert!(resp["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("context"));
+}
+
+#[tokio::test]
+async fn web_spec_wider_than_the_node_cap_is_refused() {
+    // depth is capped elsewhere; width must be too, or one request fans
+    // out into an unbounded number of recursive reads
+    let mut spec = serde_json::Map::new();
+    for i in 0..201 {
+        spec.insert(format!("f{i}"), json!({}));
+    }
+    let app = router(test_service());
+    let (_, resp) = rpc(
+        app,
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "call",
+            "params": {"model": "res.partner", "method": "web_read",
+                       "args": [[1], spec], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["error"]["code"], json!(-32602));
+    assert!(resp["error"]["message"].as_str().unwrap().contains("200"));
+}
+
+#[tokio::test]
+async fn web_read_nested_acl_and_exposure_enforced_live() {
+    use rusdoo_orm::access::{AccessControl, Operation};
+
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.groups".into(),
+            table: "rusdoo_test_webacl_groups".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.users".into(),
+            table: "rusdoo_test_webacl_users".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("login", FieldType::Char { size: None }).required(),
+            Field::new("password", FieldType::Char { size: None }).private(),
+            Field::new(
+                "groups_id",
+                FieldType::Many2many {
+                    comodel: "res.groups".into(),
+                    relation: "rusdoo_test_webacl_ug_rel".into(),
+                    column1: "user_id".into(),
+                    column2: "group_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.partner".into(),
+            table: "rusdoo_test_webacl_partner".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }).required(),
+            Field::new(
+                "user_id",
+                FieldType::Many2one {
+                    comodel: "res.users".into(),
+                },
+            ),
+            Field::new(
+                "category_ids",
+                FieldType::Many2many {
+                    comodel: "res.partner.category".into(),
+                    relation: "rusdoo_test_webacl_pc_rel".into(),
+                    column1: "partner_id".into(),
+                    column2: "category_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.partner.category".into(),
+            table: "rusdoo_test_webacl_category".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    for t in [
+        "rusdoo_test_webacl_ug_rel",
+        "rusdoo_test_webacl_pc_rel",
+        "rusdoo_test_webacl_users",
+        "rusdoo_test_webacl_groups",
+        "rusdoo_test_webacl_partner",
+        "rusdoo_test_webacl_category",
+    ] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in [
+        "res.groups",
+        "res.users",
+        "res.partner",
+        "res.partner.category",
+    ] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+    // uid 1 is the superuser; ana is uid 2, member of one group
+    let admin_hash = rusdoo_http::session::hash_password("admin").unwrap();
+    let ana_hash = rusdoo_http::session::hash_password("segredo").unwrap();
+    reg.create(
+        &pool,
+        "res.users",
+        vec![("login", json!("admin")), ("password", json!(admin_hash))],
+    )
+    .await
+    .unwrap();
+    let ana_uid = reg
+        .create(
+            &pool,
+            "res.users",
+            vec![
+                ("name", json!("Ana")),
+                ("login", json!("ana")),
+                ("password", json!(ana_hash)),
+            ],
+        )
+        .await
+        .unwrap();
+    let group = reg
+        .create(&pool, "res.groups", vec![("name", json!("vendas"))])
+        .await
+        .unwrap();
+    sqlx::query(r#"INSERT INTO "rusdoo_test_webacl_ug_rel" VALUES ($1, $2)"#)
+        .bind(ana_uid)
+        .bind(group)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let cat = reg
+        .create(&pool, "res.partner.category", vec![("name", json!("vip"))])
+        .await
+        .unwrap();
+    let shop = reg
+        .create(
+            &pool,
+            "res.partner",
+            vec![("name", json!("Loja")), ("user_id", json!(ana_uid))],
+        )
+        .await
+        .unwrap();
+    sqlx::query(r#"INSERT INTO "rusdoo_test_webacl_pc_rel" VALUES ($1, $2)"#)
+        .bind(shop)
+        .bind(cat)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // ana's group may read partners — NOT users, NOT categories
+    let mut acl = AccessControl::new();
+    acl.grant("res.partner", group, &[Operation::Read]);
+    let service = OrmService::new(Arc::new(reg), pool).with_access(acl);
+
+    let (_, _, cookie) = rpc_full(
+        router(service.clone()),
+        "/web/session/authenticate",
+        json!({"jsonrpc":"2.0","id":1,"method":"call","params":{"login":"ana","password":"segredo"}}),
+        None,
+    )
+    .await;
+    let ana = cookie.unwrap().split(';').next().unwrap().to_string();
+    let (_, _, cookie) = rpc_full(
+        router(service.clone()),
+        "/web/session/authenticate",
+        json!({"jsonrpc":"2.0","id":2,"method":"call","params":{"login":"admin","password":"admin"}}),
+        None,
+    )
+    .await;
+    let admin = cookie.unwrap().split(';').next().unwrap().to_string();
+
+    // ana reads partners, and the m2o display_name resolves without read
+    // access on res.users (Odoo computes display_name with sudo)
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":3,"method":"call","params":{
+            "model":"res.partner","method":"web_search_read","args":[],
+            "kwargs":{"domain":[],
+                      "specification":{"name":{},
+                                       "user_id":{"fields":{"display_name":{}}}}}}}),
+        Some(&ana),
+    )
+    .await;
+    assert_eq!(resp["result"]["length"], json!(1), "resp: {resp}");
+    assert_eq!(
+        resp["result"]["records"][0]["user_id"],
+        json!({"id": ana_uid, "display_name": "Ana"})
+    );
+
+    // any real sub-field beyond display_name needs read access on the
+    // comodel — ana has none on res.users
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":4,"method":"call","params":{
+            "model":"res.partner","method":"web_read",
+            "args":[[shop], {"user_id":{"fields":{"display_name":{},"login":{}}}}],
+            "kwargs":{}}}),
+        Some(&ana),
+    )
+    .await;
+    assert_eq!(resp["error"]["code"], json!(-32000), "resp: {resp}");
+
+    // same for an x2many that asks for real fields
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":5,"method":"call","params":{
+            "model":"res.partner","method":"web_read",
+            "args":[[shop], {"category_ids":{"fields":{"name":{}}}}],
+            "kwargs":{}}}),
+        Some(&ana),
+    )
+    .await;
+    assert_eq!(resp["error"]["code"], json!(-32000), "resp: {resp}");
+
+    // but `fields: {}` reads nothing from the comodel: ana still gets the
+    // {id} stubs, exactly like Odoo's unreadable-comodel degrade
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":6,"method":"call","params":{
+            "model":"res.partner","method":"web_read",
+            "args":[[shop], {"category_ids":{"fields":{}}}],
+            "kwargs":{}}}),
+        Some(&ana),
+    )
+    .await;
+    assert_eq!(resp["result"][0]["category_ids"], json!([{"id": cat}]));
+
+    // field exposure survives nesting even for the superuser: a private
+    // field (password) is not readable through a m2o sub-spec
+    let (_, resp, _) = rpc_full(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":7,"method":"call","params":{
+            "model":"res.partner","method":"web_read",
+            "args":[[shop], {"user_id":{"fields":{"password":{}}}}],
+            "kwargs":{}}}),
+        Some(&admin),
+    )
+    .await;
+    assert_eq!(resp["error"]["code"], json!(-32602), "resp: {resp}");
+    assert!(resp["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("password"));
+}
+
+#[tokio::test]
+async fn web_read_shapes_records_by_specification_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    for t in [
+        "rusdoo_test_web_pc_rel",
+        "rusdoo_test_web_partner",
+        "rusdoo_test_web_country",
+        "rusdoo_test_web_category",
+    ] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let reg = web_registry();
+    for m in ["res.partner", "res.country", "res.partner.category"] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+    let country = reg.get("res.country").unwrap();
+    let cat = reg.get("res.partner.category").unwrap();
+    let partner = reg.get("res.partner").unwrap();
+    let br = country
+        .create(
+            &pool,
+            vec![("name", json!("Brasil")), ("code", json!("BR"))],
+        )
+        .await
+        .unwrap();
+    let vip = cat
+        .create(&pool, vec![("name", json!("vip"))])
+        .await
+        .unwrap();
+    let dev = cat
+        .create(&pool, vec![("name", json!("dev"))])
+        .await
+        .unwrap();
+    let ana = partner
+        .create(
+            &pool,
+            vec![("name", json!("Ana")), ("country_id", json!(br))],
+        )
+        .await
+        .unwrap();
+    let bob = partner
+        .create(&pool, vec![("name", json!("Bob"))])
+        .await
+        .unwrap();
+    for c in [vip, dev] {
+        sqlx::query(r#"INSERT INTO "rusdoo_test_web_pc_rel" VALUES ($1, $2)"#)
+            .bind(ana)
+            .bind(c)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let service = OrmService::insecure(Arc::new(reg), pool);
+
+    // relational fields shaped by their sub-spec: m2o as {id, display_name},
+    // x2many as a list of shaped records
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 20, "method": "call",
+            "params": {"model": "res.partner", "method": "web_read",
+                       "args": [[ana, bob],
+                                {"name": {},
+                                 "country_id": {"fields": {"display_name": {}}},
+                                 "category_ids": {"fields": {"display_name": {}}}}],
+                       "kwargs": {}}
+        }),
+    )
+    .await;
+    let records = resp["result"]
+        .as_array()
+        .unwrap_or_else(|| panic!("web_read must return a list, got: {resp}"));
+    assert_eq!(records.len(), 2);
+    let rec_ana = records.iter().find(|r| r["id"] == json!(ana)).unwrap();
+    let rec_bob = records.iter().find(|r| r["id"] == json!(bob)).unwrap();
+    assert_eq!(rec_ana["name"], json!("Ana"));
+    assert_eq!(
+        rec_ana["country_id"],
+        json!({"id": br, "display_name": "Brasil"})
+    );
+    let cats = rec_ana["category_ids"].as_array().unwrap();
+    assert_eq!(cats.len(), 2);
+    assert!(cats.contains(&json!({"id": vip, "display_name": "vip"})));
+    assert!(cats.contains(&json!({"id": dev, "display_name": "dev"})));
+    // an empty m2o is false, an empty x2many is []
+    assert_eq!(rec_bob["country_id"], json!(false));
+    assert_eq!(rec_bob["category_ids"], json!([]));
+
+    // no `fields` sub-spec: m2o degrades to the raw id, x2many to id lists
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 21, "method": "call",
+            "params": {"model": "res.partner", "method": "web_read",
+                       "args": [[ana], {"country_id": {}, "category_ids": {}}],
+                       "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"][0]["country_id"], json!(br));
+    let ids = resp["result"][0]["category_ids"].as_array().unwrap();
+    let mut ids: Vec<i64> = ids.iter().map(|v| v.as_i64().unwrap()).collect();
+    ids.sort();
+    let mut expected = vec![vip, dev];
+    expected.sort();
+    assert_eq!(ids, expected);
+
+    // m2o sub-spec may ask for more than display_name
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 22, "method": "call",
+            "params": {"model": "res.partner", "method": "web_read",
+                       "args": [[ana],
+                                {"country_id": {"fields": {"display_name": {}, "code": {}}}}],
+                       "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(
+        resp["result"][0]["country_id"],
+        json!({"id": br, "display_name": "Brasil", "code": "BR"})
+    );
+
+    // an empty specification reads just the ids
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 23, "method": "call",
+            "params": {"model": "res.partner", "method": "web_read",
+                       "args": [[bob], {}], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"], json!([{"id": bob}]));
+
+    // the web client routinely asks for `id` explicitly — it is not a
+    // registry field, but must never error
+    let (_, resp) = rpc(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 24, "method": "call",
+            "params": {"model": "res.partner", "method": "web_read",
+                       "args": [[bob], {"id": {}, "name": {}}], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"], json!([{"id": bob, "name": "Bob"}]));
+}
+
+#[tokio::test]
+async fn web_search_read_returns_length_and_records_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_wsr_partner""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // own table — the crud roundtrip test runs in parallel on the shared one
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.partner".into(),
+            table: "rusdoo_test_wsr_partner".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }).required(),
+            Field::new("color", FieldType::Integer),
+        ],
+    ))
+    .unwrap();
+    let partner = reg.get("res.partner").unwrap();
+    partner.init_table(&pool).await.unwrap();
+    for (name, color) in [("P1", 1), ("P2", 2), ("P3", 3)] {
+        partner
+            .create(&pool, vec![("name", json!(name)), ("color", json!(color))])
+            .await
+            .unwrap();
+    }
+    let service = OrmService::insecure(Arc::new(reg), pool);
+
+    // page 1: the limit is hit, so length is the full count
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 30, "method": "call",
+            "params": {"model": "res.partner", "method": "web_search_read", "args": [],
+                       "kwargs": {"domain": [], "specification": {"name": {}},
+                                  "limit": 2}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"]["length"], json!(3));
+    let records = resp["result"]["records"].as_array().unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["name"], json!("P1"));
+
+    // last page: fewer rows than the limit, length = offset + rows
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 31, "method": "call",
+            "params": {"model": "res.partner", "method": "web_search_read", "args": [],
+                       "kwargs": {"domain": [], "specification": {"name": {}},
+                                  "limit": 2, "offset": 2}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"]["length"], json!(3));
+    assert_eq!(resp["result"]["records"].as_array().unwrap().len(), 1);
+
+    // count_limit caps the count query
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 32, "method": "call",
+            "params": {"model": "res.partner", "method": "web_search_read", "args": [],
+                       "kwargs": {"domain": [], "specification": {"name": {}},
+                                  "limit": 1, "count_limit": 2}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"]["length"], json!(2));
+
+    // no match: an empty result with length 0
+    let (_, resp) = rpc(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 33, "method": "call",
+            "params": {"model": "res.partner", "method": "web_search_read", "args": [],
+                       "kwargs": {"domain": [["color", ">", 99]],
+                                  "specification": {"name": {}}}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"], json!({"length": 0, "records": []}));
+}

@@ -693,6 +693,52 @@ impl OrmService {
                 }
                 Ok(Value::Object(out))
             }
+            // the web client's read path: fields shaped by a specification
+            "web_read" => {
+                let ids = parse_ids(args.first())?;
+                let spec = crate::web_read::parse_web_spec(
+                    args.get(1).or_else(|| kwargs.get("specification")),
+                )?;
+                let ident = self.identity(uid).await;
+                let records = self.web_read_records(&ident, model, &ids, &spec).await?;
+                Ok(json!(records))
+            }
+            "web_search_read" => {
+                let domain = self.arg_domain(args.first().or_else(|| kwargs.get("domain")))?;
+                let spec = crate::web_read::parse_web_spec(
+                    args.get(1).or_else(|| kwargs.get("specification")),
+                )?;
+                let opts = search_options(kwargs)?;
+                let count_limit = kwargs.get("count_limit").and_then(Value::as_u64);
+                let ident = self.identity(uid).await;
+                let ids = self
+                    .registry
+                    .search(&self.pool, model, &domain, &opts)
+                    .await?;
+                let records = self.web_read_records(&ident, model, &ids, &spec).await?;
+                if records.is_empty() {
+                    return Ok(json!({"length": 0, "records": []}));
+                }
+                // the page filled up to its limit, so the real count needs a
+                // second query — capped by count_limit when the client sent
+                // one it has already reached (`_format_web_search_read_results`)
+                let current_length = records.len() as u64 + opts.offset.unwrap_or(0);
+                let limit_reached = opts.limit == Some(records.len() as u64);
+                let count_limit_reached = count_limit.is_some_and(|cap| cap <= current_length);
+                let length = if opts.limit.is_some() && limit_reached && !count_limit_reached {
+                    let count_opts = SearchOptions {
+                        limit: count_limit,
+                        ..SearchOptions::default()
+                    };
+                    self.registry
+                        .search(&self.pool, model, &domain, &count_opts)
+                        .await?
+                        .len() as u64
+                } else {
+                    current_length
+                };
+                Ok(json!({"length": length, "records": records}))
+            }
             // no field-level defaults are modeled yet; Odoo returns only
             // fields carrying an explicit default, so {} is the faithful reply
             "default_get" => {

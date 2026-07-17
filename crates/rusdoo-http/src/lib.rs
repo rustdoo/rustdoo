@@ -9,6 +9,7 @@ pub mod dispatch;
 pub mod jsonrpc;
 pub mod routes;
 pub mod session;
+mod web_read;
 
 use dispatch::OrmService;
 
