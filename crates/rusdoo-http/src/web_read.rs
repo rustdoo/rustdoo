@@ -4,6 +4,8 @@
 //! `{id, display_name, ...}` object, x2many a list of nested records.
 
 use crate::dispatch::{OrmService, RpcError};
+use rusdoo_orm::crud::SearchOptions;
+use rusdoo_orm::domain::{parse_domain, Domain};
 use rusdoo_orm::fields::FieldType;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -123,6 +125,88 @@ fn x2many_ids(value: Option<&Value>) -> Vec<i64> {
 }
 
 impl OrmService {
+    /// Odoo's `name_search`: records whose display name matches `pattern`
+    /// under `operator`, further restricted by `extra`, as
+    /// `(id, display_name)` pairs. The display name is the record's
+    /// `name`/`display_name` column (name_get precedence, resolved
+    /// sudo-like as everywhere else), or the id when there is neither.
+    pub(crate) async fn name_search_pairs(
+        &self,
+        model: &str,
+        pattern: &str,
+        extra: Option<&Value>,
+        operator: &str,
+        limit: u64,
+    ) -> Result<Vec<(i64, String)>, RpcError> {
+        let m = self
+            .registry
+            .get(model)
+            .ok_or_else(|| RpcError::invalid_params(format!("unknown model: {model}")))?;
+        let rec_name = if m.field("name").is_some() {
+            Some("name")
+        } else if m.field("display_name").is_some() {
+            Some("display_name")
+        } else {
+            None
+        };
+        let name_domain = if pattern.is_empty() {
+            // the dropdown's initial state: no pattern, everything matches
+            Domain::True
+        } else {
+            let Some(col) = rec_name else {
+                // nothing to match a non-empty pattern against
+                return Ok(Vec::new());
+            };
+            // the operator is client-supplied; parse_domain validates it
+            parse_domain(&json!([[col, operator, pattern]]))?
+        };
+        let extra_domain = match extra {
+            None => Domain::True,
+            Some(value) => parse_domain(value)?,
+        };
+        let opts = SearchOptions {
+            limit: Some(limit),
+            ..SearchOptions::default()
+        };
+        let ids = self
+            .registry
+            .search(
+                &self.pool,
+                model,
+                &Domain::And(vec![name_domain, extra_domain]),
+                &opts,
+            )
+            .await?;
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let Some(col) = rec_name else {
+            return Ok(ids.iter().map(|id| (*id, id.to_string())).collect());
+        };
+        let rows = self.registry.read(&self.pool, model, &ids, &[col]).await?;
+        let by_id: HashMap<i64, String> = rows
+            .iter()
+            .filter_map(|r| {
+                Some((
+                    r.get("id")?.as_i64()?,
+                    r.get(col)
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                ))
+            })
+            .collect();
+        Ok(ids
+            .iter()
+            .map(|id| {
+                (
+                    *id,
+                    by_id.get(id).cloned().unwrap_or_else(|| id.to_string()),
+                )
+            })
+            .collect())
+    }
+
     /// `web_read`: read `spec`'s fields on `ids` and shape relational
     /// values by their sub-spec. Rows come back in `ids` order (the search
     /// order when called from `web_search_read`).

@@ -693,6 +693,53 @@ impl OrmService {
                 }
                 Ok(Value::Object(out))
             }
+            // many2one dropdown suggestions: (id, display_name) pairs
+            "name_search" => {
+                let (pattern, operator, limit) = name_search_args(args, kwargs, 2, 3);
+                let extra = args.get(1).or_else(|| kwargs.get("domain"));
+                let pairs = self
+                    .name_search_pairs(model, pattern, extra, operator, limit)
+                    .await?;
+                let out: Vec<Value> = pairs
+                    .into_iter()
+                    .map(|(id, name)| json!([id, name]))
+                    .collect();
+                Ok(json!(out))
+            }
+            // name_search + web_read shaping (`odoo/addons/web`): a
+            // display_name-only spec takes the compact shape, anything
+            // wider goes through web_read
+            "web_name_search" => {
+                let spec = crate::web_read::parse_web_spec(
+                    args.get(1).or_else(|| kwargs.get("specification")),
+                )?;
+                let (pattern, operator, limit) = name_search_args(args, kwargs, 3, 4);
+                let extra = args.get(2).or_else(|| kwargs.get("domain"));
+                let pairs = self
+                    .name_search_pairs(model, pattern, extra, operator, limit)
+                    .await?;
+                if spec.len() == 1 && spec.contains_key("display_name") {
+                    let out: Vec<Value> = pairs
+                        .into_iter()
+                        .map(|(id, name)| {
+                            // Odoo computes __formatted_display_name with a
+                            // formatted_display_name context that some models
+                            // override (qualified names); without context-
+                            // sensitive display_name it equals display_name
+                            json!({
+                                "id": id,
+                                "display_name": name,
+                                "__formatted_display_name": name,
+                            })
+                        })
+                        .collect();
+                    return Ok(json!(out));
+                }
+                let ids: Vec<i64> = pairs.iter().map(|(id, _)| *id).collect();
+                let ident = self.identity(uid).await;
+                let records = self.web_read_records(&ident, model, &ids, &spec).await?;
+                Ok(json!(records))
+            }
             // the web client's read path: fields shaped by a specification
             "web_read" => {
                 let ids = parse_ids(args.first())?;
@@ -757,6 +804,33 @@ impl OrmService {
             Some(value) => Ok(parse_domain(value)?),
         }
     }
+}
+
+/// The (pattern, operator, limit) triple shared by name_search and
+/// web_name_search — the positional slots of operator/limit differ
+/// (web_name_search has `specification` in between).
+fn name_search_args<'a>(
+    args: &'a [Value],
+    kwargs: &'a Map<String, Value>,
+    operator_pos: usize,
+    limit_pos: usize,
+) -> (&'a str, &'a str, u64) {
+    let pattern = args
+        .first()
+        .or_else(|| kwargs.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let operator = args
+        .get(operator_pos)
+        .or_else(|| kwargs.get("operator"))
+        .and_then(Value::as_str)
+        .unwrap_or("ilike");
+    let limit = args
+        .get(limit_pos)
+        .or_else(|| kwargs.get("limit"))
+        .and_then(Value::as_u64)
+        .unwrap_or(100);
+    (pattern, operator, limit)
 }
 
 fn search_options(kwargs: &Map<String, Value>) -> Result<SearchOptions, RpcError> {

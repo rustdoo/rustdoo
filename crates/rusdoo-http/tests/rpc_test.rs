@@ -1481,3 +1481,167 @@ async fn web_search_read_returns_length_and_records_live() {
     .await;
     assert_eq!(resp["result"], json!({"length": 0, "records": []}));
 }
+
+// ---------------------------------------------------------------------------
+// name_search / web_name_search — many2one dropdown suggestions
+// ---------------------------------------------------------------------------
+
+/// Fresh partner table for the name_search tests. Each test passes its own
+/// table name — live tests run in parallel and share the database.
+async fn name_search_service(pool: sqlx::PgPool, table: &str) -> (OrmService, Vec<i64>) {
+    sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{table}""#))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.partner".into(),
+            table: table.into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }).required(),
+            Field::new("color", FieldType::Integer),
+        ],
+    ))
+    .unwrap();
+    let partner = reg.get("res.partner").unwrap();
+    partner.init_table(&pool).await.unwrap();
+    let mut ids = Vec::new();
+    for (name, color) in [("Ana Silva", 1), ("Anastácia", 2), ("Bob", 3)] {
+        ids.push(
+            partner
+                .create(&pool, vec![("name", json!(name)), ("color", json!(color))])
+                .await
+                .unwrap(),
+        );
+    }
+    (OrmService::insecure(Arc::new(reg), pool), ids)
+}
+
+#[tokio::test]
+async fn name_search_returns_id_name_pairs_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let (service, ids) = name_search_service(pool, "rusdoo_test_ns_partner").await;
+    let (ana, anastacia, bob) = (ids[0], ids[1], ids[2]);
+
+    // default ilike: substring, case-insensitive, [id, display_name] pairs
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 40, "method": "call",
+            "params": {"model": "res.partner", "method": "name_search",
+                       "args": ["ana"], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(
+        resp["result"],
+        json!([[ana, "Ana Silva"], [anastacia, "Anastácia"]]),
+        "resp: {resp}"
+    );
+
+    // limit caps the suggestions
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 41, "method": "call",
+            "params": {"model": "res.partner", "method": "name_search",
+                       "args": [], "kwargs": {"name": "ana", "limit": 1}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"].as_array().unwrap().len(), 1);
+
+    // an extra domain restricts further (dropdowns pass the field's domain)
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 42, "method": "call",
+            "params": {"model": "res.partner", "method": "name_search",
+                       "args": [], "kwargs": {"name": "ana",
+                                              "domain": [["color", "=", 1]]}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"], json!([[ana, "Ana Silva"]]));
+
+    // operator "=" is exact match
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 43, "method": "call",
+            "params": {"model": "res.partner", "method": "name_search",
+                       "args": [], "kwargs": {"name": "Bob", "operator": "="}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"], json!([[bob, "Bob"]]));
+
+    // an empty pattern matches everything (the dropdown's initial state)
+    let (_, resp) = rpc(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 44, "method": "call",
+            "params": {"model": "res.partner", "method": "name_search",
+                       "args": [], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"].as_array().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn web_name_search_shapes_by_specification_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let (service, ids) = name_search_service(pool, "rusdoo_test_wns_partner").await;
+    let bob = ids[2];
+
+    // display_name-only spec: the compact {id, display_name} shape
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 45, "method": "call",
+            "params": {"model": "res.partner", "method": "web_name_search",
+                       "args": [], "kwargs": {"name": "bob",
+                                              "specification": {"display_name": {}}}}
+        }),
+    )
+    .await;
+    let rec = &resp["result"][0];
+    assert_eq!(rec["id"], json!(bob), "resp: {resp}");
+    assert_eq!(rec["display_name"], json!("Bob"));
+
+    // a wider spec goes through web_read shaping
+    let (_, resp) = rpc(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 46, "method": "call",
+            "params": {"model": "res.partner", "method": "web_name_search",
+                       "args": [], "kwargs": {"name": "bob",
+                                              "specification": {"display_name": {}, "color": {}}}}
+        }),
+    )
+    .await;
+    assert_eq!(
+        resp["result"],
+        json!([{"id": bob, "display_name": "Bob", "color": 3}])
+    );
+}

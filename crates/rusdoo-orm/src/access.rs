@@ -27,7 +27,7 @@ impl Operation {
     pub fn for_method(method: &str) -> Option<Operation> {
         Some(match method {
             "search" | "search_read" | "search_count" | "read" | "fields_get" | "default_get"
-            | "web_read" | "web_search_read" => Operation::Read,
+            | "web_read" | "web_search_read" | "name_search" | "web_name_search" => Operation::Read,
             "create" => Operation::Create,
             "write" => Operation::Write,
             "unlink" => Operation::Unlink,
