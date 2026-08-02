@@ -25,6 +25,7 @@ Cada crate espelha um subsistema do núcleo Python (`odoo/odoo/`):
 | `rusdoo-qweb` | `ir_qweb.py` | Engine de templates QWeb (XML) |
 | `rusdoo-modules` | `odoo/modules/` | Manifests, grafo de dependências, loading, assets |
 | `rusdoo-base` | `odoo/addons/base/models/` | Os modelos que todo addon usa |
+| `rusdoo-sale` | `odoo/addons/sale/models/` | Produtos, pedidos e linhas (primeiro módulo de negócio) |
 | `rusdoo-server` | `odoo-bin` | Binário `rusdoo` (CLI + bootstrap) |
 
 Um addon segue a mesma divisão do Odoo: **código** num crate, **dados**
@@ -34,6 +35,7 @@ num diretório de `addons/`.
 |---|---|
 | `addons/base` | Grupos, `ir.model.access.csv`, views e menus dos modelos base |
 | `addons/web` | O cliente web (JS/CSS servido pelo bundle `web.assets_backend`) |
+| `addons/sale` | Grupos, ACL, views e menus de vendas |
 | `addons/rusdoo_demo` | Dados de demonstração |
 
 ## Fases do port
@@ -65,12 +67,13 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
 6. **Fase 5 — Cliente web** ✅ no essencial: o addon `web` traz um
    cliente próprio (JS sem dependências) que fala o mesmo JSON-RPC do
    Odoo: login, apps e menus, view de lista (busca, ordenação, paginação)
-   e view de formulário (criar, editar, excluir). Falta: kanban, linhas
-   x2many editáveis, painel de filtros.
+   view de formulário (criar, editar, excluir) e linhas x2many editáveis
+   (as linhas de um pedido). Falta: kanban, painel de filtros, anexos.
 7. **Fase 6 — Addons de negócio** *(atual)*: port módulo a módulo em ordem
-   do grafo de dependências (`base` → `web` → `mail` → `sale`/`account`/
-   `stock` → …). O web client JS original (1,33M linhas) pode ser mantido
-   como está — ele só fala JSON-RPC — ou substituído pelo cliente daqui.
+   do grafo de dependências. O primeiro é `sale` (produtos, pedidos,
+   linhas, totais calculados no servidor); em seguida `mail`, `account`,
+   `stock`. O web client JS original (1,33M linhas) pode ser mantido como
+   está — ele só fala JSON-RPC — ou substituído pelo cliente daqui.
 
 ## Build
 

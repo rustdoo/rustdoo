@@ -1,0 +1,185 @@
+//! The whole thing, once: install the real `addons/` tree and check what
+//! a booted server would have — the models of the code modules, the data
+//! of their addons, the ACL rows, the client bundle, and an order that
+//! adds up.
+
+use rusdoo_modules::installer::{install_modules, XmlIds};
+use rusdoo_orm::access::{AccessControl, Operation};
+use rusdoo_orm::registry::Registry;
+use serde_json::json;
+use std::path::Path;
+
+/// The addons tree of the repository, from this crate's directory.
+const ADDONS: &str = "../../addons";
+
+/// Everything runs in a schema of its own: the install creates the real
+/// system tables (`ir_model_data`, `ir_model_access`, …) under their
+/// fixed names.
+async fn schema_pool(url: &str) -> sqlx::PgPool {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(4)
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                sqlx::Executor::execute(
+                    conn,
+                    "CREATE SCHEMA IF NOT EXISTS rusdoo_full_boot; SET search_path TO rusdoo_full_boot",
+                )
+                .await?;
+                Ok(())
+            })
+        })
+        .connect_lazy(url)
+        .unwrap();
+    // a previous run must not decide this one's answers
+    sqlx::query("DROP SCHEMA IF EXISTS rusdoo_full_boot CASCADE")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // the pool's own hook may have recreated it on the way here
+    sqlx::query("CREATE SCHEMA IF NOT EXISTS rusdoo_full_boot")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool
+}
+
+fn registry() -> Registry {
+    let mut registry = rusdoo_base::registry().expect("base models");
+    rusdoo_sale::extend(&mut registry).expect("sale models");
+    registry
+}
+
+#[tokio::test]
+async fn the_addons_tree_installs_and_adds_up_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = schema_pool(&url).await;
+    let mut registry = registry();
+    let mut xml_ids = XmlIds::new();
+    let report = install_modules(&pool, &mut registry, &[Path::new(ADDONS)], &mut xml_ids)
+        .await
+        .expect("the addons tree installs");
+
+    // every addon of the repository loaded, in dependency order
+    let installed: Vec<&str> = report
+        .modules
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+    for module in ["base", "web", "sale"] {
+        assert!(installed.contains(&module), "installed: {installed:?}");
+    }
+    assert!(
+        installed.iter().position(|m| *m == "base") < installed.iter().position(|m| *m == "sale"),
+        "base loads before what depends on it: {installed:?}"
+    );
+
+    // the client bundle is there, in load order, with the boot last
+    let backend: Vec<&str> = report
+        .bundles
+        .files_with_extension("web.assets_backend", &["js"])
+        .map(|file| file.path.as_str())
+        .collect();
+    assert!(
+        backend.first().is_some_and(|first| first.ends_with("utils.js")),
+        "bundle: {backend:?}"
+    );
+    assert!(
+        backend
+            .last()
+            .is_some_and(|last| last.ends_with("webclient.js")),
+        "the boot runs when the rest exists: {backend:?}"
+    );
+
+    // the ACL of both addons survived as rows, which is what the next
+    // boot reads instead of re-installing
+    let access = AccessControl::load(&pool).await.expect("acl loads");
+    let sale_user = xml_ids
+        .get("sale.group_sale_user")
+        .expect("the sale groups published")
+        .1;
+    let base_user = xml_ids.get("base.group_user").expect("base groups").1;
+    assert!(access
+        .check("sale.order", Operation::Create, &[sale_user], false)
+        .is_ok());
+    assert!(
+        access
+            .check("sale.order", Operation::Unlink, &[sale_user], false)
+            .is_err(),
+        "a salesperson does not delete orders"
+    );
+    assert!(access
+        .check("res.partner", Operation::Read, &[base_user], false)
+        .is_ok());
+    assert!(
+        access
+            .check("sale.order", Operation::Read, &[base_user], false)
+            .is_err(),
+        "the base group says nothing about sales"
+    );
+
+    // the demo products of the sale addon are real records
+    let products = registry
+        .search(
+            &pool,
+            "product.product",
+            &rusdoo_orm::domain::parse_domain(&json!([])).unwrap(),
+            &rusdoo_orm::crud::SearchOptions::default(),
+        )
+        .await
+        .expect("products readable");
+    assert!(products.len() >= 3, "demo products: {products:?}");
+
+    // and an order adds up: two lines, subtotals, total — the whole
+    // point of the module
+    let partner = registry
+        .create(&pool, "res.partner", vec![("name", json!("Cliente Teste"))])
+        .await
+        .unwrap();
+    let order = registry
+        .create(
+            &pool,
+            "sale.order",
+            vec![
+                ("name", json!("SO-TEST")),
+                ("partner_id", json!(partner)),
+                (
+                    "order_line",
+                    json!([
+                        [0, 0, {"product_uom_qty": 2, "price_unit": 1250}],
+                        [0, 0, {"product_uom_qty": 4, "price_unit": 890.5}],
+                    ]),
+                ),
+            ],
+        )
+        .await
+        .expect("the order saves");
+    let rows = registry
+        .read(&pool, "sale.order", &[order], &["amount_total"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["amount_total"], json!(6062.0));
+
+    // removing a line moves the total with it
+    let lines = registry
+        .read(&pool, "sale.order", &[order], &["order_line"])
+        .await
+        .unwrap();
+    let first_line = lines[0]["order_line"][0].as_i64().unwrap();
+    registry
+        .write(
+            &pool,
+            "sale.order",
+            &[order],
+            vec![("order_line", json!([[2, first_line, 0]]))],
+        )
+        .await
+        .unwrap();
+    let rows = registry
+        .read(&pool, "sale.order", &[order], &["amount_total"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["amount_total"], json!(3562.0));
+}
