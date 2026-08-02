@@ -3012,3 +3012,419 @@ async fn reg_view_for_other_model(service: &OrmService) -> i64 {
     .await;
     resp["result"].as_i64().unwrap()
 }
+
+/// Record rules over RPC: a user sees, writes and deletes only the rows
+/// a rule leaves them.
+#[tokio::test]
+async fn record_rules_scope_every_path_live() {
+    use rusdoo_orm::access::{AccessControl, Operation};
+    use rusdoo_orm::rules::{RecordRules, Rule};
+
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.groups".into(),
+            table: "rusdoo_test_rule_groups".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.users".into(),
+            table: "rusdoo_test_rule_users".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("login", FieldType::Char { size: None }).required(),
+            Field::new("password", FieldType::Char { size: None }).private(),
+            Field::new(
+                "groups_id",
+                FieldType::Many2many {
+                    comodel: "res.groups".into(),
+                    relation: "rusdoo_test_rule_ug_rel".into(),
+                    column1: "user_id".into(),
+                    column2: "group_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.lead".into(),
+            table: "rusdoo_test_rule_lead".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("amount", FieldType::Integer),
+            Field::new(
+                "user_id",
+                FieldType::Many2one {
+                    comodel: "res.users".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    for t in [
+        "rusdoo_test_rule_ug_rel",
+        "rusdoo_test_rule_lead",
+        "rusdoo_test_rule_users",
+        "rusdoo_test_rule_groups",
+    ] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in ["res.groups", "res.users", "rusdoo.test.lead"] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+    let group = reg
+        .create(&pool, "res.groups", vec![("name", json!("vendas"))])
+        .await
+        .unwrap();
+    let admin_hash = rusdoo_http::session::hash_password("admin").unwrap();
+    let ana_hash = rusdoo_http::session::hash_password("segredo").unwrap();
+    reg.create(
+        &pool,
+        "res.users",
+        vec![("login", json!("admin")), ("password", json!(admin_hash))],
+    )
+    .await
+    .unwrap();
+    let ana = reg
+        .create(
+            &pool,
+            "res.users",
+            vec![
+                ("login", json!("ana")),
+                ("password", json!(ana_hash)),
+                ("groups_id", json!([[4, group, 0]])),
+            ],
+        )
+        .await
+        .unwrap();
+    let mine = reg
+        .create(
+            &pool,
+            "rusdoo.test.lead",
+            vec![
+                ("name", json!("meu")),
+                ("amount", json!(10)),
+                ("user_id", json!(ana)),
+            ],
+        )
+        .await
+        .unwrap();
+    let theirs = reg
+        .create(
+            &pool,
+            "rusdoo.test.lead",
+            vec![
+                ("name", json!("de outro")),
+                ("amount", json!(90)),
+                ("user_id", json!(1)),
+            ],
+        )
+        .await
+        .unwrap();
+
+    // model-level access is wide open for everyone; the rule is what scopes
+    let mut acl = AccessControl::new();
+    acl.grant(
+        "rusdoo.test.lead",
+        group,
+        &[
+            Operation::Read,
+            Operation::Write,
+            Operation::Create,
+            Operation::Unlink,
+        ],
+    );
+    let mut rules = RecordRules::new();
+    rules.add(Rule {
+        model: "rusdoo.test.lead".into(),
+        domain: json!([["user_id", "=", "user.id"]]),
+        // global rule: it applies to every non-superuser
+        groups: vec![],
+        operations: vec![Operation::Read, Operation::Write, Operation::Unlink],
+    });
+    let service = OrmService::new(Arc::new(reg), pool.clone())
+        .with_access(acl)
+        .with_rules(rules);
+
+    let (_, _, cookie) = rpc_full(
+        router(service.clone()),
+        "/web/session/authenticate",
+        json!({"jsonrpc":"2.0","id":1,"method":"call",
+               "params":{"login":"ana","password":"segredo"}}),
+        None,
+    )
+    .await;
+    let ana_cookie = cookie.unwrap().split(';').next().unwrap().to_string();
+    let call = |method: &str, args: Value, cookie: String| {
+        let service = service.clone();
+        let method = method.to_string();
+        async move {
+            let (_, resp, _) = rpc_full(
+                router(service),
+                "/web/dataset/call_kw",
+                json!({"jsonrpc":"2.0","id":2,"method":"call",
+                       "params":{"model":"rusdoo.test.lead","method":method,
+                                 "args":args,"kwargs":{}}}),
+                Some(&cookie),
+            )
+            .await;
+            resp
+        }
+    };
+
+    let (_, _, cookie) = rpc_full(
+        router(service.clone()),
+        "/web/session/authenticate",
+        json!({"jsonrpc":"2.0","id":3,"method":"call",
+               "params":{"login":"admin","password":"admin"}}),
+        None,
+    )
+    .await;
+    let admin_cookie = cookie.unwrap().split(';').next().unwrap().to_string();
+
+    // the superuser sees both records: rules never apply to them
+    let resp = call("search", json!([[]]), admin_cookie.clone()).await;
+    assert_eq!(resp["result"].as_array().unwrap().len(), 2, "{resp}");
+
+    // every search path is scoped for ana
+    let resp = call("search", json!([[]]), ana_cookie.clone()).await;
+    assert_eq!(resp["result"], json!([mine]), "search is scoped: {resp}");
+    let resp = call("search_count", json!([[]]), ana_cookie.clone()).await;
+    assert_eq!(resp["result"], json!(1));
+    let resp = call("search_read", json!([[], ["name"]]), ana_cookie.clone()).await;
+    assert_eq!(resp["result"].as_array().unwrap().len(), 1);
+    let resp = call(
+        "web_search_read",
+        json!([[], {"name": {}}]),
+        ana_cookie.clone(),
+    )
+    .await;
+    assert_eq!(resp["result"]["length"], json!(1));
+    let resp = call(
+        "web_read_group",
+        json!([[], ["user_id"], []]),
+        ana_cookie.clone(),
+    )
+    .await;
+    assert_eq!(
+        resp["result"]["length"],
+        json!(1),
+        "grouping is scoped: {resp}"
+    );
+    assert_eq!(resp["result"]["groups"][0]["__count"], json!(1));
+
+    // reading someone else's record by id is refused, not silently empty
+    let resp = call("read", json!([[theirs], ["name"]]), ana_cookie.clone()).await;
+    assert!(
+        resp["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("not allowed to read"),
+        "{resp}"
+    );
+    let resp = call(
+        "web_read",
+        json!([[theirs], {"name": {}}]),
+        ana_cookie.clone(),
+    )
+    .await;
+    assert!(resp.get("error").is_some(), "{resp}");
+    // ...and her own record still reads
+    let resp = call("read", json!([[mine], ["name"]]), ana_cookie.clone()).await;
+    assert_eq!(resp["result"][0]["name"], json!("meu"));
+
+    // writing and deleting someone else's record is refused
+    let resp = call(
+        "write",
+        json!([[theirs], {"name": "sequestrado"}]),
+        ana_cookie.clone(),
+    )
+    .await;
+    assert!(resp.get("error").is_some(), "{resp}");
+    let resp = call("unlink", json!([[theirs]]), ana_cookie.clone()).await;
+    assert!(resp.get("error").is_some(), "{resp}");
+    // a mixed batch is refused whole, not partially applied
+    let resp = call(
+        "write",
+        json!([[mine, theirs], {"name": "os dois"}]),
+        ana_cookie.clone(),
+    )
+    .await;
+    assert!(resp.get("error").is_some(), "{resp}");
+    let rows = sqlx::query_scalar::<_, String>(
+        r#"SELECT "name" FROM "rusdoo_test_rule_lead" WHERE "id" = $1"#,
+    )
+    .bind(theirs as i32)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows, "de outro", "nothing of the refused writes landed");
+
+    // her own record writes fine
+    let resp = call("write", json!([[mine], {"amount": 11}]), ana_cookie.clone()).await;
+    assert_eq!(resp["result"], json!(true), "{resp}");
+}
+
+/// A create rule cannot be checked before the record exists, so the call
+/// is refused instead of quietly ignoring the rule.
+#[tokio::test]
+async fn create_rules_are_refused_until_enforceable_live() {
+    use rusdoo_orm::access::{AccessControl, Operation};
+    use rusdoo_orm::rules::{RecordRules, Rule};
+
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.groups".into(),
+            table: "rusdoo_test_crule_groups".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.users".into(),
+            table: "rusdoo_test_crule_users".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("login", FieldType::Char { size: None }).required(),
+            Field::new("password", FieldType::Char { size: None }).private(),
+            Field::new(
+                "groups_id",
+                FieldType::Many2many {
+                    comodel: "res.groups".into(),
+                    relation: "rusdoo_test_crule_ug_rel".into(),
+                    column1: "user_id".into(),
+                    column2: "group_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.note".into(),
+            table: "rusdoo_test_crule_note".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("user_id", FieldType::Integer),
+        ],
+    ))
+    .unwrap();
+    for t in [
+        "rusdoo_test_crule_ug_rel",
+        "rusdoo_test_crule_note",
+        "rusdoo_test_crule_users",
+        "rusdoo_test_crule_groups",
+    ] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in ["res.groups", "res.users", "rusdoo.test.note"] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+    let group = reg
+        .create(&pool, "res.groups", vec![("name", json!("notas"))])
+        .await
+        .unwrap();
+    let admin_hash = rusdoo_http::session::hash_password("admin").unwrap();
+    reg.create(
+        &pool,
+        "res.users",
+        vec![("login", json!("admin")), ("password", json!(admin_hash))],
+    )
+    .await
+    .unwrap();
+    let ana_hash = rusdoo_http::session::hash_password("segredo").unwrap();
+    reg.create(
+        &pool,
+        "res.users",
+        vec![
+            ("login", json!("ana")),
+            ("password", json!(ana_hash)),
+            ("groups_id", json!([[4, group, 0]])),
+        ],
+    )
+    .await
+    .unwrap();
+    let mut acl = AccessControl::new();
+    acl.grant(
+        "rusdoo.test.note",
+        group,
+        &[Operation::Create, Operation::Read, Operation::Write],
+    );
+    let mut rules = RecordRules::new();
+    rules.add(Rule {
+        model: "rusdoo.test.note".into(),
+        domain: json!([["user_id", "=", "user.id"]]),
+        groups: vec![],
+        operations: vec![Operation::Create],
+    });
+    let service = OrmService::new(Arc::new(reg), pool)
+        .with_access(acl)
+        .with_rules(rules);
+
+    let (_, _, cookie) = rpc_full(
+        router(service.clone()),
+        "/web/session/authenticate",
+        json!({"jsonrpc":"2.0","id":1,"method":"call",
+               "params":{"login":"ana","password":"segredo"}}),
+        None,
+    )
+    .await;
+    let ana = cookie.unwrap().split(';').next().unwrap().to_string();
+    for (method, args) in [
+        ("create", json!([{"name": "nova"}])),
+        ("web_save", json!([[], {"name": "nova"}, {"name": {}}])),
+    ] {
+        let (_, resp, _) = rpc_full(
+            router(service.clone()),
+            "/web/dataset/call_kw",
+            json!({"jsonrpc":"2.0","id":2,"method":"call",
+                   "params":{"model":"rusdoo.test.note","method":method,
+                             "args":args,"kwargs":{}}}),
+            Some(&ana),
+        )
+        .await;
+        assert!(
+            resp["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("not enforced yet"),
+            "{method} must refuse rather than ignore the rule: {resp}"
+        );
+    }
+}

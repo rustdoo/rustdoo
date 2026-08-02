@@ -70,6 +70,7 @@ pub struct OrmService {
     pub(crate) secure_cookies: bool,
     pub(crate) verify_gate: Arc<Semaphore>,
     pub(crate) access: Arc<rusdoo_orm::access::AccessControl>,
+    pub(crate) rules: Arc<rusdoo_orm::rules::RecordRules>,
 }
 
 impl OrmService {
@@ -83,12 +84,19 @@ impl OrmService {
             secure_cookies: true,
             verify_gate: Arc::new(Semaphore::new(MAX_CONCURRENT_VERIFY)),
             access: Arc::new(rusdoo_orm::access::AccessControl::new()),
+            rules: Arc::new(rusdoo_orm::rules::RecordRules::new()),
         }
     }
 
     /// Install the access-control table (`ir.model.access`).
     pub fn with_access(mut self, access: rusdoo_orm::access::AccessControl) -> Self {
         self.access = Arc::new(access);
+        self
+    }
+
+    /// Install the record rules (`ir.rule`).
+    pub fn with_rules(mut self, rules: rusdoo_orm::rules::RecordRules) -> Self {
+        self.rules = Arc::new(rules);
         self
     }
 
@@ -202,6 +210,109 @@ impl OrmService {
             out.insert(field.name.clone(), field_metadata(field));
         }
         Ok(out)
+    }
+
+    /// The `ir.rule` domain constraining `op` on `model` for the acting
+    /// user, or `None` when nothing constrains it. Resolving an identity
+    /// costs a query, so it is only done for a model rules speak about.
+    ///
+    /// Skipped in insecure mode, like every other access check.
+    pub(crate) async fn rule_domain(
+        &self,
+        uid: i64,
+        model: &str,
+        op: Operation,
+    ) -> Result<Option<Domain>, RpcError> {
+        if !self.require_auth || !self.rules.covers(model) {
+            return Ok(None);
+        }
+        let ident = self.identity(uid).await;
+        Ok(self
+            .rules
+            .domain_for(model, op, ident.uid, &ident.groups, ident.is_superuser)?)
+    }
+
+    /// The client's domain narrowed by the record rules — what every
+    /// search actually runs.
+    pub(crate) async fn scoped_domain(
+        &self,
+        uid: i64,
+        model: &str,
+        op: Operation,
+        domain: Domain,
+    ) -> Result<Domain, RpcError> {
+        Ok(match self.rule_domain(uid, model, op).await? {
+            Some(rule) => Domain::And(vec![domain, rule]),
+            None => domain,
+        })
+    }
+
+    /// Creates are the one operation whose rule cannot be checked before
+    /// the record exists. Refusing keeps the rule meaningful; letting the
+    /// create through would quietly ignore it.
+    pub(crate) async fn refuse_unenforced_create_rules(
+        &self,
+        uid: i64,
+        model: &str,
+    ) -> Result<(), RpcError> {
+        if self
+            .rule_domain(uid, model, Operation::Create)
+            .await?
+            .is_none()
+        {
+            return Ok(());
+        }
+        Err(RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: format!("create record rules on {model} are not enforced yet"),
+        })
+    }
+
+    /// Refuse the call when any of `ids` is out of the user's reach for
+    /// `op`. Odoo raises an AccessError rather than silently skipping the
+    /// records, so a caller can never mistake "not allowed" for "gone".
+    pub(crate) async fn check_records(
+        &self,
+        uid: i64,
+        model: &str,
+        op: Operation,
+        ids: &[i64],
+    ) -> Result<(), RpcError> {
+        let Some(rule) = self.rule_domain(uid, model, op).await? else {
+            return Ok(());
+        };
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let wanted: HashSet<i64> = ids.iter().copied().collect();
+        let scope = Domain::And(vec![
+            Domain::Term(rusdoo_orm::domain::Term {
+                field: "id".to_string(),
+                op: rusdoo_orm::domain::Operator::In,
+                value: json!(ids),
+            }),
+            rule,
+        ]);
+        // archived records are still records: active_test here would
+        // report an archived row as forbidden instead of as archived
+        let opts = SearchOptions {
+            active_test: false,
+            ..SearchOptions::default()
+        };
+        let allowed = self
+            .registry
+            .search(&self.pool, model, &scope, &opts)
+            .await?;
+        if allowed.len() == wanted.len() {
+            return Ok(());
+        }
+        Err(RpcError {
+            code: crate::jsonrpc::SERVER_ERROR,
+            message: format!(
+                "you are not allowed to {} some of these {model} records",
+                operation_label(op)
+            ),
+        })
     }
 
     /// List every `ir.ui.view` as (external id, display name), for a
@@ -692,6 +803,9 @@ impl OrmService {
         match method {
             "search" => {
                 let domain = self.arg_domain(args.first().or_else(|| kwargs.get("domain")))?;
+                let domain = self
+                    .scoped_domain(uid, model, Operation::Read, domain)
+                    .await?;
                 let opts = search_options(kwargs)?;
                 let ids = self
                     .registry
@@ -707,6 +821,9 @@ impl OrmService {
                     active_test: context_active_test(kwargs),
                     ..SearchOptions::default()
                 };
+                let domain = self
+                    .scoped_domain(uid, model, Operation::Read, domain)
+                    .await?;
                 let ids = self
                     .registry
                     .search(&self.pool, model, &domain, &opts)
@@ -717,6 +834,9 @@ impl OrmService {
                 let domain = self.arg_domain(args.first().or_else(|| kwargs.get("domain")))?;
                 let fields = parse_fields(args.get(1).or_else(|| kwargs.get("fields")))?;
                 self.ensure_exposed(model, &fields)?;
+                let domain = self
+                    .scoped_domain(uid, model, Operation::Read, domain)
+                    .await?;
                 let opts = search_options(kwargs)?;
                 let ids = self
                     .registry
@@ -731,6 +851,8 @@ impl OrmService {
             }
             "read" => {
                 let ids = parse_ids(args.first())?;
+                self.check_records(uid, model, Operation::Read, &ids)
+                    .await?;
                 let fields = parse_fields(args.get(1).or_else(|| kwargs.get("fields")))?;
                 self.ensure_exposed(model, &fields)?;
                 let names: Vec<&str> = fields.iter().map(String::as_str).collect();
@@ -738,6 +860,11 @@ impl OrmService {
                 Ok(json!(rows))
             }
             "create" => {
+                // a create rule constrains a record that does not exist yet:
+                // enforcing it needs the check inside the insert's own
+                // transaction. Until that plumbing exists the call is
+                // refused, never let through unconstrained.
+                self.refuse_unenforced_create_rules(uid, model).await?;
                 let values = parse_values(args.first())?;
                 self.check_command_access_as(uid, model, &values).await?;
                 let pairs: Vec<(&str, Value)> = values
@@ -752,6 +879,8 @@ impl OrmService {
             }
             "write" => {
                 let ids = parse_ids(args.first())?;
+                self.check_records(uid, model, Operation::Write, &ids)
+                    .await?;
                 let values = parse_values(args.get(1))?;
                 self.check_command_access_as(uid, model, &values).await?;
                 let pairs: Vec<(&str, Value)> = values
@@ -765,6 +894,8 @@ impl OrmService {
             }
             "unlink" => {
                 let ids = parse_ids(args.first())?;
+                self.check_records(uid, model, Operation::Unlink, &ids)
+                    .await?;
                 let m = self.registry.get(model).ok_or_else(|| {
                     RpcError::from(RusdooError::Validation(format!("unknown model: {model}")))
                 })?;
@@ -809,7 +940,10 @@ impl OrmService {
                         extra,
                         operator,
                         limit,
-                        context_active_test(kwargs),
+                        crate::web_read::NameSearchScope {
+                            uid,
+                            active_test: context_active_test(kwargs),
+                        },
                     )
                     .await?;
                 let out: Vec<Value> = pairs
@@ -834,7 +968,10 @@ impl OrmService {
                         extra,
                         operator,
                         limit,
-                        context_active_test(kwargs),
+                        crate::web_read::NameSearchScope {
+                            uid,
+                            active_test: context_active_test(kwargs),
+                        },
                     )
                     .await?;
                 if spec.len() == 1 && spec.contains_key("display_name") {
@@ -862,6 +999,8 @@ impl OrmService {
             // the web client's read path: fields shaped by a specification
             "web_read" => {
                 let ids = parse_ids(args.first())?;
+                self.check_records(uid, model, Operation::Read, &ids)
+                    .await?;
                 let spec = crate::web_read::parse_web_spec(
                     args.get(1).or_else(|| kwargs.get("specification")),
                 )?;
@@ -874,6 +1013,9 @@ impl OrmService {
                 let spec = crate::web_read::parse_web_spec(
                     args.get(1).or_else(|| kwargs.get("specification")),
                 )?;
+                let domain = self
+                    .scoped_domain(uid, model, Operation::Read, domain)
+                    .await?;
                 let opts = search_options(kwargs)?;
                 let count_limit = kwargs.get("count_limit").and_then(Value::as_u64);
                 let ident = self.identity(uid).await;
@@ -933,6 +1075,12 @@ impl OrmService {
                     self.check_operation(model, op, &ident)?;
                     self.check_operation(model, Operation::Read, &ident)?;
                 }
+                if ids.is_empty() {
+                    self.refuse_unenforced_create_rules(uid, model).await?;
+                } else {
+                    self.check_records(uid, model, Operation::Write, &ids)
+                        .await?;
+                }
                 self.check_command_access(&ident, model, &values)?;
                 let pairs: Vec<(&str, Value)> = values
                     .iter()
@@ -988,6 +1136,9 @@ impl OrmService {
                     args.get(6).or_else(|| kwargs.get("order")),
                 );
                 let request = self.parse_group_request(model, &groupby, &aggregates, options)?;
+                let domain = self
+                    .scoped_domain(uid, model, Operation::Read, domain)
+                    .await?;
                 let groups = self.formatted_groups(model, &domain, &request).await?;
                 Ok(json!(groups))
             }
@@ -1041,6 +1192,9 @@ impl OrmService {
                 self.parse_group_request(model, &groupby, &aggregates, GroupOptions::default())?;
                 let request =
                     self.parse_group_request(model, &groupby[..1], &aggregates, options)?;
+                let domain = self
+                    .scoped_domain(uid, model, Operation::Read, domain)
+                    .await?;
                 let groups = self.formatted_groups(model, &domain, &request).await?;
                 let length = self
                     .count_groups(model, &domain, &request, groups.len())
@@ -1114,6 +1268,15 @@ fn name_search_args<'a>(
         .and_then(Value::as_u64)
         .unwrap_or(100);
     (pattern, operator, limit)
+}
+
+fn operation_label(op: Operation) -> &'static str {
+    match op {
+        Operation::Read => "read",
+        Operation::Write => "write",
+        Operation::Create => "create",
+        Operation::Unlink => "unlink",
+    }
 }
 
 /// Whether an optional argument carries anything: absent, null, false

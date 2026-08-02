@@ -9,4 +9,5 @@ pub mod fields;
 pub mod group;
 pub mod model;
 pub mod registry;
+pub mod rules;
 pub mod sql;

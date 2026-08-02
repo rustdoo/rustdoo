@@ -12,6 +12,15 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 
+/// Who a name_search runs as, and whether archived records count. The
+/// dropdown is a search like any other: record rules scope it and
+/// `active_test` filters it.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NameSearchScope {
+    pub(crate) uid: i64,
+    pub(crate) active_test: bool,
+}
+
 /// The spec is client-controlled; nesting deeper than this is refused.
 const MAX_WEB_SPEC_DEPTH: usize = 8;
 
@@ -137,7 +146,7 @@ impl OrmService {
         extra: Option<&Value>,
         operator: &str,
         limit: u64,
-        active_test: bool,
+        scope: NameSearchScope,
     ) -> Result<Vec<(i64, String)>, RpcError> {
         let m = self
             .registry
@@ -167,17 +176,20 @@ impl OrmService {
         };
         let opts = SearchOptions {
             limit: Some(limit),
-            active_test,
+            active_test: scope.active_test,
             ..SearchOptions::default()
         };
+        let scoped = self
+            .scoped_domain(
+                scope.uid,
+                model,
+                rusdoo_orm::access::Operation::Read,
+                Domain::And(vec![name_domain, extra_domain]),
+            )
+            .await?;
         let ids = self
             .registry
-            .search(
-                &self.pool,
-                model,
-                &Domain::And(vec![name_domain, extra_domain]),
-                &opts,
-            )
+            .search(&self.pool, model, &scoped, &opts)
             .await?;
         if ids.is_empty() {
             return Ok(Vec::new());
