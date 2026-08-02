@@ -15,6 +15,7 @@ use crate::fields::FieldType;
 use crate::registry::Registry;
 use rusdoo_core::RusdooError;
 use serde_json::{Map, Value};
+use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 
 /// How deep nested command values may reach. The tree is client-supplied,
@@ -65,6 +66,26 @@ impl Operation {
     }
 }
 
+/// Where the grants live between boots. The columns are Odoo's own, so
+/// a row reads the same here as in an `ir.model.access.csv`; `module` is
+/// what lets a re-install replace exactly the rows it owns.
+const IR_MODEL_ACCESS_DDL: &str = r#"CREATE TABLE IF NOT EXISTS "ir_model_access" ("id" SERIAL NOT NULL, "module" varchar NOT NULL, "model" varchar NOT NULL, "group_id" int4 NOT NULL, "perm_read" bool NOT NULL DEFAULT false, "perm_write" bool NOT NULL DEFAULT false, "perm_create" bool NOT NULL DEFAULT false, "perm_unlink" bool NOT NULL DEFAULT false, PRIMARY KEY("id"))"#;
+
+/// A row of `ir.model.access` as the database holds it.
+type AccessRow = (String, i32, bool, bool, bool, bool);
+
+/// One grant: what a group may do on a model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Grant {
+    pub model: String,
+    pub group_id: i64,
+    pub operations: Vec<Operation>,
+}
+
+fn db_err(e: sqlx::Error) -> RusdooError {
+    RusdooError::Database(e.to_string())
+}
+
 /// In-memory ACL table. Rules are `(model, operation) -> {group ids}`.
 #[derive(Debug, Default, Clone)]
 pub struct AccessControl {
@@ -90,6 +111,100 @@ impl AccessControl {
                 .or_default()
                 .insert(group_id);
         }
+    }
+
+    /// The grants of this table, one row per (model, group).
+    pub fn rows(&self) -> Vec<Grant> {
+        let mut by_target: HashMap<(&str, i64), Vec<Operation>> = HashMap::new();
+        for ((model, op), groups) in &self.grants {
+            for group in groups {
+                by_target
+                    .entry((model.as_str(), *group))
+                    .or_default()
+                    .push(*op);
+            }
+        }
+        by_target
+            .into_iter()
+            .map(|((model, group_id), operations)| Grant {
+                model: model.to_string(),
+                group_id,
+                operations,
+            })
+            .collect()
+    }
+
+    /// Load the table from the database, creating it if this is the
+    /// first boot. This is what makes the ACL survive a restart: a
+    /// server that comes up without re-installing its addons still knows
+    /// who may do what.
+    pub async fn load(pool: &PgPool) -> Result<Self, RusdooError> {
+        sqlx::query(IR_MODEL_ACCESS_DDL)
+            .execute(pool)
+            .await
+            .map_err(db_err)?;
+        let rows: Vec<AccessRow> = sqlx::query_as(
+            r#"SELECT "model", "group_id", "perm_read", "perm_write", "perm_create", "perm_unlink"
+               FROM "ir_model_access""#,
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(db_err)?;
+        let mut access = AccessControl::new();
+        for (model, group_id, read, write, create, unlink) in rows {
+            let mut ops = Vec::new();
+            for (granted, op) in [
+                (read, Operation::Read),
+                (write, Operation::Write),
+                (create, Operation::Create),
+                (unlink, Operation::Unlink),
+            ] {
+                if granted {
+                    ops.push(op);
+                }
+            }
+            access.grant(&model, i64::from(group_id), &ops);
+        }
+        Ok(access)
+    }
+
+    /// Replace the grants a module owns with `grants`, in one
+    /// transaction: an install that fails halfway must not leave a
+    /// half-open ACL behind.
+    pub async fn persist_module(
+        pool: &PgPool,
+        module: &str,
+        grants: &[Grant],
+    ) -> Result<(), RusdooError> {
+        sqlx::query(IR_MODEL_ACCESS_DDL)
+            .execute(pool)
+            .await
+            .map_err(db_err)?;
+        let mut tx = pool.begin().await.map_err(db_err)?;
+        sqlx::query(r#"DELETE FROM "ir_model_access" WHERE "module" = $1"#)
+            .bind(module)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+        for grant in grants {
+            sqlx::query(
+                r#"INSERT INTO "ir_model_access"
+                   ("module", "model", "group_id", "perm_read", "perm_write",
+                    "perm_create", "perm_unlink")
+                   VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+            )
+            .bind(module)
+            .bind(&grant.model)
+            .bind(grant.group_id as i32)
+            .bind(grant.operations.contains(&Operation::Read))
+            .bind(grant.operations.contains(&Operation::Write))
+            .bind(grant.operations.contains(&Operation::Create))
+            .bind(grant.operations.contains(&Operation::Unlink))
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+        }
+        tx.commit().await.map_err(db_err)
     }
 
     /// Check whether a user in `groups` may perform `op` on `model`.

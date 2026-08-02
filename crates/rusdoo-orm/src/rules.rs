@@ -18,6 +18,19 @@ use crate::access::Operation;
 use crate::domain::{parse_domain, Domain};
 use rusdoo_core::RusdooError;
 use serde_json::Value;
+use sqlx::PgPool;
+
+/// Where the rules live between boots. The domain and the group list are
+/// stored as JSON text: a domain is only parsed per user (it speaks about
+/// the acting one), so the column keeps it exactly as written.
+const IR_RULE_DDL: &str = r#"CREATE TABLE IF NOT EXISTS "ir_rule" ("id" SERIAL NOT NULL, "module" varchar NOT NULL, "model" varchar NOT NULL, "domain_force" text NOT NULL, "groups" text NOT NULL DEFAULT '[]', "perm_read" bool NOT NULL DEFAULT false, "perm_write" bool NOT NULL DEFAULT false, "perm_create" bool NOT NULL DEFAULT false, "perm_unlink" bool NOT NULL DEFAULT false, PRIMARY KEY("id"))"#;
+
+/// A row of `ir.rule` as the database holds it.
+type RuleRow = (String, String, String, bool, bool, bool, bool);
+
+fn db_err(e: sqlx::Error) -> RusdooError {
+    RusdooError::Database(e.to_string())
+}
 
 /// The placeholder a rule domain uses for the acting user, mirroring the
 /// `user.id` that Odoo's `domain_force` evaluates in Python.
@@ -56,6 +69,93 @@ impl RecordRules {
 
     pub fn add(&mut self, rule: Rule) {
         self.rules.push(rule);
+    }
+
+    pub fn rows(&self) -> &[Rule] {
+        &self.rules
+    }
+
+    /// Load the rules from the database, creating the table on first
+    /// boot. A rule that cannot be read back is an error, never a
+    /// skipped rule: dropping one silently would open the rows it was
+    /// written to close.
+    pub async fn load(pool: &PgPool) -> Result<Self, RusdooError> {
+        sqlx::query(IR_RULE_DDL)
+            .execute(pool)
+            .await
+            .map_err(db_err)?;
+        let rows: Vec<RuleRow> = sqlx::query_as(
+            r#"SELECT "model", "domain_force", "groups", "perm_read", "perm_write",
+                      "perm_create", "perm_unlink"
+               FROM "ir_rule" ORDER BY "id""#,
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(db_err)?;
+        let mut rules = RecordRules::new();
+        for (model, domain, groups, read, write, create, unlink) in rows {
+            let domain: Value = serde_json::from_str(&domain).map_err(|e| {
+                RusdooError::Validation(format!("ir.rule on {model}: stored domain unreadable: {e}"))
+            })?;
+            let groups: Vec<i64> = serde_json::from_str(&groups).map_err(|e| {
+                RusdooError::Validation(format!("ir.rule on {model}: stored groups unreadable: {e}"))
+            })?;
+            let operations = [
+                (read, Operation::Read),
+                (write, Operation::Write),
+                (create, Operation::Create),
+                (unlink, Operation::Unlink),
+            ]
+            .into_iter()
+            .filter(|(covered, _)| *covered)
+            .map(|(_, op)| op)
+            .collect();
+            rules.add(Rule {
+                model,
+                domain,
+                groups,
+                operations,
+            });
+        }
+        Ok(rules)
+    }
+
+    /// Replace the rules a module owns with `rules`, in one transaction.
+    pub async fn persist_module(
+        pool: &PgPool,
+        module: &str,
+        rules: &[Rule],
+    ) -> Result<(), RusdooError> {
+        sqlx::query(IR_RULE_DDL)
+            .execute(pool)
+            .await
+            .map_err(db_err)?;
+        let mut tx = pool.begin().await.map_err(db_err)?;
+        sqlx::query(r#"DELETE FROM "ir_rule" WHERE "module" = $1"#)
+            .bind(module)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+        for rule in rules {
+            sqlx::query(
+                r#"INSERT INTO "ir_rule"
+                   ("module", "model", "domain_force", "groups", "perm_read",
+                    "perm_write", "perm_create", "perm_unlink")
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
+            )
+            .bind(module)
+            .bind(&rule.model)
+            .bind(rule.domain.to_string())
+            .bind(serde_json::Value::from(rule.groups.clone()).to_string())
+            .bind(rule.operations.contains(&Operation::Read))
+            .bind(rule.operations.contains(&Operation::Write))
+            .bind(rule.operations.contains(&Operation::Create))
+            .bind(rule.operations.contains(&Operation::Unlink))
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+        }
+        tx.commit().await.map_err(db_err)
     }
 
     /// The domain every record must satisfy for `uid` to `op` on `model`.

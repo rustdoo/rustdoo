@@ -18,8 +18,6 @@ async fn main() -> anyhow::Result<()> {
 
     let mut registry = base_registry()?;
     let pool = rusdoo_orm::db::connect(&db_url).await?;
-    let mut access = rusdoo_orm::access::AccessControl::new();
-    let mut rules = rusdoo_orm::rules::RecordRules::new();
     let mut assets = rusdoo_http::assets::AssetHub::empty();
 
     let addons = std::env::var("RUSDOO_ADDONS_PATH").unwrap_or_else(|_| "addons".into());
@@ -45,8 +43,6 @@ async fn main() -> anyhow::Result<()> {
                 report.modules.len(),
                 report.bundles.names().count()
             );
-            access = report.access;
-            rules = report.rules;
             seed_admin(&registry, &pool).await?;
         } else {
             for model in registry.models() {
@@ -56,6 +52,12 @@ async fn main() -> anyhow::Result<()> {
             seed_admin(&registry, &pool).await?;
         }
     }
+
+    // The ACL and the record rules are rows, not install-time state:
+    // every boot reads them back, so a restart without --init is still a
+    // server that knows who may do what.
+    let access = rusdoo_orm::access::AccessControl::load(&pool).await?;
+    let rules = rusdoo_orm::rules::RecordRules::load(&pool).await?;
 
     if access.is_empty() {
         // fail-closed: with no ACL rules only the superuser reaches models

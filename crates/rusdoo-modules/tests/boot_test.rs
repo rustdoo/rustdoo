@@ -304,6 +304,22 @@ async fn ir_model_access_csv_loads_into_acl() {
         .domain_for("x_demo.doc", Operation::Read, 1, &[group_id], true)
         .unwrap()
         .is_none());
+
+    // the install wrote them down: a server that boots later without
+    // re-installing reads the same ACL and the same rules out of the
+    // database, instead of coming up locked to the superuser
+    let reloaded = rusdoo_orm::access::AccessControl::load(&pool).await.unwrap();
+    assert!(reloaded
+        .check("x_demo.doc", Operation::Read, &[group_id], false)
+        .is_ok());
+    assert!(reloaded
+        .check("x_demo.doc", Operation::Write, &[group_id], false)
+        .is_err());
+    let reloaded_rules = rusdoo_orm::rules::RecordRules::load(&pool).await.unwrap();
+    assert!(reloaded_rules
+        .domain_for("x_demo.doc", Operation::Read, 42, &[group_id], false)
+        .unwrap()
+        .is_some());
 }
 
 #[tokio::test]

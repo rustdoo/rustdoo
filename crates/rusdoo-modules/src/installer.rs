@@ -310,6 +310,10 @@ pub async fn install_modules(
             continue;
         }
         let mut totals = LoadStats::default();
+        // the grants and rules this module declares, kept apart from the
+        // ones already loaded so they can replace exactly its own rows
+        let mut module_access = AccessControl::new();
+        let mut module_rules = RecordRules::new();
         for data_file in &manifest.data {
             let file_path = manifest.path.join(data_file);
             let source = std::fs::read_to_string(&file_path).map_err(|e| {
@@ -345,13 +349,25 @@ pub async fn install_modules(
             // ir.model.access records become AccessControl grants; the
             // group refs they use are already published by earlier files
             let records =
-                apply_access_records(&mut report.access, registry, &records, name, xml_ids)?;
+                apply_access_records(&mut module_access, registry, &records, name, xml_ids)?;
             // ir.rule records become RecordRules, resolved the same way
-            let records = apply_rule_records(&mut report.rules, registry, &records, name, xml_ids)?;
+            let records = apply_rule_records(&mut module_rules, registry, &records, name, xml_ids)?;
             let stats = load_records(pool, registry, name, &records, xml_ids).await?;
             totals.created += stats.created;
             totals.updated += stats.updated;
             totals.skipped += stats.skipped;
+        }
+        // the ACL and the rules are rows like any other data: written
+        // now, they are what the next boot reads, with no re-install
+        AccessControl::persist_module(pool, name, &module_access.rows()).await?;
+        RecordRules::persist_module(pool, name, module_rules.rows()).await?;
+        for grant in module_access.rows() {
+            report
+                .access
+                .grant(&grant.model, grant.group_id, &grant.operations);
+        }
+        for rule in module_rules.rows() {
+            report.rules.add(rule.clone());
         }
         tracing::info!(
             "module {name}: {} created, {} updated, {} skipped",
