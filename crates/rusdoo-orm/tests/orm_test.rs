@@ -414,3 +414,83 @@ fn float_with_digits_maps_to_scaled_numeric() {
 
     assert_eq!(field.column_type().as_deref(), Some("numeric(16,2)"));
 }
+
+// ---------- date/datetime parameters ----------
+
+fn dated_model() -> Model {
+    Model::new(
+        ModelMeta {
+            name: "rusdoo.test.dated".into(),
+            table: "rusdoo_test_dated".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("day", FieldType::Date),
+            Field::new("moment", FieldType::Datetime),
+        ],
+    )
+}
+
+#[test]
+fn date_values_are_cast_on_write() {
+    let model = dated_model();
+    let (sql, params) = model
+        .insert_sql(
+            1,
+            vec![
+                ("name", json!("x")),
+                ("day", json!("2026-07-31")),
+                ("moment", json!("2026-07-31 12:30:00")),
+            ],
+        )
+        .unwrap();
+    // dates travel as JSON strings: without the cast the parameter is
+    // text and PostgreSQL refuses to store it in a date column
+    assert!(sql.contains("$2::date"), "{sql}");
+    assert!(sql.contains("$3::timestamp"), "{sql}");
+    assert!(!sql.contains("$1::"), "a char column needs no cast: {sql}");
+    assert_eq!(params[1], json!("2026-07-31"));
+
+    let (sql, _) = model
+        .update_sql(1, &[7], vec![("day", json!("2026-08-01"))])
+        .unwrap();
+    assert!(sql.contains(r#""day" = $1::date"#), "{sql}");
+}
+
+#[test]
+fn date_values_are_cast_in_domains() {
+    let model = dated_model();
+    let domain = parse_domain(&json!([["day", ">=", "2026-01-01"]])).unwrap();
+    let (sql, _) = model
+        .search_sql(&domain, &SearchOptions::default())
+        .unwrap();
+    assert!(sql.contains(r#""day" >= $1::date"#), "{sql}");
+
+    let domain = parse_domain(&json!([["moment", "=", "2026-01-01 00:00:00"]])).unwrap();
+    let (sql, _) = model
+        .search_sql(&domain, &SearchOptions::default())
+        .unwrap();
+    assert!(sql.contains(r#""moment" = $1::timestamp"#), "{sql}");
+
+    // every value of a list is cast, and so is the negative form
+    let domain = parse_domain(&json!([["day", "in", ["2026-01-01", "2026-02-01"]]])).unwrap();
+    let (sql, _) = model
+        .search_sql(&domain, &SearchOptions::default())
+        .unwrap();
+    assert!(sql.contains(r#""day" IN ($1::date, $2::date)"#), "{sql}");
+    let domain = parse_domain(&json!([["day", "!=", "2026-01-01"]])).unwrap();
+    let (sql, _) = model
+        .search_sql(&domain, &SearchOptions::default())
+        .unwrap();
+    assert!(sql.contains(r#""day" != $1::date"#), "{sql}");
+
+    // an unset date is still a NULL check, not a cast comparison
+    let domain = parse_domain(&json!([["day", "=", false]])).unwrap();
+    let (sql, params) = model
+        .search_sql(&domain, &SearchOptions::default())
+        .unwrap();
+    assert!(sql.contains(r#""day" IS NULL"#), "{sql}");
+    assert!(params.is_empty());
+}

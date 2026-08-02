@@ -93,7 +93,8 @@ impl Model {
         for (name, value) in values {
             self.writable_field(name)?;
             columns.push(quote_ident(name)?);
-            placeholders.push(bind(&mut params, value));
+            let placeholder = bind(&mut params, value);
+            placeholders.push(format!("{placeholder}{}", self.column_cast(name)));
         }
         // audit columns Odoo stamps on every create (LOG_ACCESS)
         let uid_ph = bind(&mut params, Value::from(uid));
@@ -130,7 +131,11 @@ impl Model {
         for (name, value) in values {
             self.writable_field(name)?;
             let placeholder = bind(&mut params, value);
-            assignments.push(format!("{} = {placeholder}", quote_ident(name)?));
+            assignments.push(format!(
+                "{} = {placeholder}{}",
+                quote_ident(name)?,
+                self.column_cast(name)
+            ));
         }
         // Odoo refreshes write_uid/write_date on every write
         let uid_ph = bind(&mut params, Value::from(uid));
@@ -201,6 +206,14 @@ impl Model {
                 self.meta.name
             ))),
         }
+    }
+
+    /// The cast a bound parameter needs to land in this column. Dates and
+    /// datetimes travel as strings (the JSON-RPC wire format), so their
+    /// parameter is text: PostgreSQL has no implicit text -> date, and
+    /// the insert would fail on the column type.
+    fn column_cast(&self, name: &str) -> &'static str {
+        crate::sql::value_cast_for(self.field(name).map(|f| &f.ty))
     }
 
     /// A stored, non-readonly field: the write path rejects readonly

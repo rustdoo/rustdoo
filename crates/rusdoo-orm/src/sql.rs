@@ -142,6 +142,26 @@ fn is_unset(value: &Value) -> bool {
     value.is_null() || *value == Value::Bool(false)
 }
 
+/// The cast a bound value needs to be comparable with a column of this
+/// type. Dates and datetimes arrive as strings, so their parameter is
+/// text and PostgreSQL finds no `date >= text` operator; casting the
+/// parameter (never the column) keeps the comparison typed and leaves
+/// any index on the column usable.
+pub(crate) fn value_cast_for(ty: Option<&FieldType>) -> &'static str {
+    match ty {
+        Some(FieldType::Date) => "::date",
+        Some(FieldType::Datetime) => "::timestamp",
+        _ => "",
+    }
+}
+
+/// The cast for a field of the model in context. Without a model there is
+/// no type to cast to, so the value is bound as-is — the same degradation
+/// every other type-aware rewrite here makes.
+fn value_cast(field: &str, ctx: Ctx) -> &'static str {
+    value_cast_for(ctx.model.and_then(|m| m.field(field)).map(|f| &f.ty))
+}
+
 /// The field's stored falsy value, when the model is known and the type
 /// has one (0 for numeric, '' for text, false for boolean).
 fn falsy_value(field: &str, ctx: Ctx) -> Option<Value> {
@@ -220,11 +240,12 @@ fn render_term(
 
     let col = quote_ident(&term.field)?;
     let value = &term.value;
+    let cast = value_cast(&term.field, ctx);
     use Operator::*;
 
     // Odoo rewrites '='/'!=' with a collection value into 'in'/'not in'
     if value.is_array() && matches!(term.op, Eq | Neq) {
-        return render_in(&col, value, term.op == Neq, params);
+        return render_in(&col, value, term.op == Neq, params, cast);
     }
 
     match &term.op {
@@ -234,7 +255,7 @@ fn render_term(
                 None => format!("{col} IS NULL"),
             }
         } else {
-            format!("{col} = {}", bind(params, value.clone()))
+            format!("{col} = {}{cast}", bind(params, value.clone()))
         }),
         Neq => Ok(if is_unset(value) {
             match falsy_value(&term.field, ctx) {
@@ -244,20 +265,20 @@ fn render_term(
         } else {
             // negative operators also match unset records
             format!(
-                "({col} != {p} OR {col} IS NULL)",
+                "({col} != {p}{cast} OR {col} IS NULL)",
                 p = bind(params, value.clone())
             )
         }),
         EqMaybe => Ok(if is_unset(value) {
             "TRUE".into()
         } else {
-            format!("{col} = {}", bind(params, value.clone()))
+            format!("{col} = {}{cast}", bind(params, value.clone()))
         }),
-        Lt => render_cmp(&col, "<", value, params),
-        Lte => render_cmp(&col, "<=", value, params),
-        Gt => render_cmp(&col, ">", value, params),
-        Gte => render_cmp(&col, ">=", value, params),
-        In | NotIn => render_in(&col, value, term.op == NotIn, params),
+        Lt => render_cmp(&col, "<", value, params, cast),
+        Lte => render_cmp(&col, "<=", value, params, cast),
+        Gt => render_cmp(&col, ">", value, params, cast),
+        Gte => render_cmp(&col, ">=", value, params, cast),
+        In | NotIn => render_in(&col, value, term.op == NotIn, params, cast),
         Like => render_like(&col, "LIKE", value, true, false, params),
         ILike => render_like(&col, "ILIKE", value, true, false, params),
         NotLike => render_like(&col, "LIKE", value, true, true, params),
@@ -417,8 +438,12 @@ fn render_cmp(
     sql_op: &str,
     value: &Value,
     params: &mut Vec<Value>,
+    cast: &str,
 ) -> Result<String, RusdooError> {
-    Ok(format!("{col} {sql_op} {}", bind(params, value.clone())))
+    Ok(format!(
+        "{col} {sql_op} {}{cast}",
+        bind(params, value.clone())
+    ))
 }
 
 fn render_in(
@@ -426,6 +451,7 @@ fn render_in(
     value: &Value,
     negative: bool,
     params: &mut Vec<Value>,
+    cast: &str,
 ) -> Result<String, RusdooError> {
     let items = value.as_array().ok_or_else(|| {
         RusdooError::Validation(format!("'in' operator expects a list, got {value}"))
@@ -443,7 +469,7 @@ fn render_in(
     }
     let placeholders: Vec<String> = set_values
         .into_iter()
-        .map(|v| bind(params, v.clone()))
+        .map(|v| format!("{}{cast}", bind(params, v.clone())))
         .collect();
     let list = placeholders.join(", ");
     Ok(match (negative, has_unset) {

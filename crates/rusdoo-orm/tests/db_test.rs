@@ -2079,3 +2079,94 @@ async fn malformed_create_and_update_commands_are_refused() {
         .await;
     assert!(err.is_err(), "update(1) without an id must be refused");
 }
+
+#[tokio::test]
+async fn date_and_datetime_roundtrip_live() {
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let model = Model::new(
+        ModelMeta {
+            name: "rusdoo.test.dated".into(),
+            table: "rusdoo_test_dated".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("day", FieldType::Date),
+            Field::new("moment", FieldType::Datetime),
+        ],
+    );
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_dated""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    model.init_table(&pool).await.unwrap();
+
+    // the web client sends dates as strings; they must land in the
+    // date/timestamp columns and come back in the same wire format
+    let id = model
+        .create(
+            &pool,
+            vec![
+                ("name", json!("a")),
+                ("day", json!("2026-07-31")),
+                ("moment", json!("2026-07-31 12:30:00")),
+            ],
+        )
+        .await
+        .unwrap();
+    let rows = model.read(&pool, &[id], &["day", "moment"]).await.unwrap();
+    assert_eq!(rows[0]["day"], json!("2026-07-31"));
+    assert_eq!(rows[0]["moment"], json!("2026-07-31 12:30:00"));
+
+    // and they are comparable in a domain
+    let older = model
+        .create(
+            &pool,
+            vec![("name", json!("b")), ("day", json!("2025-01-15"))],
+        )
+        .await
+        .unwrap();
+    let found = model
+        .search(
+            &pool,
+            &parse_domain(&json!([["day", ">=", "2026-01-01"]])).unwrap(),
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(found, vec![id]);
+    let found = model
+        .search(
+            &pool,
+            &parse_domain(&json!([["day", "in", ["2025-01-15"]]])).unwrap(),
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(found, vec![older]);
+    let unset = model
+        .create(&pool, vec![("name", json!("c"))])
+        .await
+        .unwrap();
+    let found = model
+        .search(
+            &pool,
+            &parse_domain(&json!([["day", "=", false]])).unwrap(),
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(found, vec![unset]);
+
+    // ...and writable after the fact
+    model
+        .write(&pool, &[id], vec![("day", json!("2026-08-02"))])
+        .await
+        .unwrap();
+    let rows = model.read(&pool, &[id], &["day"]).await.unwrap();
+    assert_eq!(rows[0]["day"], json!("2026-08-02"));
+}
