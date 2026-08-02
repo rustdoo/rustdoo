@@ -538,3 +538,82 @@ fn count_sql_counts_in_the_database() {
     let (sql, _) = model.count_sql(&dom, &SearchOptions::default()).unwrap();
     assert!(sql.contains(r#""active" = $2"#), "{sql}");
 }
+
+/// A read answers in the order its ids were asked for: a search's
+/// `ORDER BY` decides the sequence, and losing it in the read would
+/// scramble every sorted list the client draws.
+#[tokio::test]
+async fn read_answers_in_the_order_the_ids_were_given_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let mut reg = rusdoo_orm::registry::Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.order".into(),
+            table: "rusdoo_test_read_order".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_read_order""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.order")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    let mut ids = Vec::new();
+    for name in ["ana", "bia", "caio"] {
+        ids.push(
+            reg.create(
+                &pool,
+                "rusdoo.test.order",
+                vec![("name", serde_json::json!(name))],
+            )
+            .await
+            .unwrap(),
+        );
+    }
+    let reversed: Vec<i64> = ids.iter().rev().copied().collect();
+    let rows = reg
+        .read(&pool, "rusdoo.test.order", &reversed, &["name"])
+        .await
+        .unwrap();
+    let names: Vec<&str> = rows
+        .iter()
+        .map(|row| row["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["caio", "bia", "ana"]);
+
+    // and a descending search reaches the client descending
+    let domain = rusdoo_orm::domain::parse_domain(&serde_json::json!([])).unwrap();
+    let found = reg
+        .search(
+            &pool,
+            "rusdoo.test.order",
+            &domain,
+            &SearchOptions {
+                order: Some("name desc".into()),
+                ..SearchOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+    let rows = reg
+        .read(&pool, "rusdoo.test.order", &found, &["name"])
+        .await
+        .unwrap();
+    let names: Vec<&str> = rows
+        .iter()
+        .map(|row| row["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["caio", "bia", "ana"]);
+}

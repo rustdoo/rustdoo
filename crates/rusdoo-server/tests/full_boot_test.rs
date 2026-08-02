@@ -43,8 +43,11 @@ async fn schema_pool(url: &str) -> sqlx::PgPool {
     pool
 }
 
+/// The models of every code module of the repository — what the server
+/// registers before letting the addons' data speak about them.
 fn registry() -> Registry {
     let mut registry = rusdoo_base::registry().expect("base models");
+    rusdoo_mail::extend(&mut registry).expect("mail models");
     rusdoo_sale::extend(&mut registry).expect("sale models");
     registry
 }
@@ -68,7 +71,7 @@ async fn the_addons_tree_installs_and_adds_up_live() {
         .iter()
         .map(|(name, _)| name.as_str())
         .collect();
-    for module in ["base", "web", "sale"] {
+    for module in ["base", "web", "mail", "sale"] {
         assert!(installed.contains(&module), "installed: {installed:?}");
     }
     assert!(

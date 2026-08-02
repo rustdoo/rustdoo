@@ -398,3 +398,61 @@ input[type="checkbox"].o_input {
 .o_m2o {
     display: block;
 }
+
+/* chatter --------------------------------------------------------------- */
+
+.o_chatter {
+    margin-top: 16px;
+    background: var(--o-surface);
+    border: 1px solid var(--o-border);
+    border-radius: 4px;
+    padding: 16px 20px;
+}
+
+.o_chatter:empty {
+    display: none;
+}
+
+.o_chatter h3 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    color: var(--o-muted);
+}
+
+.o_composer_box {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin-bottom: 16px;
+}
+
+.o_composer {
+    flex: 1;
+    resize: vertical;
+}
+
+.o_message {
+    border-top: 1px solid var(--o-border);
+    padding: 10px 0;
+}
+
+.o_message_head {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+}
+
+.o_message_date {
+    color: var(--o-muted);
+    font-size: 12px;
+}
+
+.o_message_subject {
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+.o_message_body {
+    margin-top: 4px;
+    white-space: pre-wrap;
+}

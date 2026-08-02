@@ -40,6 +40,14 @@
             // view principal só traz os metadados do próprio modelo
             this.lineFields = new Map();
             this.dirty = new Set();
+            // <chatter/> no arch: o registro carrega uma discussão
+            this.chatter = this.archRoot.getElementsByTagName("chatter").length
+                ? new rusdoo.Chatter({
+                      model: this.model,
+                      resId: this.resId,
+                      onError: this.onError,
+                  })
+                : null;
             this.root = el("div", { class: "o_form_view" });
         }
 
@@ -87,6 +95,12 @@
 
         async load() {
             await this.loadLineFields();
+            if (this.chatter) {
+                this.chatter.resId = this.resId;
+                // o histórico é do servidor: um erro nele não impede o
+                // formulário de abrir
+                await this.chatter.load().catch((error) => this.onError(error));
+            }
             const names = this.fieldNodes().map((node) => node.getAttribute("name"));
             if (this.resId) {
                 const records = await callKw(this.model, "web_read", [[this.resId]], {
@@ -312,7 +326,11 @@
         render() {
             this.widgets.clear();
             this.x2many.clear();
-            fill(this.root, [this.renderControlPanel(), this.renderSheet()]);
+            const parts = [this.renderControlPanel(), this.renderSheet()];
+            if (this.chatter) {
+                parts.push(this.chatter.render());
+            }
+            fill(this.root, parts);
             return this.root;
         }
     }

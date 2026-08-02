@@ -162,9 +162,12 @@ impl Model {
             .fetch_all(pool)
             .await
             .map_err(db_err)?;
-        rows.iter()
+        let mut records: Vec<Map<String, Value>> = rows
+            .iter()
             .map(|row| self.row_to_json(row, fields))
-            .collect()
+            .collect::<Result<_, RusdooError>>()?;
+        order_like(&mut records, ids);
+        Ok(records)
     }
 
     pub async fn write(
@@ -212,6 +215,23 @@ impl Model {
         }
         Ok(record)
     }
+}
+
+/// Put `records` back in the order their ids were asked for. Ids with no
+/// row (deleted between the search and the read) simply are not there.
+fn order_like(records: &mut [Map<String, Value>], ids: &[i64]) {
+    let position: HashMap<i64, usize> = ids
+        .iter()
+        .enumerate()
+        .map(|(index, id)| (*id, index))
+        .collect();
+    records.sort_by_key(|record| {
+        record
+            .get("id")
+            .and_then(Value::as_i64)
+            .and_then(|id| position.get(&id).copied())
+            .unwrap_or(usize::MAX)
+    });
 }
 
 /// The requested fields minus `id`, which every read returns anyway and
@@ -574,6 +594,11 @@ impl Registry {
                     Ok(record)
                 })
                 .collect::<Result<_, RusdooError>>()?;
+            // `WHERE id IN (...)` returns rows in whatever order the
+            // database liked. The caller asked for these ids in an order
+            // — a search's `ORDER BY`, a thread's newest-first — and
+            // losing it here would silently scramble every sorted list.
+            order_like(&mut records, ids);
 
             for field in x2many {
                 let related = self.read_x2many(&mut *conn, field, ids).await?;

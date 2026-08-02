@@ -100,6 +100,7 @@ type ModelProvider = fn(&mut Registry) -> Result<(), rusdoo_core::RusdooError>;
 fn code_modules() -> Vec<(&'static str, ModelProvider)> {
     vec![
         ("base", rusdoo_base::extend as ModelProvider),
+        ("mail", rusdoo_mail::extend as ModelProvider),
         ("sale", rusdoo_sale::extend as ModelProvider),
     ]
 }
@@ -153,8 +154,18 @@ fn code_methods(
     addons_path: &std::path::Path,
 ) -> anyhow::Result<rusdoo_orm::methods::MethodRegistry> {
     let mut methods = rusdoo_orm::methods::MethodRegistry::new();
-    if installed_code_modules(addons_path)?.contains(&"sale") {
+    let installed = installed_code_modules(addons_path)?;
+    if installed.contains(&"sale") {
         rusdoo_sale::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"mail") {
+        // which records carry a discussion: the module that owns a model
+        // is the one that says so, like `_inherit = ['mail.thread']`
+        let mut threads = vec!["res.partner"];
+        if installed.contains(&"sale") {
+            threads.push("sale.order");
+        }
+        rusdoo_mail::extend_methods(&mut methods, &threads)?;
     }
     Ok(methods)
 }

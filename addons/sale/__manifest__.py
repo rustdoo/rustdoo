@@ -3,7 +3,7 @@
     'version': '19.0.1.0',
     'category': 'Vendas',
     'summary': 'Pedidos de venda: produtos, linhas e totais',
-    'depends': ['base', 'web'],
+    'depends': ['base', 'web', 'mail'],
     'data': [
         'security/sale_groups.xml',
         'security/ir.model.access.csv',

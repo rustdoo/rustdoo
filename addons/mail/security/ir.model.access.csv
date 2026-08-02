@@ -1,0 +1,5 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mail_message_user,mensagens usuário,mail.message,base.group_user,1,0,1,0
+access_mail_message_system,mensagens admin,mail.message,base.group_system,1,1,1,1
+access_mail_followers_user,seguidores usuário,mail.followers,base.group_user,1,1,1,1
+access_mail_followers_system,seguidores admin,mail.followers,base.group_system,1,1,1,1

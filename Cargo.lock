@@ -1247,6 +1247,7 @@ dependencies = [
  "http-body-util",
  "rusdoo-base",
  "rusdoo-core",
+ "rusdoo-mail",
  "rusdoo-modules",
  "rusdoo-orm",
  "rusdoo-qweb",
@@ -1259,6 +1260,17 @@ dependencies = [
  "tower",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "rusdoo-mail"
+version = "0.1.0"
+dependencies = [
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1322,6 +1334,7 @@ dependencies = [
  "rusdoo-base",
  "rusdoo-core",
  "rusdoo-http",
+ "rusdoo-mail",
  "rusdoo-modules",
  "rusdoo-orm",
  "rusdoo-qweb",

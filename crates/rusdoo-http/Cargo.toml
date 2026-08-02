@@ -21,6 +21,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 rusdoo-base = { path = "../rusdoo-base" }
+rusdoo-mail = { path = "../rusdoo-mail" }
 rusdoo-sale = { path = "../rusdoo-sale" }
 tokio.workspace = true
 tower.workspace = true
