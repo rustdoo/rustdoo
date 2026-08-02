@@ -668,9 +668,15 @@ impl OrmService {
             }
             "search_count" => {
                 let domain = self.arg_domain(args.first().or_else(|| kwargs.get("domain")))?;
+                // no paging (a count is over everything), but the archived
+                // filter still applies
+                let opts = SearchOptions {
+                    active_test: context_active_test(kwargs),
+                    ..SearchOptions::default()
+                };
                 let ids = self
                     .registry
-                    .search(&self.pool, model, &domain, &SearchOptions::default())
+                    .search(&self.pool, model, &domain, &opts)
                     .await?;
                 Ok(json!(ids.len()))
             }
@@ -770,7 +776,14 @@ impl OrmService {
                 let (pattern, operator, limit) = name_search_args(args, kwargs, 2, 3);
                 let extra = args.get(1).or_else(|| kwargs.get("domain"));
                 let pairs = self
-                    .name_search_pairs(model, pattern, extra, operator, limit)
+                    .name_search_pairs(
+                        model,
+                        pattern,
+                        extra,
+                        operator,
+                        limit,
+                        context_active_test(kwargs),
+                    )
                     .await?;
                 let out: Vec<Value> = pairs
                     .into_iter()
@@ -788,7 +801,14 @@ impl OrmService {
                 let (pattern, operator, limit) = name_search_args(args, kwargs, 3, 4);
                 let extra = args.get(2).or_else(|| kwargs.get("domain"));
                 let pairs = self
-                    .name_search_pairs(model, pattern, extra, operator, limit)
+                    .name_search_pairs(
+                        model,
+                        pattern,
+                        extra,
+                        operator,
+                        limit,
+                        context_active_test(kwargs),
+                    )
                     .await?;
                 if spec.len() == 1 && spec.contains_key("display_name") {
                     let out: Vec<Value> = pairs
@@ -1094,8 +1114,30 @@ fn group_options(
     }
 }
 
+/// Odoo's `active_test` context flag: on unless the client turns it off
+/// (Python truthiness, so `false`, `0` and `null` all mean off). It is
+/// what the "Archived" filter of every list view flips.
+fn context_active_test(kwargs: &Map<String, Value>) -> bool {
+    let Some(flag) = kwargs
+        .get("context")
+        .and_then(Value::as_object)
+        .and_then(|context| context.get("active_test"))
+    else {
+        return true;
+    };
+    match flag {
+        Value::Null | Value::Bool(false) => false,
+        Value::Number(n) => n.as_f64() != Some(0.0),
+        Value::String(s) => !s.is_empty(),
+        _ => true,
+    }
+}
+
 fn search_options(kwargs: &Map<String, Value>) -> Result<SearchOptions, RpcError> {
-    let mut opts = SearchOptions::default();
+    let mut opts = SearchOptions {
+        active_test: context_active_test(kwargs),
+        ..SearchOptions::default()
+    };
     if let Some(limit) = kwargs.get("limit") {
         opts.limit = limit.as_u64();
     }

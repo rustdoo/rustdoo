@@ -259,6 +259,7 @@ fn search_sql_composes_where_order_limit() {
         order: Some("name asc".into()),
         limit: Some(10),
         offset: Some(5),
+        ..SearchOptions::default()
     };
 
     let (sql, params) = model.search_sql(&dom, &opts).unwrap();
@@ -385,7 +386,13 @@ fn neq_false_on_integer_requires_set_and_nonzero() {
     let model = partner_model();
     let dom = parse_domain(&json!([["color", "!=", false]])).unwrap();
 
-    let (sql, params) = model.search_sql(&dom, &SearchOptions::default()).unwrap();
+    // active_test off: this is about how `!= False` renders on an integer,
+    // and the archive filter has its own tests
+    let opts = SearchOptions {
+        active_test: false,
+        ..SearchOptions::default()
+    };
+    let (sql, params) = model.search_sql(&dom, &opts).unwrap();
 
     assert_eq!(
         sql,

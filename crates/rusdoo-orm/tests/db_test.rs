@@ -3,7 +3,7 @@
 
 use rusdoo_orm::crud::SearchOptions;
 use rusdoo_orm::db::connect;
-use rusdoo_orm::domain::parse_domain;
+use rusdoo_orm::domain::{parse_domain, Domain};
 use rusdoo_orm::fields::{Field, FieldType};
 use rusdoo_orm::model::{Model, ModelMeta};
 use serde_json::json;
@@ -2243,4 +2243,99 @@ async fn create_applies_declared_defaults_live() {
         .unwrap();
     let rows = model.read(&pool, &[id], &["color"]).await.unwrap();
     assert_eq!(rows[0]["color"], json!(1));
+}
+
+#[tokio::test]
+async fn archived_records_stay_out_of_searches_live() {
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let model = Model::new(
+        ModelMeta {
+            name: "rusdoo.test.archivable".into(),
+            table: "rusdoo_test_archivable".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("active", FieldType::Boolean).default_value(json!(true)),
+        ],
+    );
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_archivable""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    model.init_table(&pool).await.unwrap();
+
+    let live = model
+        .create(&pool, vec![("name", json!("live"))])
+        .await
+        .unwrap();
+    let archived = model
+        .create(
+            &pool,
+            vec![("name", json!("archived")), ("active", json!(false))],
+        )
+        .await
+        .unwrap();
+
+    // the default search hides the archived record
+    let found = model
+        .search(&pool, &Domain::True, &SearchOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(found, vec![live]);
+
+    // active_test off brings it back — the "Archived" filter of a list view
+    let found = model
+        .search(
+            &pool,
+            &Domain::True,
+            &SearchOptions {
+                active_test: false,
+                ..SearchOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(found, vec![live, archived]);
+
+    // a domain that already speaks about `active` decides for itself
+    let found = model
+        .search(
+            &pool,
+            &parse_domain(&json!([["active", "=", false]])).unwrap(),
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(found, vec![archived]);
+
+    // ...even nested under an operator
+    let found = model
+        .search(
+            &pool,
+            &parse_domain(&json!(["|", ["active", "=", false], ["name", "=", "live"]])).unwrap(),
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(found, vec![live, archived]);
+
+    // a model without the field is untouched by any of this
+    let plain = Model::new(
+        ModelMeta {
+            name: "rusdoo.test.plain".into(),
+            table: "rusdoo_test_plain".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    );
+    let (sql, _) = plain
+        .search_sql(&Domain::True, &SearchOptions::default())
+        .unwrap();
+    assert!(!sql.contains("active"), "{sql}");
 }

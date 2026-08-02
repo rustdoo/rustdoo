@@ -137,6 +137,7 @@ impl OrmService {
         extra: Option<&Value>,
         operator: &str,
         limit: u64,
+        active_test: bool,
     ) -> Result<Vec<(i64, String)>, RpcError> {
         let m = self
             .registry
@@ -166,6 +167,7 @@ impl OrmService {
         };
         let opts = SearchOptions {
             limit: Some(limit),
+            active_test,
             ..SearchOptions::default()
         };
         let ids = self

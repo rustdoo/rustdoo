@@ -25,7 +25,9 @@ fn test_registry() -> Registry {
         vec![
             Field::new("name", FieldType::Char { size: None }).required(),
             Field::new("color", FieldType::Integer),
-            Field::new("active", FieldType::Boolean),
+            // like every archivable Odoo model: the field defaults to true,
+            // otherwise every new record would be born archived
+            Field::new("active", FieldType::Boolean).default_value(json!(true)),
         ],
     ))
     .unwrap();
@@ -2425,4 +2427,95 @@ async fn default_get_serves_declared_and_context_defaults() {
     )
     .await;
     assert_eq!(resp["error"]["code"], json!(-32602), "{resp}");
+}
+
+#[tokio::test]
+async fn active_test_context_controls_archived_records_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.partner".into(),
+            table: "rusdoo_test_active_partner".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("active", FieldType::Boolean).default_value(json!(true)),
+        ],
+    ))
+    .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_active_partner""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("res.partner")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+    let live = reg
+        .create(&pool, "res.partner", vec![("name", json!("Ana"))])
+        .await
+        .unwrap();
+    let archived = reg
+        .create(
+            &pool,
+            "res.partner",
+            vec![("name", json!("Antiga")), ("active", json!(false))],
+        )
+        .await
+        .unwrap();
+    let service = OrmService::insecure(Arc::new(reg), pool);
+
+    let call = |method: &str, args: Value, kwargs: Value| {
+        let service = service.clone();
+        let method = method.to_string();
+        async move {
+            let (_, resp) = rpc(
+                router(service),
+                "/web/dataset/call_kw",
+                json!({"jsonrpc": "2.0", "id": 1, "method": "call",
+                       "params": {"model": "res.partner", "method": method,
+                                  "args": args, "kwargs": kwargs}}),
+            )
+            .await;
+            resp
+        }
+    };
+
+    // every read path hides archived records by default...
+    let resp = call("search", json!([[]]), json!({})).await;
+    assert_eq!(resp["result"], json!([live]));
+    let resp = call("search_count", json!([[]]), json!({})).await;
+    assert_eq!(resp["result"], json!(1));
+    let resp = call("web_search_read", json!([[], {"name": {}}]), json!({})).await;
+    assert_eq!(resp["result"]["length"], json!(1));
+    let resp = call("name_search", json!([""]), json!({})).await;
+    assert_eq!(resp["result"], json!([[live, "Ana"]]));
+
+    // ...and the context flag brings them back
+    let ctx = json!({"context": {"active_test": false}});
+    let resp = call("search", json!([[]]), ctx.clone()).await;
+    assert_eq!(resp["result"], json!([live, archived]));
+    let resp = call("search_count", json!([[]]), ctx.clone()).await;
+    assert_eq!(resp["result"], json!(2));
+    let resp = call("web_search_read", json!([[], {"name": {}}]), ctx.clone()).await;
+    assert_eq!(resp["result"]["length"], json!(2));
+    let resp = call("name_search", json!([""]), ctx).await;
+    assert_eq!(resp["result"].as_array().unwrap().len(), 2);
+
+    // a domain naming the field decides for itself, context or not
+    let resp = call("search", json!([[["active", "=", false]]]), json!({})).await;
+    assert_eq!(resp["result"], json!([archived]));
+
+    // reading an archived record by id still works — active_test filters
+    // searches, it does not make records unreadable
+    let resp = call("read", json!([[archived], ["name"]]), json!({})).await;
+    assert_eq!(resp["result"][0]["name"], json!("Antiga"));
 }

@@ -1,7 +1,7 @@
 //! SQL builders for the CRUD entry points of `BaseModel`:
 //! `search`, `read`, `create`, `write`, `unlink`.
 
-use crate::domain::Domain;
+use crate::domain::{Domain, Operator, Term};
 use crate::fields::Field;
 use crate::model::Model;
 use crate::registry::{Registry, MAX_DELEGATION_DEPTH};
@@ -10,12 +10,30 @@ use rusdoo_core::RusdooError;
 use serde_json::Value;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Default)]
+/// Odoo's `_active_name`: the field that archives a record.
+pub const ACTIVE_FIELD: &str = "active";
+
+#[derive(Debug, Clone)]
 pub struct SearchOptions {
     /// e.g. `"name asc, id desc"`, mirroring Odoo's `order` argument
     pub order: Option<String>,
     pub limit: Option<u64>,
     pub offset: Option<u64>,
+    /// Odoo's `active_test` context flag: archived records stay out of
+    /// every search unless the caller asks for them
+    pub active_test: bool,
+}
+
+impl Default for SearchOptions {
+    fn default() -> Self {
+        SearchOptions {
+            order: None,
+            limit: None,
+            offset: None,
+            // Odoo's default: `active_test` is only ever turned off
+            active_test: true,
+        }
+    }
 }
 
 impl Model {
@@ -34,7 +52,8 @@ impl Model {
         ctx: Ctx,
     ) -> Result<(String, Vec<Value>), RusdooError> {
         let mut params = Vec::new();
-        let where_sql = render(domain, &mut params, ctx)?;
+        let active_test = self.active_test_domain(domain, opts);
+        let where_sql = render(active_test.as_ref().unwrap_or(domain), &mut params, ctx)?;
         let mut sql = format!(
             r#"SELECT "id" FROM {} WHERE {where_sql}"#,
             quote_ident(&self.meta.table)?
@@ -159,6 +178,26 @@ impl Model {
             quote_ident(&self.meta.table)?
         );
         Ok((sql, params))
+    }
+
+    /// The domain a search actually runs, once archived records are
+    /// excluded: `active = True` is AND-ed in when the model has the
+    /// field, the caller did not turn `active_test` off, and the domain
+    /// does not already speak about it (`odoo/orm/models.py::_search`).
+    /// `None` means the domain is used as it came.
+    fn active_test_domain(&self, domain: &Domain, opts: &SearchOptions) -> Option<Domain> {
+        if !opts.active_test || self.field(ACTIVE_FIELD).is_none() || domain.mentions(ACTIVE_FIELD)
+        {
+            return None;
+        }
+        Some(Domain::And(vec![
+            domain.clone(),
+            Domain::Term(Term {
+                field: ACTIVE_FIELD.to_string(),
+                op: Operator::Eq,
+                value: Value::Bool(true),
+            }),
+        ]))
     }
 
     /// `"name asc, id desc"` -> `"name" ASC, "id" DESC`, validated against

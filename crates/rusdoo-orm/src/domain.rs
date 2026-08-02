@@ -86,6 +86,22 @@ pub enum Domain {
     Term(Term),
 }
 
+impl Domain {
+    /// Whether any condition names `field`. Odoo asks this before adding
+    /// the implicit `active = True`: a domain that already speaks about
+    /// the field decides for itself (`odoo/orm/models.py::_search`).
+    pub fn mentions(&self, field: &str) -> bool {
+        match self {
+            Domain::True | Domain::False => false,
+            Domain::And(children) | Domain::Or(children) => {
+                children.iter().any(|child| child.mentions(field))
+            }
+            Domain::Not(child) => child.mentions(field),
+            Domain::Term(term) => term.field == field,
+        }
+    }
+}
+
 pub fn parse_domain(raw: &Value) -> Result<Domain, RusdooError> {
     let items = raw
         .as_array()
