@@ -45,7 +45,8 @@ impl Operation {
             | "name_search"
             | "web_name_search"
             | "formatted_read_group"
-            | "web_read_group" => Operation::Read,
+            | "web_read_group"
+            | "get_views" => Operation::Read,
             "create" => Operation::Create,
             "write" => Operation::Write,
             "unlink" => Operation::Unlink,

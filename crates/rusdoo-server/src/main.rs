@@ -4,6 +4,7 @@ use rusdoo_http::dispatch::OrmService;
 use rusdoo_orm::fields::{Field, FieldType};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
+use serde_json::json;
 use std::sync::Arc;
 
 const DEFAULT_ADDR: &str = "0.0.0.0:8069";
@@ -79,6 +80,10 @@ fn base_registry() -> anyhow::Result<Registry> {
         vec![
             Field::new("name", FieldType::Char { size: None }),
             Field::new("model", FieldType::Char { size: None }),
+            // form/list/kanban/...: which view the client asks for by type
+            Field::new("type", FieldType::Char { size: None }).default_value(json!("form")),
+            // lowest wins when several views share a model and type
+            Field::new("priority", FieldType::Integer).default_value(json!(16)),
             Field::new("arch", FieldType::Text),
         ],
     ))?;

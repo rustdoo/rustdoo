@@ -180,6 +180,30 @@ impl OrmService {
         self.check_command_access(&ident, model, values)
     }
 
+    /// `fields_get`'s payload: the metadata of every exposed field,
+    /// optionally restricted to `only`. Private fields are never
+    /// described — their metadata alone would disclose that they exist.
+    pub(crate) fn fields_metadata(
+        &self,
+        model: &str,
+        only: &HashSet<&str>,
+    ) -> Result<Map<String, Value>, RpcError> {
+        let m = self.registry.get(model).ok_or_else(|| {
+            RpcError::from(RusdooError::Validation(format!("unknown model: {model}")))
+        })?;
+        let mut out = Map::new();
+        for field in m.fields() {
+            if !field.exposed {
+                continue;
+            }
+            if !only.is_empty() && !only.contains(field.name.as_str()) {
+                continue;
+            }
+            out.insert(field.name.clone(), field_metadata(field));
+        }
+        Ok(out)
+    }
+
     /// List every `ir.ui.view` as (external id, display name), for a
     /// navigable index page. ACL-checked when a session is present.
     pub(crate) async fn list_views(
@@ -750,9 +774,6 @@ impl OrmService {
             // field metadata for the web client's form/list builder. An
             // optional first arg (allfields) filters which fields to return.
             "fields_get" => {
-                let m = self.registry.get(model).ok_or_else(|| {
-                    RpcError::from(RusdooError::Validation(format!("unknown model: {model}")))
-                })?;
                 // `allfields` filters which fields to return. Absent or the
                 // Odoo sentinels (null/false) mean "all"; a list restricts;
                 // anything else is a malformed arg — surface it, don't
@@ -767,18 +788,15 @@ impl OrmService {
                         ))
                     }
                 };
-                let mut out = Map::new();
-                for field in m.fields() {
-                    // don't leak private fields (e.g. password hashes)
-                    if !field.exposed {
-                        continue;
-                    }
-                    if !only.is_empty() && !only.contains(field.name.as_str()) {
-                        continue;
-                    }
-                    out.insert(field.name.clone(), field_metadata(field));
-                }
-                Ok(Value::Object(out))
+                Ok(Value::Object(self.fields_metadata(model, &only)?))
+            }
+            // the arch of the views an action opens, with the fields the
+            // client needs to render them
+            "get_views" => {
+                let specs = crate::webclient::parse_view_specs(
+                    args.first().or_else(|| kwargs.get("views")),
+                )?;
+                self.get_views_payload(uid, model, &specs).await
             }
             // many2one dropdown suggestions: (id, display_name) pairs
             "name_search" => {

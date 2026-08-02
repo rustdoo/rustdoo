@@ -2798,3 +2798,217 @@ async fn reg_users_insert(pool: &sqlx::PgPool, login: &str, hash: &str) {
         .await
         .unwrap();
 }
+
+/// What an action load calls before its first search: the arch of the
+/// views it opens plus the fields to render them.
+#[tokio::test]
+async fn get_views_returns_arch_and_fields_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    // own schema: ir_ui_view is queried by its fixed table name
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                sqlx::Executor::execute(
+                    &mut *conn,
+                    "CREATE SCHEMA IF NOT EXISTS rusdoo_views_test",
+                )
+                .await?;
+                sqlx::Executor::execute(&mut *conn, "SET search_path TO rusdoo_views_test").await?;
+                Ok(())
+            })
+        })
+        .connect_lazy(&url)
+        .unwrap();
+
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "ir.ui.view".into(),
+            table: "ir_ui_view".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("model", FieldType::Char { size: None }),
+            Field::new("type", FieldType::Char { size: None }).default_value(json!("form")),
+            Field::new("priority", FieldType::Integer).default_value(json!(16)),
+            Field::new("arch", FieldType::Text),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.partner".into(),
+            table: "rusdoo_test_views_partner".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }).required(),
+            Field::new("secret", FieldType::Char { size: None }).private(),
+        ],
+    ))
+    .unwrap();
+    for t in ["ir_ui_view", "rusdoo_test_views_partner"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in ["ir.ui.view", "res.partner"] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+    // two list views for the same model: the lower priority one wins
+    let fallback = reg
+        .create(
+            &pool,
+            "ir.ui.view",
+            vec![
+                ("name", json!("Parceiros (alternativa)")),
+                ("model", json!("res.partner")),
+                ("type", json!("list")),
+                ("priority", json!(99)),
+                ("arch", json!("<list><field name=\"name\"/></list>")),
+            ],
+        )
+        .await
+        .unwrap();
+    let list = reg
+        .create(
+            &pool,
+            "ir.ui.view",
+            vec![
+                ("name", json!("Parceiros")),
+                ("model", json!("res.partner")),
+                ("type", json!("list")),
+                ("priority", json!(1)),
+                ("arch", json!("<list><field name=\"name\"/></list>")),
+            ],
+        )
+        .await
+        .unwrap();
+    let form = reg
+        .create(
+            &pool,
+            "ir.ui.view",
+            vec![
+                ("name", json!("Parceiro")),
+                ("model", json!("res.partner")),
+                ("type", json!("form")),
+                ("arch", json!("<form><field name=\"name\"/></form>")),
+            ],
+        )
+        .await
+        .unwrap();
+    let service = OrmService::insecure(Arc::new(reg), pool);
+
+    // false means "the default view of this type"
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "call",
+            "params": {"model": "res.partner", "method": "get_views",
+                       "args": [[[false, "list"], [false, "form"]]], "kwargs": {}}
+        }),
+    )
+    .await;
+    let result = &resp["result"];
+    assert_eq!(
+        result["views"]["list"]["id"],
+        json!(list),
+        "the lowest priority view wins, not the first created: {resp}"
+    );
+    assert_ne!(result["views"]["list"]["id"], json!(fallback));
+    assert_eq!(result["views"]["form"]["id"], json!(form));
+    assert!(result["views"]["form"]["arch"]
+        .as_str()
+        .unwrap()
+        .contains("<form>"));
+    assert_eq!(result["views"]["form"]["model"], json!("res.partner"));
+
+    // the fields the client renders with — private ones stay out
+    let fields = &result["models"]["res.partner"]["fields"];
+    assert!(fields["name"].is_object());
+    assert_eq!(fields["name"]["required"], json!(true));
+    assert!(
+        fields.get("secret").is_none(),
+        "a private field must not be described"
+    );
+
+    // an explicit id is honoured
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "call",
+            "params": {"model": "res.partner", "method": "get_views",
+                       "args": [[[fallback, "list"]]], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"]["views"]["list"]["id"], json!(fallback));
+
+    // ...but only for the model and type it really is
+    for (args, why) in [
+        (json!([[[form, "list"]]]), "a form view asked for as a list"),
+        (json!([[[false, "kanban"]]]), "no view of that type"),
+        (json!([[[999999, "list"]]]), "an id that does not exist"),
+        (json!([[]]), "no views requested"),
+        (json!([[["nope"]]]), "a malformed pair"),
+    ] {
+        let (_, resp) = rpc(
+            router(service.clone()),
+            "/web/dataset/call_kw",
+            json!({
+                "jsonrpc": "2.0", "id": 3, "method": "call",
+                "params": {"model": "res.partner", "method": "get_views",
+                           "args": args, "kwargs": {}}
+            }),
+        )
+        .await;
+        assert!(resp.get("error").is_some(), "{why} must be refused: {resp}");
+    }
+
+    // a view of another model is never served for this one
+    let other = reg_view_for_other_model(&service).await;
+    let (_, resp) = rpc(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 4, "method": "call",
+            "params": {"model": "res.partner", "method": "get_views",
+                       "args": [[[other, "list"]]], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert!(
+        resp["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("belongs to model"),
+        "{resp}"
+    );
+}
+
+/// A list view declared on another model, to prove get_views refuses it.
+async fn reg_view_for_other_model(service: &OrmService) -> i64 {
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 9, "method": "call",
+            "params": {"model": "ir.ui.view", "method": "create",
+                       "args": [{"name": "Outro", "model": "res.company",
+                                 "type": "list", "arch": "<list/>"}],
+                       "kwargs": {}}
+        }),
+    )
+    .await;
+    resp["result"].as_i64().unwrap()
+}

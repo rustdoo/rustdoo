@@ -173,6 +173,141 @@ impl OrmService {
     }
 }
 
+impl OrmService {
+    /// `get_views` (`odoo/addons/base/models/ir_ui_view.py`): the arch of
+    /// each requested view, plus the fields the client needs to render
+    /// them. This is what an action load calls before its first search.
+    ///
+    /// Deviation: Odoo returns only the fields the arch mentions; until
+    /// the arch is parsed for field usage, the model's whole `fields_get`
+    /// is returned — a superset, and one that already hides private
+    /// fields.
+    pub(crate) async fn get_views_payload(
+        &self,
+        uid: i64,
+        model: &str,
+        specs: &[(Option<i64>, String)],
+    ) -> Result<Value, RpcError> {
+        if specs.is_empty() {
+            return Err(RpcError::invalid_params(
+                "get_views needs at least one [view_id, view_type]",
+            ));
+        }
+        // the views themselves are records: reading them is an ACL check
+        // of its own, on top of the one the dispatch gate ran for `model`
+        if self.require_auth {
+            let ident = self.identity(uid).await;
+            self.check_access("ir.ui.view", "read", &ident)?;
+        }
+        let mut views = Map::new();
+        for (view_id, kind) in specs {
+            views.insert(kind.clone(), self.find_view(model, *view_id, kind).await?);
+        }
+        let fields = self.fields_metadata(model, &std::collections::HashSet::new())?;
+        Ok(json!({
+            "views": views,
+            "models": {model: {"fields": Value::Object(fields)}},
+        }))
+    }
+
+    /// The view of `kind` for `model`: the one asked for by id, or the
+    /// model's lowest-priority one of that type (ties broken by id, so
+    /// the answer is stable). A view asked for by id must really belong
+    /// to this model and type — answering with someone else's arch would
+    /// render the wrong screen.
+    async fn find_view(
+        &self,
+        model: &str,
+        view_id: Option<i64>,
+        kind: &str,
+    ) -> Result<Value, RpcError> {
+        let row: Option<ViewRow> = match view_id {
+            Some(id) => sqlx::query_as(
+                r#"SELECT "id", "model", "type", "arch" FROM "ir_ui_view" WHERE "id" = $1"#,
+            )
+            .bind(id as i32)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db_error)?,
+            None => sqlx::query_as(
+                r#"SELECT "id", "model", "type", "arch" FROM "ir_ui_view"
+                   WHERE "model" = $1 AND "type" = $2
+                   ORDER BY "priority" NULLS LAST, "id" LIMIT 1"#,
+            )
+            .bind(model)
+            .bind(kind)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db_error)?,
+        };
+        let Some((id, view_model, view_type, arch)) = row else {
+            return Err(RpcError::invalid_params(match view_id {
+                Some(id) => format!("no ir.ui.view with id {id}"),
+                None => format!("no {kind} view for model {model}"),
+            }));
+        };
+        if view_model.as_deref() != Some(model) {
+            return Err(RpcError::invalid_params(format!(
+                "view {id} belongs to model {:?}, not {model}",
+                view_model.unwrap_or_default()
+            )));
+        }
+        if view_type.as_deref() != Some(kind) {
+            return Err(RpcError::invalid_params(format!(
+                "view {id} is a {:?} view, not a {kind} one",
+                view_type.unwrap_or_default()
+            )));
+        }
+        Ok(json!({
+            "id": id,
+            "model": model,
+            "type": kind,
+            "arch": arch.unwrap_or_default(),
+        }))
+    }
+}
+
+/// Parse the `views` argument: `[[view_id_or_false, "type"], ...]`.
+pub(crate) fn parse_view_specs(
+    raw: Option<&Value>,
+) -> Result<Vec<(Option<i64>, String)>, RpcError> {
+    let malformed =
+        || RpcError::invalid_params("views must be a list of [view_id, view_type] pairs");
+    let Some(Value::Array(items)) = raw else {
+        return Err(malformed());
+    };
+    items
+        .iter()
+        .map(|item| {
+            let Some(pair) = item.as_array() else {
+                return Err(malformed());
+            };
+            let kind = pair
+                .get(1)
+                .and_then(Value::as_str)
+                .filter(|kind| !kind.is_empty())
+                .ok_or_else(malformed)?;
+            // false/null is Odoo's "pick the default view of this type"
+            let id = match pair.first() {
+                None | Some(Value::Null) | Some(Value::Bool(false)) => None,
+                Some(value) => Some(value.as_i64().ok_or_else(malformed)?),
+            };
+            Ok((id, kind.to_string()))
+        })
+        .collect()
+}
+
+/// An `ir.ui.view` row as the lookup reads it: (id, model, type, arch),
+/// every text column nullable because the table is data, not a schema.
+type ViewRow = (i32, Option<String>, Option<String>, Option<String>);
+
+fn db_error(e: sqlx::Error) -> RpcError {
+    RpcError {
+        code: crate::jsonrpc::SERVER_ERROR,
+        message: e.to_string(),
+    }
+}
+
 /// The action of the first descendant that has one, depth first — what an
 /// app menu opens when clicked.
 fn first_action(item: &MenuItem) -> Option<String> {
