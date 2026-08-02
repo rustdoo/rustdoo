@@ -38,6 +38,32 @@ pub enum FieldType {
     Monetary,
 }
 
+/// What a computed field is: the fields it reads, and the function that
+/// turns them into its value.
+///
+/// The function is plain Rust (`odoo/orm/fields.py`'s `compute`, whose
+/// bodies are Python methods). Keeping it compiled rather than
+/// interpreted is deliberate: the compiler checks it, it evaluates
+/// nothing that came from data, and it costs a call instead of a walk
+/// over an expression tree.
+#[derive(Clone)]
+pub struct Compute {
+    /// fields the function reads (`@api.depends`). They are read for the
+    /// record before it runs, and they are what a stored compute would
+    /// have to watch to know when to run again.
+    pub depends: Vec<String>,
+    pub func: fn(&serde_json::Map<String, Value>) -> Value,
+}
+
+impl std::fmt::Debug for Compute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // a fn pointer prints as an address, which says nothing useful
+        f.debug_struct("Compute")
+            .field("depends", &self.depends)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Field {
     pub name: String,
@@ -56,6 +82,9 @@ pub struct Field {
     /// the value lives on another record, reached by following many2one
     /// hops from this one
     pub related: Option<String>,
+    /// how this field is derived from others, when it is not read from a
+    /// column of its own
+    pub compute: Option<Compute>,
 }
 
 impl Field {
@@ -70,6 +99,29 @@ impl Field {
             exposed: true,
             default: None,
             related: None,
+            compute: None,
+        }
+    }
+
+    /// Derive the value from `depends` with `func`.
+    ///
+    /// Like a related field it has no column of its own, so it is not
+    /// stored and is readonly: computing a value and writing it are
+    /// opposite directions, and Odoo needs an explicit inverse for the
+    /// second one.
+    pub fn computed(
+        self,
+        depends: &[&str],
+        func: fn(&serde_json::Map<String, Value>) -> Value,
+    ) -> Self {
+        Field {
+            compute: Some(Compute {
+                depends: depends.iter().map(|d| (*d).to_string()).collect(),
+                func,
+            }),
+            stored: false,
+            readonly: true,
+            ..self
         }
     }
 

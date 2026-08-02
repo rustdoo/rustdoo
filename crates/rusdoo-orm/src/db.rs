@@ -499,8 +499,13 @@ impl Registry {
         let mut scalar: Vec<&str> = Vec::new();
         let mut x2many: Vec<&Field> = Vec::new();
         let mut related: Vec<&Field> = Vec::new();
+        let mut computed: Vec<&Field> = Vec::new();
         for name in fields {
             let field = model.field(name);
+            if let Some(field) = field.filter(|f| f.compute.is_some()) {
+                computed.push(field);
+                continue;
+            }
             if let Some(field) = field.filter(|f| f.related.is_some()) {
                 related.push(field);
                 continue;
@@ -545,6 +550,18 @@ impl Registry {
         for field in related {
             let path = field.related.as_deref().expect("filtered above");
             let values = self.read_related(pool, model_name, ids, path, 0).await?;
+            for record in &mut records {
+                let owner = record["id"].as_i64().expect("id present");
+                let value = values.get(&owner).cloned().unwrap_or(Value::Null);
+                record.insert(field.name.clone(), value);
+            }
+        }
+
+        // computed last: their dependencies may be plain columns, related
+        // fields or other computed ones, and reading them goes back
+        // through this same path
+        for field in computed {
+            let values = self.read_computed(pool, model_name, ids, field, 0).await?;
             for record in &mut records {
                 let owner = record["id"].as_i64().expect("id present");
                 let value = values.get(&owner).cloned().unwrap_or(Value::Null);
@@ -651,6 +668,61 @@ impl Registry {
             Ok(hops
                 .into_iter()
                 .map(|(owner, linked)| (owner, values.get(&linked).cloned().unwrap_or(Value::Null)))
+                .collect())
+        })
+    }
+
+    /// Run a field's compute over `ids`: read what it depends on, then
+    /// call it once per record. One read for the whole batch, so a
+    /// computed column costs a query, not a query per row.
+    ///
+    /// A dependency may itself be related or computed, which is why this
+    /// goes back through `read` — and why the chain is depth-capped: a
+    /// compute that depends on itself would otherwise loop forever.
+    fn read_computed<'a>(
+        &'a self,
+        pool: &'a PgPool,
+        model_name: &'a str,
+        ids: &'a [i64],
+        field: &'a Field,
+        depth: usize,
+    ) -> RelatedFuture<'a> {
+        Box::pin(async move {
+            if depth > MAX_RELATED_DEPTH {
+                return Err(RusdooError::Validation(format!(
+                    "compute chain exceeds {MAX_RELATED_DEPTH} levels at {:?}",
+                    field.name
+                )));
+            }
+            let compute = field.compute.as_ref().expect("computed field");
+            if compute.depends.is_empty() {
+                return Err(RusdooError::Validation(format!(
+                    "computed field {:?} declares no dependency",
+                    field.name
+                )));
+            }
+            let model = self
+                .get(model_name)
+                .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
+            // a dependency that does not exist is a broken declaration,
+            // not a null: the compute would silently return the wrong
+            // value for every record
+            for name in &compute.depends {
+                if model.field(name).is_none() && name != "id" {
+                    return Err(RusdooError::Validation(format!(
+                        "computed field {:?} depends on unknown field {name:?}",
+                        field.name
+                    )));
+                }
+            }
+            let depends: Vec<&str> = compute.depends.iter().map(String::as_str).collect();
+            let rows = self.read(pool, model_name, ids, &depends).await?;
+            Ok(rows
+                .into_iter()
+                .filter_map(|row| {
+                    let id = row.get("id")?.as_i64()?;
+                    Some((id, (compute.func)(&row)))
+                })
                 .collect())
         })
     }
