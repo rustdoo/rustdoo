@@ -1266,6 +1266,7 @@ dependencies = [
  "rusdoo-product",
  "rusdoo-qweb",
  "rusdoo-sale",
+ "rusdoo-stock",
  "serde",
  "serde_json",
  "sqlx",
@@ -1349,6 +1350,7 @@ dependencies = [
  "rusdoo-core",
  "rusdoo-orm",
  "rusdoo-product",
+ "rusdoo-stock",
  "serde_json",
  "tokio",
 ]
@@ -1368,11 +1370,24 @@ dependencies = [
  "rusdoo-product",
  "rusdoo-qweb",
  "rusdoo-sale",
+ "rusdoo-stock",
  "serde_json",
  "sqlx",
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "rusdoo-stock"
+version = "0.1.0"
+dependencies = [
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "rusdoo-product",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

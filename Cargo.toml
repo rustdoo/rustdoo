@@ -8,6 +8,7 @@ members = [
     "crates/rusdoo-mail",
     "crates/rusdoo-product",
     "crates/rusdoo-sale",
+    "crates/rusdoo-stock",
     "crates/rusdoo-http",
     "crates/rusdoo-qweb",
     "crates/rusdoo-modules",

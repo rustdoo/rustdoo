@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_stock_root" model="ir.ui.menu">
+        <field name="name">Estoque</field>
+        <field name="sequence">40</field>
+    </record>
+    <record id="menu_pickings" model="ir.ui.menu">
+        <field name="name">Transferências</field>
+        <field name="parent_id" ref="menu_stock_root"/>
+        <field name="sequence">10</field>
+        <field name="action">stock.action_pickings</field>
+    </record>
+    <record id="menu_locations" model="ir.ui.menu">
+        <field name="name">Locais</field>
+        <field name="parent_id" ref="menu_stock_root"/>
+        <field name="sequence">20</field>
+        <field name="action">stock.action_locations</field>
+    </record>
+</odoo>

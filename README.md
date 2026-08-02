@@ -28,7 +28,8 @@ Cada crate espelha um subsistema do núcleo Python (`odoo/odoo/`):
 | `rusdoo-mail` | `odoo/addons/mail/models/` | Mensagens: o chatter de cada registro |
 | `rusdoo-product` | `odoo/addons/product/models/` | O catálogo compartilhado |
 | `rusdoo-account` | `odoo/addons/account/models/` | Faturas: linhas, totais e lançamento |
-| `rusdoo-sale` | `odoo/addons/sale/models/` | Pedidos de venda e o faturamento deles |
+| `rusdoo-stock` | `odoo/addons/stock/models/` | Entregas e recebimentos |
+| `rusdoo-sale` | `odoo/addons/sale/models/` | Pedidos de venda, faturamento e entrega |
 | `rusdoo-server` | `odoo-bin` | Binário `rusdoo` (CLI + bootstrap) |
 
 Um addon segue a mesma divisão do Odoo: **código** num crate, **dados**
@@ -41,6 +42,7 @@ num diretório de `addons/`.
 | `addons/mail` | ACL das mensagens |
 | `addons/product` | Catálogo: ACL, views e produtos de demonstração |
 | `addons/account` | Grupos, ACL, views e menus de faturamento |
+| `addons/stock` | Grupos, ACL, locais, views e menus de estoque |
 | `addons/sale` | Grupos, ACL, views e menus de vendas |
 | `addons/rusdoo_demo` | Dados de demonstração |
 

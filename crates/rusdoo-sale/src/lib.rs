@@ -96,7 +96,154 @@ pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
         Operation::Write,
         action_create_invoice,
     )?;
+    methods.register(
+        "sale.order",
+        "action_create_delivery",
+        Operation::Write,
+        action_create_delivery,
+    )?;
     Ok(())
+}
+
+/// `action_create_delivery` — ship what was sold.
+///
+/// Odoo splits this into a bridge module (`sale_stock`), because a sale
+/// does not have to know about a warehouse. The port keeps the two
+/// models apart and the bridge here, where the order already is: only
+/// storable lines travel, since a service is not delivered by anyone.
+fn action_create_delivery<'a>(
+    ctx: MethodCtx<'a>,
+    _args: &'a [Value],
+    _kwargs: &'a Map<String, Value>,
+) -> MethodFuture<'a> {
+    Box::pin(async move {
+        let [order_id] = ctx.ids[..] else {
+            return Err(RusdooError::Validation(
+                "entregue um pedido de cada vez".into(),
+            ));
+        };
+        let orders = ctx
+            .registry
+            .read(
+                ctx.pool,
+                "sale.order",
+                &[order_id],
+                &["name", "state", "partner_id", "company_id", "order_line"],
+            )
+            .await?;
+        let order = orders
+            .first()
+            .ok_or_else(|| RusdooError::Validation(format!("pedido {order_id} não existe")))?;
+        let name = order.get("name").and_then(Value::as_str).unwrap_or("");
+        let state = order.get("state").and_then(Value::as_str).unwrap_or("draft");
+        if state != "sale" {
+            return Err(RusdooError::Validation(format!(
+                "o pedido {name} não está confirmado: confirme antes de entregar"
+            )));
+        }
+        let existing = ctx
+            .registry
+            .search(
+                ctx.pool,
+                "stock.picking",
+                &parse_domain(&json!([["origin", "=", name]]))?,
+                &SearchOptions::default(),
+            )
+            .await?;
+        if let Some(picking) = existing.first() {
+            return Err(RusdooError::Validation(format!(
+                "o pedido {name} já tem entrega (documento {picking})"
+            )));
+        }
+
+        let line_ids: Vec<i64> = order
+            .get("order_line")
+            .and_then(Value::as_array)
+            .map(|ids| ids.iter().filter_map(Value::as_i64).collect())
+            .unwrap_or_default();
+        let sold = if line_ids.is_empty() {
+            Vec::new()
+        } else {
+            ctx.registry
+                .read(
+                    ctx.pool,
+                    "sale.order.line",
+                    &line_ids,
+                    &["product_id", "name", "product_uom_qty"],
+                )
+                .await?
+        };
+        // a service has nothing to put in a box: only storable products
+        // travel, which means asking the catalogue what each line sells
+        let products: Vec<i64> = sold
+            .iter()
+            .filter_map(|line| line.get("product_id").and_then(first_id))
+            .collect();
+        let storable: std::collections::HashSet<i64> = if products.is_empty() {
+            std::collections::HashSet::new()
+        } else {
+            ctx.registry
+                .read(ctx.pool, "product.product", &products, &["type"])
+                .await?
+                .iter()
+                .filter(|row| row.get("type").and_then(Value::as_str) != Some("service"))
+                .filter_map(|row| row.get("id").and_then(Value::as_i64))
+                .collect()
+        };
+        let moves: Vec<Value> = sold
+            .iter()
+            .filter_map(|line| {
+                let product = line.get("product_id").and_then(first_id)?;
+                if !storable.contains(&product) {
+                    return None;
+                }
+                Some(json!([0, 0, {
+                    "product_id": product,
+                    "name": line.get("name").cloned().unwrap_or(Value::Null),
+                    "product_uom_qty": line
+                        .get("product_uom_qty")
+                        .cloned()
+                        .unwrap_or(json!(0)),
+                }]))
+            })
+            .collect();
+        if moves.is_empty() {
+            return Err(RusdooError::Validation(format!(
+                "o pedido {name} só tem serviços: não há o que entregar"
+            )));
+        }
+
+        let picking = ctx
+            .registry
+            .create_as(
+                ctx.pool,
+                ctx.uid,
+                "stock.picking",
+                vec![
+                    ("name", json!(format!("Entrega de {name}"))),
+                    ("picking_type", json!("outgoing")),
+                    (
+                        "partner_id",
+                        json!(order.get("partner_id").and_then(first_id)),
+                    ),
+                    (
+                        "company_id",
+                        json!(order.get("company_id").and_then(first_id)),
+                    ),
+                    ("origin", json!(name)),
+                    ("move_ids", Value::Array(moves)),
+                ],
+            )
+            .await?;
+        Ok(json!({
+            "type": "ir.actions.act_window",
+            "name": "Entrega",
+            "res_model": "stock.picking",
+            "res_id": picking,
+            "views": [[false, "form"]],
+            "target": "current",
+        }))
+    })
 }
 
 /// `action_create_invoice` — bill a confirmed order.

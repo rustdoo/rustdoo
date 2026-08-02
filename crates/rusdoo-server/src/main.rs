@@ -103,6 +103,7 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
         ("mail", rusdoo_mail::extend as ModelProvider),
         ("product", rusdoo_product::extend as ModelProvider),
         ("account", rusdoo_account::extend as ModelProvider),
+        ("stock", rusdoo_stock::extend as ModelProvider),
         ("sale", rusdoo_sale::extend as ModelProvider),
     ]
 }
@@ -160,6 +161,9 @@ fn code_methods(
     if installed.contains(&"account") {
         rusdoo_account::extend_methods(&mut methods)?;
     }
+    if installed.contains(&"stock") {
+        rusdoo_stock::extend_methods(&mut methods)?;
+    }
     if installed.contains(&"sale") {
         rusdoo_sale::extend_methods(&mut methods)?;
     }
@@ -172,6 +176,9 @@ fn code_methods(
         }
         if installed.contains(&"account") {
             threads.push("account.move");
+        }
+        if installed.contains(&"stock") {
+            threads.push("stock.picking");
         }
         rusdoo_mail::extend_methods(&mut methods, &threads)?;
     }
