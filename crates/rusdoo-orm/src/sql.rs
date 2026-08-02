@@ -243,7 +243,7 @@ fn render_term(
             // a computed field has no column and no path to rewrite to:
             // Odoo needs an explicit `search` method for that, so say what
             // is missing instead of naming a column that does not exist
-            if field.compute.is_some() {
+            if field.compute.is_some() && !field.stored {
                 return Err(RusdooError::Validation(format!(
                     "field {:?} is computed and not stored: it cannot be searched",
                     term.field

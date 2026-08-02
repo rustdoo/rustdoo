@@ -272,3 +272,156 @@ async fn a_broken_compute_declaration_is_an_error_live() {
         .to_string();
     assert!(err.contains("no dependency"), "{err}");
 }
+
+/// The other half: a compute materialized into a real column, which is
+/// what makes it indexable, orderable and groupable.
+fn stored_registry() -> Registry {
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.stored".into(),
+            table: "rusdoo_test_cmp_stored".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("qty", FieldType::Integer),
+            Field::new("price", FieldType::Integer),
+            Field::new("total", FieldType::Integer)
+                .computed(&["qty", "price"], total)
+                .store(),
+        ],
+    ))
+    .unwrap();
+    reg
+}
+
+#[tokio::test]
+async fn stored_computes_are_materialized_and_recomputed_live() {
+    use rusdoo_orm::group::{Aggregate, GroupBy, GroupOptions};
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let reg = stored_registry();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_cmp_stored""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.stored")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    // the create computes it, inside the insert's own transaction
+    let a = reg
+        .create(
+            &pool,
+            "rusdoo.test.stored",
+            vec![
+                ("name", json!("a")),
+                ("qty", json!(3)),
+                ("price", json!(50)),
+            ],
+        )
+        .await
+        .unwrap();
+    let b = reg
+        .create(
+            &pool,
+            "rusdoo.test.stored",
+            vec![
+                ("name", json!("b")),
+                ("qty", json!(2)),
+                ("price", json!(70)),
+            ],
+        )
+        .await
+        .unwrap();
+    // the value is really in the column, not derived on the way out
+    let stored: i32 =
+        sqlx::query_scalar(r#"SELECT "total" FROM "rusdoo_test_cmp_stored" WHERE "id" = $1"#)
+            .bind(a as i32)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored, 150);
+
+    // writing a dependency recomputes it
+    reg.write(&pool, "rusdoo.test.stored", &[a], vec![("qty", json!(10))])
+        .await
+        .unwrap();
+    let stored: i32 =
+        sqlx::query_scalar(r#"SELECT "total" FROM "rusdoo_test_cmp_stored" WHERE "id" = $1"#)
+            .bind(a as i32)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored, 500);
+
+    // writing something else leaves it alone (no needless UPDATE)
+    reg.write(
+        &pool,
+        "rusdoo.test.stored",
+        &[a],
+        vec![("name", json!("a renomeado"))],
+    )
+    .await
+    .unwrap();
+    let rows = reg
+        .read(&pool, "rusdoo.test.stored", &[a], &["total"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["total"], json!(500));
+
+    // the payoff: it can be searched, ordered and grouped by, which a
+    // computed value that only exists on the way out cannot
+    let found = reg
+        .search(
+            &pool,
+            "rusdoo.test.stored",
+            &parse_domain(&json!([["total", ">", 200]])).unwrap(),
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(found, vec![a]);
+    let ordered = reg
+        .search(
+            &pool,
+            "rusdoo.test.stored",
+            &parse_domain(&json!([])).unwrap(),
+            &SearchOptions {
+                order: Some("total desc".into()),
+                ..SearchOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(ordered, vec![a, b]);
+    let model = reg.get("rusdoo.test.stored").unwrap();
+    let groups = reg
+        .read_group(
+            &pool,
+            "rusdoo.test.stored",
+            &parse_domain(&json!([])).unwrap(),
+            &[GroupBy::parse(model, "total").unwrap()],
+            &[Aggregate::Count],
+            &GroupOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0]["total"], json!(140));
+
+    // and a client still cannot write it: only the recompute does
+    let err = reg
+        .write(&pool, "rusdoo.test.stored", &[a], vec![("total", json!(1))])
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("readonly"), "{err}");
+}

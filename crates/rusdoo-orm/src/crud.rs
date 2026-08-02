@@ -323,7 +323,7 @@ impl Model {
     /// datetimes travel as strings (the JSON-RPC wire format), so their
     /// parameter is text: PostgreSQL has no implicit text -> date, and
     /// the insert would fail on the column type.
-    fn column_cast(&self, name: &str) -> &'static str {
+    pub(crate) fn column_cast(&self, name: &str) -> &'static str {
         crate::sql::value_cast_for(self.field(name).map(|f| &f.ty))
     }
 

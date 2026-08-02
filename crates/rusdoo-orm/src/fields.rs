@@ -162,6 +162,23 @@ impl Field {
         }
     }
 
+    /// Materialize a computed field into a real column
+    /// (`odoo/orm/fields.py`'s `store=True`): the ORM writes it whenever
+    /// a dependency changes, and in exchange it can be indexed, ordered
+    /// and grouped by like any other column.
+    ///
+    /// It stays readonly to callers — only the recompute writes it.
+    pub fn store(self) -> Self {
+        debug_assert!(
+            self.compute.is_some(),
+            "store() materializes a computed field"
+        );
+        Field {
+            stored: true,
+            ..self
+        }
+    }
+
     /// Mark the field as never returned over RPC (secrets).
     pub fn private(self) -> Self {
         Field {

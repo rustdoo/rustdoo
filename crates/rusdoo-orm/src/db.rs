@@ -23,6 +23,11 @@ type PgQuery<'q> = sqlx::query::Query<'q, Postgres, PgArguments>;
 
 const MAX_POOL_CONNECTIONS: u32 = 5;
 
+/// A read on a caller's connection, boxed so the pipeline can recurse
+/// into itself (a related hop and a compute both read again).
+type ReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<Map<String, Value>>, RusdooError>> + Send + 'a>>;
+
 /// One hop of a related read, boxed so the walk can recurse.
 type RelatedFuture<'a> =
     Pin<Box<dyn Future<Output = Result<HashMap<i64, Value>, RusdooError>> + Send + 'a>>;
@@ -376,6 +381,8 @@ impl Registry {
             if model.meta.inherits.is_empty() {
                 let id = model.create_conn(&mut *tx, uid, values).await?;
                 self.apply_x2many_all(&mut *tx, uid, &x2many, id).await?;
+                self.recompute_stored(&mut *tx, model_name, &[id], None)
+                    .await?;
                 return Ok(id);
             }
             let mut local: Vec<(&str, Value)> = Vec::new();
@@ -425,6 +432,8 @@ impl Registry {
             }
             let id = model.create_conn(&mut *tx, uid, local).await?;
             self.apply_x2many_all(&mut *tx, uid, &x2many, id).await?;
+            self.recompute_stored(&mut *tx, model_name, &[id], None)
+                .await?;
             Ok(id)
         })
     }
@@ -489,114 +498,208 @@ impl Registry {
         ids: &[i64],
         fields: &[&str],
     ) -> Result<Vec<Map<String, Value>>, RusdooError> {
+        let mut conn = pool.acquire().await.map_err(db_err)?;
+        self.read_conn(&mut conn, model_name, ids, fields).await
+    }
+
+    /// [`Registry::read`] on a caller's connection. A recompute inside a
+    /// write has to read through the very transaction that wrote, or it
+    /// would not see the row it is recomputing for.
+    pub fn read_conn<'a>(
+        &'a self,
+        conn: &'a mut PgConnection,
+        model_name: &'a str,
+        ids: &'a [i64],
+        fields: &'a [&'a str],
+    ) -> ReadFuture<'a> {
+        Box::pin(async move {
+            let model = self
+                .get(model_name)
+                .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
+
+            // fields without a column of their own are split out and fetched
+            // separately: x2many from the relation table / inverse column,
+            // related fields by following their path
+            let mut scalar: Vec<&str> = Vec::new();
+            let mut x2many: Vec<&Field> = Vec::new();
+            let mut related: Vec<&Field> = Vec::new();
+            let mut computed: Vec<&Field> = Vec::new();
+            for name in fields {
+                let field = model.field(name);
+                // a stored compute has a column: it reads from there, and is
+                // kept current by the recompute on write
+                if let Some(field) = field.filter(|f| f.compute.is_some() && !f.stored) {
+                    computed.push(field);
+                    continue;
+                }
+                if let Some(field) = field.filter(|f| f.related.is_some()) {
+                    related.push(field);
+                    continue;
+                }
+                match field.map(|f| &f.ty) {
+                    Some(FieldType::Many2many { .. } | FieldType::One2many { .. }) => {
+                        x2many.push(field.expect("just matched"));
+                    }
+                    _ => scalar.push(name),
+                }
+            }
+
+            let (sql, params, resolved) = self.read_query(model_name, ids, &scalar)?;
+            let rows = build_query(&sql, &params)?
+                .fetch_all(&mut *conn)
+                .await
+                .map_err(db_err)?;
+            let mut records: Vec<Map<String, Value>> = rows
+                .iter()
+                .map(|row| {
+                    let mut record = Map::new();
+                    record.insert("id".into(), Value::from(row_id(row)?));
+                    for column in &resolved {
+                        record.insert(
+                            column.name.clone(),
+                            decode_field(row, &column.name, &column.field)?,
+                        );
+                    }
+                    Ok(record)
+                })
+                .collect::<Result<_, RusdooError>>()?;
+
+            for field in x2many {
+                let related = self.read_x2many(&mut *conn, field, ids).await?;
+                for record in &mut records {
+                    let owner = record["id"].as_i64().expect("id present");
+                    let list = related.get(&owner).cloned().unwrap_or_default();
+                    record.insert(field.name.clone(), Value::from(list));
+                }
+            }
+
+            for field in related {
+                let path = field.related.as_deref().expect("filtered above");
+                let values = self
+                    .read_related(&mut *conn, model_name, ids, path, 0)
+                    .await?;
+                for record in &mut records {
+                    let owner = record["id"].as_i64().expect("id present");
+                    let value = values.get(&owner).cloned().unwrap_or(Value::Null);
+                    record.insert(field.name.clone(), value);
+                }
+            }
+
+            // computed last: their dependencies may be plain columns, related
+            // fields or other computed ones, and reading them goes back
+            // through this same path
+            for field in computed {
+                let values = self
+                    .read_computed(&mut *conn, model_name, ids, field, 0)
+                    .await?;
+                for record in &mut records {
+                    let owner = record["id"].as_i64().expect("id present");
+                    let value = values.get(&owner).cloned().unwrap_or(Value::Null);
+                    record.insert(field.name.clone(), value);
+                }
+            }
+
+            // many2one reads as [id, display_name], like Odoo's name_get
+            let m2o: Vec<(String, String)> = fields
+                .iter()
+                .filter_map(|name| match model.field(name).map(|f| &f.ty) {
+                    Some(FieldType::Many2one { comodel }) => {
+                        Some((name.to_string(), comodel.clone()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            for (name, comodel) in m2o {
+                let linked: Vec<i64> = records
+                    .iter()
+                    .filter_map(|r| r.get(&name).and_then(Value::as_i64))
+                    .collect();
+                if linked.is_empty() {
+                    continue;
+                }
+                let names = self
+                    .display_names_conn(&mut *conn, &comodel, &linked)
+                    .await?;
+                for record in &mut records {
+                    if let Some(id) = record.get(&name).and_then(Value::as_i64) {
+                        let display = names.get(&id).cloned().unwrap_or_default();
+                        record.insert(
+                            name.clone(),
+                            Value::Array(vec![Value::from(id), Value::from(display)]),
+                        );
+                    }
+                }
+            }
+            Ok(records)
+        })
+    }
+
+    /// Bring the stored computes of `ids` up to date, inside the caller's
+    /// transaction — the rows were just written there and exist nowhere
+    /// else yet.
+    ///
+    /// `changed` lists the fields the write touched; `None` means a
+    /// create, where every stored compute has to run. A recompute is the
+    /// ORM's own bookkeeping, not a user write: it goes straight to the
+    /// column, without the readonly guard that keeps clients out of it
+    /// and without stamping write_uid/write_date.
+    pub(crate) async fn recompute_stored(
+        &self,
+        conn: &mut PgConnection,
+        model_name: &str,
+        ids: &[i64],
+        changed: Option<&[&str]>,
+    ) -> Result<(), RusdooError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
         let model = self
             .get(model_name)
             .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
-
-        // fields without a column of their own are split out and fetched
-        // separately: x2many from the relation table / inverse column,
-        // related fields by following their path
-        let mut scalar: Vec<&str> = Vec::new();
-        let mut x2many: Vec<&Field> = Vec::new();
-        let mut related: Vec<&Field> = Vec::new();
-        let mut computed: Vec<&Field> = Vec::new();
-        for name in fields {
-            let field = model.field(name);
-            if let Some(field) = field.filter(|f| f.compute.is_some()) {
-                computed.push(field);
-                continue;
-            }
-            if let Some(field) = field.filter(|f| f.related.is_some()) {
-                related.push(field);
-                continue;
-            }
-            match field.map(|f| &f.ty) {
-                Some(FieldType::Many2many { .. } | FieldType::One2many { .. }) => {
-                    x2many.push(field.expect("just matched"));
-                }
-                _ => scalar.push(name),
-            }
-        }
-
-        let (sql, params, resolved) = self.read_query(model_name, ids, &scalar)?;
-        let rows = build_query(&sql, &params)?
-            .fetch_all(pool)
-            .await
-            .map_err(db_err)?;
-        let mut records: Vec<Map<String, Value>> = rows
+        let targets: Vec<Field> = model
+            .fields()
             .iter()
-            .map(|row| {
-                let mut record = Map::new();
-                record.insert("id".into(), Value::from(row_id(row)?));
-                for column in &resolved {
-                    record.insert(
-                        column.name.clone(),
-                        decode_field(row, &column.name, &column.field)?,
-                    );
-                }
-                Ok(record)
+            .filter(|f| f.stored && f.compute.is_some())
+            .filter(|f| match changed {
+                None => true,
+                Some(changed) => f
+                    .compute
+                    .as_ref()
+                    .expect("filtered above")
+                    .depends
+                    .iter()
+                    .any(|dep| changed.contains(&dep.as_str())),
             })
-            .collect::<Result<_, RusdooError>>()?;
-
-        for field in x2many {
-            let related = self.read_x2many(pool, field, ids).await?;
-            for record in &mut records {
-                let owner = record["id"].as_i64().expect("id present");
-                let list = related.get(&owner).cloned().unwrap_or_default();
-                record.insert(field.name.clone(), Value::from(list));
-            }
-        }
-
-        for field in related {
-            let path = field.related.as_deref().expect("filtered above");
-            let values = self.read_related(pool, model_name, ids, path, 0).await?;
-            for record in &mut records {
-                let owner = record["id"].as_i64().expect("id present");
-                let value = values.get(&owner).cloned().unwrap_or(Value::Null);
-                record.insert(field.name.clone(), value);
-            }
-        }
-
-        // computed last: their dependencies may be plain columns, related
-        // fields or other computed ones, and reading them goes back
-        // through this same path
-        for field in computed {
-            let values = self.read_computed(pool, model_name, ids, field, 0).await?;
-            for record in &mut records {
-                let owner = record["id"].as_i64().expect("id present");
-                let value = values.get(&owner).cloned().unwrap_or(Value::Null);
-                record.insert(field.name.clone(), value);
-            }
-        }
-
-        // many2one reads as [id, display_name], like Odoo's name_get
-        let m2o: Vec<(String, String)> = fields
-            .iter()
-            .filter_map(|name| match model.field(name).map(|f| &f.ty) {
-                Some(FieldType::Many2one { comodel }) => Some((name.to_string(), comodel.clone())),
-                _ => None,
-            })
+            .cloned()
             .collect();
-        for (name, comodel) in m2o {
-            let linked: Vec<i64> = records
-                .iter()
-                .filter_map(|r| r.get(&name).and_then(Value::as_i64))
-                .collect();
-            if linked.is_empty() {
-                continue;
-            }
-            let names = self.display_names(pool, &comodel, &linked).await?;
-            for record in &mut records {
-                if let Some(id) = record.get(&name).and_then(Value::as_i64) {
-                    let display = names.get(&id).cloned().unwrap_or_default();
-                    record.insert(
-                        name.clone(),
-                        Value::Array(vec![Value::from(id), Value::from(display)]),
-                    );
-                }
+        if targets.is_empty() {
+            return Ok(());
+        }
+        let table = quote_ident(&model.meta.table)?;
+        for field in targets {
+            let values = self
+                .read_computed(&mut *conn, model_name, ids, &field, 0)
+                .await?;
+            let column = quote_ident(&field.name)?;
+            let cast = model.column_cast(&field.name);
+            for (id, value) in values {
+                let mut params = Vec::new();
+                // a computed null is a null column, not a text parameter
+                let placeholder = if value.is_null() {
+                    "NULL".to_string()
+                } else {
+                    format!("{}{cast}", bind(&mut params, value))
+                };
+                let id_ph = bind(&mut params, Value::from(id));
+                let sql =
+                    format!(r#"UPDATE {table} SET {column} = {placeholder} WHERE "id" = {id_ph}"#);
+                build_query(&sql, &params)?
+                    .execute(&mut *conn)
+                    .await
+                    .map_err(db_err)?;
             }
         }
-        Ok(records)
+        Ok(())
     }
 
     /// Follow a related path from `ids` and bring the value back, keyed
@@ -607,7 +710,7 @@ impl Registry {
     /// resolving the path here instead of per row.
     fn read_related<'a>(
         &'a self,
-        pool: &'a PgPool,
+        conn: &'a mut PgConnection,
         model_name: &'a str,
         ids: &'a [i64],
         path: &'a str,
@@ -621,7 +724,7 @@ impl Registry {
             }
             let Some((head, rest)) = path.split_once('.') else {
                 // last hop: the value itself
-                let rows = self.read(pool, model_name, ids, &[path]).await?;
+                let rows = self.read_conn(&mut *conn, model_name, ids, &[path]).await?;
                 return Ok(rows
                     .into_iter()
                     .filter_map(|mut row| {
@@ -647,7 +750,7 @@ impl Registry {
                 }
             };
             // the hop: owner id -> linked id (a m2o reads as [id, name])
-            let rows = self.read(pool, model_name, ids, &[head]).await?;
+            let rows = self.read_conn(&mut *conn, model_name, ids, &[head]).await?;
             let hops: Vec<(i64, i64)> = rows
                 .iter()
                 .filter_map(|row| {
@@ -663,7 +766,7 @@ impl Registry {
             linked_ids.sort_unstable();
             linked_ids.dedup();
             let values = self
-                .read_related(pool, &comodel, &linked_ids, rest, depth + 1)
+                .read_related(&mut *conn, &comodel, &linked_ids, rest, depth + 1)
                 .await?;
             Ok(hops
                 .into_iter()
@@ -681,7 +784,7 @@ impl Registry {
     /// compute that depends on itself would otherwise loop forever.
     fn read_computed<'a>(
         &'a self,
-        pool: &'a PgPool,
+        conn: &'a mut PgConnection,
         model_name: &'a str,
         ids: &'a [i64],
         field: &'a Field,
@@ -716,7 +819,9 @@ impl Registry {
                 }
             }
             let depends: Vec<&str> = compute.depends.iter().map(String::as_str).collect();
-            let rows = self.read(pool, model_name, ids, &depends).await?;
+            let rows = self
+                .read_conn(&mut *conn, model_name, ids, &depends)
+                .await?;
             Ok(rows
                 .into_iter()
                 .filter_map(|row| {
@@ -733,6 +838,17 @@ impl Registry {
     pub async fn display_names(
         &self,
         pool: &PgPool,
+        comodel: &str,
+        ids: &[i64],
+    ) -> Result<HashMap<i64, String>, RusdooError> {
+        let mut conn = pool.acquire().await.map_err(db_err)?;
+        self.display_names_conn(&mut conn, comodel, ids).await
+    }
+
+    /// [`Registry::display_names`] on a caller's connection.
+    async fn display_names_conn(
+        &self,
+        conn: &mut PgConnection,
         comodel: &str,
         ids: &[i64],
     ) -> Result<HashMap<i64, String>, RusdooError> {
@@ -760,7 +876,7 @@ impl Registry {
         for id in ids {
             query = query.bind(*id as i32);
         }
-        let rows = query.fetch_all(pool).await.map_err(db_err)?;
+        let rows = query.fetch_all(&mut *conn).await.map_err(db_err)?;
         Ok(rows
             .into_iter()
             .map(|(id, name)| (i64::from(id), name.unwrap_or_default()))
@@ -772,7 +888,7 @@ impl Registry {
     /// (one2many). Owners with no relations are simply absent from the map.
     async fn read_x2many(
         &self,
-        pool: &PgPool,
+        conn: &mut PgConnection,
         field: &Field,
         ids: &[i64],
     ) -> Result<HashMap<i64, Vec<i64>>, RusdooError> {
@@ -815,7 +931,7 @@ impl Registry {
         for id in ids {
             query = query.bind(*id as i32);
         }
-        let pairs = query.fetch_all(pool).await.map_err(db_err)?;
+        let pairs = query.fetch_all(&mut *conn).await.map_err(db_err)?;
         let mut map: HashMap<i64, Vec<i64>> = HashMap::new();
         for (owner, related) in pairs {
             map.entry(i64::from(owner))
@@ -868,6 +984,8 @@ impl Registry {
         let mut local: Vec<(&str, Value)> = Vec::new();
         let mut x2many_local: Vec<(Field, Vec<Value>)> = Vec::new();
         let mut delegated: HashMap<DelegationChain, Vec<(&str, Value)>> = HashMap::new();
+        // what the write touches, for the stored computes that watch it
+        let changed: Vec<&str> = values.iter().map(|(name, _)| *name).collect();
         for (name, value) in values {
             match model.field(name).map(|f| &f.ty) {
                 Some(FieldType::Many2many { .. } | FieldType::One2many { .. }) => {
@@ -964,6 +1082,8 @@ impl Registry {
                     .await?;
             }
         }
+        self.recompute_stored(&mut *tx, model_name, ids, Some(&changed))
+            .await?;
         Ok(())
     }
 }
