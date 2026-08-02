@@ -52,6 +52,10 @@ pub struct Field {
     /// `default_get` serves to a fresh form (`odoo/orm/fields.py`'s
     /// `default`)
     pub default: Option<Value>,
+    /// dotted path this field mirrors (`odoo/orm/fields.py`'s `related`):
+    /// the value lives on another record, reached by following many2one
+    /// hops from this one
+    pub related: Option<String>,
 }
 
 impl Field {
@@ -65,6 +69,22 @@ impl Field {
             stored,
             exposed: true,
             default: None,
+            related: None,
+        }
+    }
+
+    /// Mirror the value at `path` (`"partner_id.country_id.name"`).
+    ///
+    /// The field has no column of its own: it is read by following the
+    /// path and written by writing the target, so it is not stored and
+    /// is readonly here — Odoo lets a related field be made writable,
+    /// which needs write-through the ORM does not do yet.
+    pub fn related(self, path: &str) -> Self {
+        Field {
+            related: Some(path.to_string()),
+            stored: false,
+            readonly: true,
+            ..self
         }
     }
 

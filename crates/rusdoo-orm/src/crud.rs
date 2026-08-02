@@ -247,10 +247,22 @@ impl Model {
                 let field = words
                     .next()
                     .ok_or_else(|| RusdooError::Validation("empty ORDER BY clause".into()))?;
-                if field != "id" && self.field(field).is_none() {
-                    return Err(RusdooError::Validation(format!(
-                        "unknown field in order: {field:?}"
-                    )));
+                if field != "id" {
+                    match self.field(field) {
+                        // ordering happens in SQL: a field with no column
+                        // of its own cannot appear in ORDER BY
+                        Some(f) if !f.stored => {
+                            return Err(RusdooError::Validation(format!(
+                                "field is not stored, cannot order by it: {field:?}"
+                            )))
+                        }
+                        Some(_) => {}
+                        None => {
+                            return Err(RusdooError::Validation(format!(
+                                "unknown field in order: {field:?}"
+                            )))
+                        }
+                    }
                 }
                 let direction = match words.next().map(str::to_ascii_lowercase).as_deref() {
                     None | Some("asc") => "ASC",
@@ -319,6 +331,14 @@ impl Model {
     /// fields (e.g. the LOG_ACCESS audit columns) so a client can never
     /// forge them — they are set only by the ORM's own stamping.
     fn writable_field(&self, name: &str) -> Result<(), RusdooError> {
+        // a related field mirrors another record: writing it means
+        // writing there, which the ORM does not do yet — say so instead
+        // of the generic "not stored"
+        if let Some(path) = self.field(name).and_then(|f| f.related.as_ref()) {
+            return Err(RusdooError::Validation(format!(
+                "field {name:?} is related to {path:?}: write the target instead"
+            )));
+        }
         self.stored_field(name)?;
         if self.field(name).is_some_and(|f| f.readonly) {
             return Err(RusdooError::Validation(format!(

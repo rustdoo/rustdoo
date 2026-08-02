@@ -207,6 +207,20 @@ fn render_term(
             }
         }
     }
+    // a related field is a name for a path: rewrite it and let the path
+    // machinery below do the joining, exactly like a delegated field
+    if let Some(model) = ctx.model {
+        let head = term.field.split('.').next().unwrap_or(&term.field);
+        if let Some(path) = model.field(head).and_then(|f| f.related.clone()) {
+            depth_check(depth)?;
+            let rewritten = Term {
+                field: format!("{path}{}", &term.field[head.len()..]),
+                op: term.op.clone(),
+                value: term.value.clone(),
+            };
+            return render_term(&rewritten, params, ctx, depth + 1);
+        }
+    }
     if let Some((head, rest)) = term.field.split_once('.') {
         return render_path(head, rest, term, params, ctx, depth);
     }

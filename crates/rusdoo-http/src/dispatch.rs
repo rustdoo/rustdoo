@@ -1380,6 +1380,9 @@ fn field_metadata(field: &Field) -> Value {
     m.insert("required".into(), Value::from(field.required));
     m.insert("readonly".into(), Value::from(field.readonly));
     m.insert("store".into(), Value::from(field.stored));
+    if let Some(path) = &field.related {
+        m.insert("related".into(), Value::from(path.as_str()));
+    }
     match &field.ty {
         FieldType::Many2one { comodel }
         | FieldType::One2many { comodel, .. }

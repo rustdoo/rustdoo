@@ -23,6 +23,14 @@ type PgQuery<'q> = sqlx::query::Query<'q, Postgres, PgArguments>;
 
 const MAX_POOL_CONNECTIONS: u32 = 5;
 
+/// One hop of a related read, boxed so the walk can recurse.
+type RelatedFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<HashMap<i64, Value>, RusdooError>> + Send + 'a>>;
+
+/// How far a `related` path may reach. The chain is declared in code,
+/// not by a caller, but a cycle through it would loop forever.
+const MAX_RELATED_DEPTH: usize = 8;
+
 /// Pool options shared by every connector. Pins each connection's session
 /// timezone to UTC so `CURRENT_TIMESTAMP` (a `timestamptz`) lands in our
 /// `timestamp` audit columns as UTC wall-clock, not the server's local
@@ -455,14 +463,21 @@ impl Registry {
             .get(model_name)
             .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
 
-        // x2many fields have no column: split them out and fetch their
-        // ids from the relation table / inverse column separately
+        // fields without a column of their own are split out and fetched
+        // separately: x2many from the relation table / inverse column,
+        // related fields by following their path
         let mut scalar: Vec<&str> = Vec::new();
         let mut x2many: Vec<&Field> = Vec::new();
+        let mut related: Vec<&Field> = Vec::new();
         for name in fields {
-            match model.field(name).map(|f| &f.ty) {
+            let field = model.field(name);
+            if let Some(field) = field.filter(|f| f.related.is_some()) {
+                related.push(field);
+                continue;
+            }
+            match field.map(|f| &f.ty) {
                 Some(FieldType::Many2many { .. } | FieldType::One2many { .. }) => {
-                    x2many.push(model.field(name).expect("just matched"));
+                    x2many.push(field.expect("just matched"));
                 }
                 _ => scalar.push(name),
             }
@@ -497,6 +512,16 @@ impl Registry {
             }
         }
 
+        for field in related {
+            let path = field.related.as_deref().expect("filtered above");
+            let values = self.read_related(pool, model_name, ids, path, 0).await?;
+            for record in &mut records {
+                let owner = record["id"].as_i64().expect("id present");
+                let value = values.get(&owner).cloned().unwrap_or(Value::Null);
+                record.insert(field.name.clone(), value);
+            }
+        }
+
         // many2one reads as [id, display_name], like Odoo's name_get
         let m2o: Vec<(String, String)> = fields
             .iter()
@@ -525,6 +550,79 @@ impl Registry {
             }
         }
         Ok(records)
+    }
+
+    /// Follow a related path from `ids` and bring the value back, keyed
+    /// by the record it belongs to. Every hop but the last must be a
+    /// many2one: that is the only link a single value can travel along.
+    ///
+    /// One query per hop, never one per record — the whole point of
+    /// resolving the path here instead of per row.
+    fn read_related<'a>(
+        &'a self,
+        pool: &'a PgPool,
+        model_name: &'a str,
+        ids: &'a [i64],
+        path: &'a str,
+        depth: usize,
+    ) -> RelatedFuture<'a> {
+        Box::pin(async move {
+            if depth > MAX_RELATED_DEPTH {
+                return Err(RusdooError::Validation(format!(
+                    "related path exceeds {MAX_RELATED_DEPTH} hops: {path:?}"
+                )));
+            }
+            let Some((head, rest)) = path.split_once('.') else {
+                // last hop: the value itself
+                let rows = self.read(pool, model_name, ids, &[path]).await?;
+                return Ok(rows
+                    .into_iter()
+                    .filter_map(|mut row| {
+                        let id = row.get("id")?.as_i64()?;
+                        Some((id, row.remove(path).unwrap_or(Value::Null)))
+                    })
+                    .collect());
+            };
+            let model = self
+                .get(model_name)
+                .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
+            let comodel = match model.field(head).map(|f| &f.ty) {
+                Some(FieldType::Many2one { comodel }) => comodel.clone(),
+                Some(_) => {
+                    return Err(RusdooError::Validation(format!(
+                        "related path {path:?}: {head:?} is not a many2one"
+                    )))
+                }
+                None => {
+                    return Err(RusdooError::Validation(format!(
+                        "related path {path:?}: unknown field {head:?} on {model_name}"
+                    )))
+                }
+            };
+            // the hop: owner id -> linked id (a m2o reads as [id, name])
+            let rows = self.read(pool, model_name, ids, &[head]).await?;
+            let hops: Vec<(i64, i64)> = rows
+                .iter()
+                .filter_map(|row| {
+                    let owner = row.get("id")?.as_i64()?;
+                    let linked = row.get(head)?.as_array()?.first()?.as_i64()?;
+                    Some((owner, linked))
+                })
+                .collect();
+            if hops.is_empty() {
+                return Ok(HashMap::new());
+            }
+            let mut linked_ids: Vec<i64> = hops.iter().map(|(_, linked)| *linked).collect();
+            linked_ids.sort_unstable();
+            linked_ids.dedup();
+            let values = self
+                .read_related(pool, &comodel, &linked_ids, rest, depth + 1)
+                .await?;
+            Ok(hops
+                .into_iter()
+                .map(|(owner, linked)| (owner, values.get(&linked).cloned().unwrap_or(Value::Null)))
+                .collect())
+        })
     }
 
     /// Resolve display names for a set of comodel ids (Odoo's name_get):
