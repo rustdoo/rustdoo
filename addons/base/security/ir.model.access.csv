@@ -1,0 +1,17 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_res_partner_user,res.partner usuário,res.partner,group_user,1,1,1,0
+access_res_partner_system,res.partner admin,res.partner,group_system,1,1,1,1
+access_res_country_user,res.country usuário,res.country,group_user,1,0,0,0
+access_res_country_system,res.country admin,res.country,group_system,1,1,1,1
+access_res_company_user,res.company usuário,res.company,group_user,1,0,0,0
+access_res_company_system,res.company admin,res.company,group_system,1,1,1,1
+access_res_groups_user,res.groups usuário,res.groups,group_user,1,0,0,0
+access_res_groups_system,res.groups admin,res.groups,group_system,1,1,1,1
+access_res_users_user,res.users usuário,res.users,group_user,1,0,0,0
+access_res_users_system,res.users admin,res.users,group_system,1,1,1,1
+access_ir_ui_view_user,ir.ui.view usuário,ir.ui.view,group_user,1,0,0,0
+access_ir_ui_view_system,ir.ui.view admin,ir.ui.view,group_system,1,1,1,1
+access_ir_ui_menu_user,ir.ui.menu usuário,ir.ui.menu,group_user,1,0,0,0
+access_ir_ui_menu_system,ir.ui.menu admin,ir.ui.menu,group_system,1,1,1,1
+access_ir_act_window_user,ir.actions.act_window usuário,ir.actions.act_window,group_user,1,0,0,0
+access_ir_act_window_system,ir.actions.act_window admin,ir.actions.act_window,group_system,1,1,1,1

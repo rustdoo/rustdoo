@@ -6,6 +6,5 @@
     'data': [
         'data/demo.xml',
         'data/views.xml',
-        'data/webclient.xml',
     ],
 }

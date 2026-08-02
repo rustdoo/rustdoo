@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/rusdoo-core",
     "crates/rusdoo-orm",
+    "crates/rusdoo-base",
     "crates/rusdoo-http",
     "crates/rusdoo-qweb",
     "crates/rusdoo-modules",

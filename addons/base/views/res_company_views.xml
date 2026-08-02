@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_company_list" model="ir.ui.view">
+        <field name="name">res.company.list</field>
+        <field name="model">res.company</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Nome"/><field name="email" string="E-mail"/><field name="phone" string="Telefone"/><field name="vat" string="CNPJ"/></list></field>
+    </record>
+
+    <record id="view_company_form" model="ir.ui.view">
+        <field name="name">res.company.form</field>
+        <field name="model">res.company</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Nome"/><field name="vat" string="CNPJ"/><field name="parent_id" string="Empresa mãe"/><field name="active" string="Ativa"/></group><group><field name="email" string="E-mail"/><field name="phone" string="Telefone"/><field name="website" string="Site"/></group></form></field>
+    </record>
+
+    <record id="action_companies" model="ir.actions.act_window">
+        <field name="name">Empresas</field>
+        <field name="res_model">res.company</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

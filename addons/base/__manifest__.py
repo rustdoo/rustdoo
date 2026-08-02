@@ -1,0 +1,17 @@
+{
+    'name': 'Base',
+    'version': '19.0.1.0',
+    'category': 'Hidden',
+    'summary': 'Os modelos que todo addon usa: parceiros, empresas, usuários e grupos',
+    'depends': [],
+    'data': [
+        'security/res_groups.xml',
+        'security/ir.model.access.csv',
+        'views/res_partner_views.xml',
+        'views/res_company_views.xml',
+        'views/res_users_views.xml',
+        'views/menus.xml',
+    ],
+    'installable': True,
+    'auto_install': True,
+}

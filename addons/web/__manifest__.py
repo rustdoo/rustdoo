@@ -3,7 +3,7 @@
     'version': '19.0.1.0',
     'category': 'Hidden',
     'summary': 'O cliente web do rusdoo: menus, listas e formulários',
-    'depends': [],
+    'depends': ['base'],
     'data': [],
     # ordem de carga do bundle: utilitários, camada RPC, views e por
     # último o boot, que só roda quando o resto já existe

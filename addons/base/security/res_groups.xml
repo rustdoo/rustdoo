@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Os dois grupos que todo banco tem. Tudo o mais é concedido a partir
+     deles: um usuário sem grupo nenhum não alcança modelo nenhum. -->
+<odoo>
+    <data noupdate="1">
+        <record id="group_user" model="res.groups">
+            <field name="name">Usuário interno</field>
+            <field name="category">Direitos de acesso</field>
+            <field name="comment">Quem usa o sistema no dia a dia.</field>
+        </record>
+
+        <record id="group_system" model="res.groups">
+            <field name="name">Administração</field>
+            <field name="category">Direitos de acesso</field>
+            <field name="comment">Configura o sistema: usuários, grupos e empresas.</field>
+        </record>
+    </data>
+</odoo>

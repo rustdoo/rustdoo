@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_partner_list" model="ir.ui.view">
+        <field name="name">res.partner.list</field>
+        <field name="model">res.partner</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Nome"/><field name="email" string="E-mail"/><field name="phone" string="Telefone"/><field name="city" string="Cidade"/><field name="company_id" string="Empresa"/></list></field>
+    </record>
+
+    <record id="view_partner_form" model="ir.ui.view">
+        <field name="name">res.partner.form</field>
+        <field name="model">res.partner</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Nome"/><field name="is_company" string="É uma empresa"/><field name="type" string="Tipo"/><field name="parent_id" string="Relacionado a"/><field name="company_id" string="Empresa"/><field name="active" string="Ativo"/></group><group><field name="email" string="E-mail"/><field name="phone" string="Telefone"/><field name="mobile" string="Celular"/><field name="website" string="Site"/><field name="vat" string="CNPJ/CPF"/><field name="function" string="Cargo"/></group><group><field name="street" string="Logradouro"/><field name="street2" string="Complemento"/><field name="city" string="Cidade"/><field name="zip" string="CEP"/><field name="country_id" string="País"/><field name="comment" string="Observações"/></group></form></field>
+    </record>
+
+    <record id="action_partners" model="ir.actions.act_window">
+        <field name="name">Contatos</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_companies_partners" model="ir.actions.act_window">
+        <field name="name">Empresas (contatos)</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[["is_company", "=", true]]</field>
+    </record>
+</odoo>

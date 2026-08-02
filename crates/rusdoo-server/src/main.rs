@@ -1,10 +1,7 @@
 //! rusdoo — the server binary, port of `odoo-bin`.
 
 use rusdoo_http::dispatch::OrmService;
-use rusdoo_orm::fields::{Field, FieldType};
-use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
-use serde_json::json;
 use std::sync::Arc;
 
 const DEFAULT_ADDR: &str = "0.0.0.0:8069";
@@ -16,7 +13,7 @@ async fn main() -> anyhow::Result<()> {
         .or_else(|_| std::env::var("DATABASE_URL"))
         .map_err(|_| anyhow::anyhow!("set RUSDOO_DATABASE_URL or DATABASE_URL"))?;
 
-    let mut registry = base_registry()?;
+    let mut registry = rusdoo_base::registry()?;
     let pool = rusdoo_orm::db::connect(&db_url).await?;
     let mut assets = rusdoo_http::assets::AssetHub::empty();
 
@@ -43,13 +40,19 @@ async fn main() -> anyhow::Result<()> {
                 report.modules.len(),
                 report.bundles.names().count()
             );
-            seed_admin(&registry, &pool).await?;
+            // the groups the base addon just published, so the admin is
+            // a member of them and not only a uid the ACL waves through
+            let groups: Vec<i64> = ["base.group_user", "base.group_system"]
+                .iter()
+                .filter_map(|xml_id| xml_ids.get(xml_id).map(|(_, id)| *id))
+                .collect();
+            seed_admin(&registry, &pool, &groups).await?;
         } else {
             for model in registry.models() {
                 model.init_table(&pool).await?;
             }
             tracing::info!("schema initialized (no addons directory found)");
-            seed_admin(&registry, &pool).await?;
+            seed_admin(&registry, &pool, &[]).await?;
         }
     }
 
@@ -82,113 +85,13 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Minimal built-in models so the server is usable end-to-end.
-/// Placeholder until module loading (Phase 3) registers real addons.
-fn base_registry() -> anyhow::Result<Registry> {
-    let mut reg = Registry::new();
-    reg.register(Model::new(
-        ModelMeta {
-            name: "res.company".into(),
-            table: "res_company".into(),
-            inherit: vec![],
-            inherits: vec![],
-        },
-        vec![Field::new("name", FieldType::Char { size: None }).required()],
-    ))?;
-    reg.register(Model::new(
-        ModelMeta {
-            name: "ir.ui.view".into(),
-            table: "ir_ui_view".into(),
-            inherit: vec![],
-            inherits: vec![],
-        },
-        vec![
-            Field::new("name", FieldType::Char { size: None }),
-            Field::new("model", FieldType::Char { size: None }),
-            // form/list/kanban/...: which view the client asks for by type
-            Field::new("type", FieldType::Char { size: None }).default_value(json!("form")),
-            // lowest wins when several views share a model and type
-            Field::new("priority", FieldType::Integer).default_value(json!(16)),
-            Field::new("arch", FieldType::Text),
-        ],
-    ))?;
-    reg.register(Model::new(
-        ModelMeta {
-            name: "ir.actions.act_window".into(),
-            table: "ir_act_window".into(),
-            inherit: vec![],
-            inherits: vec![],
-        },
-        vec![
-            Field::new("name", FieldType::Char { size: None }),
-            Field::new("res_model", FieldType::Char { size: None }).required(),
-            Field::new("view_mode", FieldType::Char { size: None }),
-            Field::new("domain", FieldType::Text),
-        ],
-    ))?;
-    reg.register(Model::new(
-        ModelMeta {
-            name: "ir.ui.menu".into(),
-            table: "ir_ui_menu".into(),
-            inherit: vec![],
-            inherits: vec![],
-        },
-        vec![
-            Field::new("name", FieldType::Char { size: None }),
-            Field::new(
-                "parent_id",
-                FieldType::Many2one {
-                    comodel: "ir.ui.menu".into(),
-                },
-            ),
-            Field::new("sequence", FieldType::Integer),
-            // external id of the act_window this menu opens (Odoo uses a
-            // reference field; we bridge with the xml_id string for now)
-            Field::new("action", FieldType::Char { size: None }),
-        ],
-    ))?;
-    reg.register(Model::new(
-        ModelMeta {
-            name: "res.users".into(),
-            table: "res_users".into(),
-            inherit: vec![],
-            inherits: vec![],
-        },
-        vec![
-            Field::new("login", FieldType::Char { size: None }).required(),
-            Field::new("password", FieldType::Char { size: None }).private(),
-            Field::new("active", FieldType::Boolean).default_value(json!(true)),
-            // the context every call of this user inherits
-            Field::new("lang", FieldType::Char { size: None }).default_value(json!("en_US")),
-            Field::new("tz", FieldType::Char { size: None }),
-        ],
-    ))?;
-    reg.register(Model::new(
-        ModelMeta {
-            name: "res.partner".into(),
-            table: "res_partner".into(),
-            inherit: vec![],
-            inherits: vec![],
-        },
-        vec![
-            Field::new("name", FieldType::Char { size: None }).required(),
-            Field::new("email", FieldType::Char { size: None }),
-            // como todo modelo arquivável do Odoo: nasce ativo, senão
-            // cada registro novo já viria arquivado
-            Field::new("active", FieldType::Boolean).default_value(json!(true)),
-            Field::new(
-                "company_id",
-                FieldType::Many2one {
-                    comodel: "res.company".into(),
-                },
-            ),
-        ],
-    ))?;
-    Ok(reg)
-}
-
-/// First boot: create the admin user (login admin / password admin).
-async fn seed_admin(registry: &Registry, pool: &sqlx::PgPool) -> anyhow::Result<()> {
+/// First boot: create the admin user (login admin / password admin),
+/// a member of `groups`.
+async fn seed_admin(
+    registry: &Registry,
+    pool: &sqlx::PgPool,
+    groups: &[i64],
+) -> anyhow::Result<()> {
     use rusdoo_orm::crud::SearchOptions;
     let domain = rusdoo_orm::domain::parse_domain(&serde_json::json!([["login", "=", "admin"]]))?;
     let existing = registry
@@ -203,7 +106,10 @@ async fn seed_admin(registry: &Registry, pool: &sqlx::PgPool) -> anyhow::Result<
                 vec![
                     ("login", serde_json::json!("admin")),
                     ("password", serde_json::json!(hash)),
+                    ("name", serde_json::json!("Administrador")),
                     ("active", serde_json::json!(true)),
+                    // command 6: replace the membership with these groups
+                    ("groups_id", serde_json::json!([[6, 0, groups]])),
                 ],
             )
             .await?;

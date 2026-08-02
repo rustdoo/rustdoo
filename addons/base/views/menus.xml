@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A navegação que o cliente desenha: apps na barra, itens na lateral. -->
+<odoo>
+    <record id="menu_contacts_root" model="ir.ui.menu">
+        <field name="name">Contatos</field>
+        <field name="sequence">10</field>
+    </record>
+    <record id="menu_contacts" model="ir.ui.menu">
+        <field name="name">Contatos</field>
+        <field name="parent_id" ref="menu_contacts_root"/>
+        <field name="sequence">10</field>
+        <field name="action">base.action_partners</field>
+    </record>
+    <record id="menu_contacts_companies" model="ir.ui.menu">
+        <field name="name">Empresas</field>
+        <field name="parent_id" ref="menu_contacts_root"/>
+        <field name="sequence">20</field>
+        <field name="action">base.action_companies_partners</field>
+    </record>
+
+    <record id="menu_settings_root" model="ir.ui.menu">
+        <field name="name">Configurações</field>
+        <field name="sequence">90</field>
+    </record>
+    <record id="menu_users" model="ir.ui.menu">
+        <field name="name">Usuários</field>
+        <field name="parent_id" ref="menu_settings_root"/>
+        <field name="sequence">10</field>
+        <field name="action">base.action_users</field>
+    </record>
+    <record id="menu_groups" model="ir.ui.menu">
+        <field name="name">Grupos</field>
+        <field name="parent_id" ref="menu_settings_root"/>
+        <field name="sequence">20</field>
+        <field name="action">base.action_groups</field>
+    </record>
+    <record id="menu_companies" model="ir.ui.menu">
+        <field name="name">Empresas</field>
+        <field name="parent_id" ref="menu_settings_root"/>
+        <field name="sequence">30</field>
+        <field name="action">base.action_companies</field>
+    </record>
+</odoo>

@@ -14,13 +14,20 @@
     /** Sugestões buscadas por vez num campo many2one. */
     const SUGGESTION_LIMIT = 8;
 
-    /** Um campo relacional guarda o id; o resto guarda o valor cru. */
+    /**
+     * Um campo relacional guarda o id; o resto guarda o valor cru. Vazio
+     * é sempre `false`, a convenção do Odoo: sem isso um campo nulo
+     * apareceria na tela com a palavra "null" escrita dentro.
+     */
     function valueOf(record, name, meta) {
         const raw = record[name];
+        if (raw === undefined || raw === null) {
+            return false;
+        }
         if (meta && meta.type === "many2one") {
             return raw && typeof raw === "object" ? raw.id : raw || false;
         }
-        return raw === undefined ? false : raw;
+        return raw;
     }
 
     class FormView {
