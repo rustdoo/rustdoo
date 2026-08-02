@@ -3284,10 +3284,11 @@ async fn record_rules_scope_every_path_live() {
     assert_eq!(resp["result"], json!(true), "{resp}");
 }
 
-/// A create rule cannot be checked before the record exists, so the call
-/// is refused instead of quietly ignoring the rule.
+/// A create rule constrains a record that does not exist yet, so the
+/// check runs inside the insert's transaction: a refused record is rolled
+/// back, never merely reported.
 #[tokio::test]
-async fn create_rules_are_refused_until_enforceable_live() {
+async fn create_rules_are_enforced_in_the_insert_transaction_live() {
     use rusdoo_orm::access::{AccessControl, Operation};
     use rusdoo_orm::rules::{RecordRules, Rule};
 
@@ -3369,17 +3370,18 @@ async fn create_rules_are_refused_until_enforceable_live() {
     .await
     .unwrap();
     let ana_hash = rusdoo_http::session::hash_password("segredo").unwrap();
-    reg.create(
-        &pool,
-        "res.users",
-        vec![
-            ("login", json!("ana")),
-            ("password", json!(ana_hash)),
-            ("groups_id", json!([[4, group, 0]])),
-        ],
-    )
-    .await
-    .unwrap();
+    let ana_uid = reg
+        .create(
+            &pool,
+            "res.users",
+            vec![
+                ("login", json!("ana")),
+                ("password", json!(ana_hash)),
+                ("groups_id", json!([[4, group, 0]])),
+            ],
+        )
+        .await
+        .unwrap();
     let mut acl = AccessControl::new();
     acl.grant(
         "rusdoo.test.note",
@@ -3393,7 +3395,7 @@ async fn create_rules_are_refused_until_enforceable_live() {
         groups: vec![],
         operations: vec![Operation::Create],
     });
-    let service = OrmService::new(Arc::new(reg), pool)
+    let service = OrmService::new(Arc::new(reg), pool.clone())
         .with_access(acl)
         .with_rules(rules);
 
@@ -3406,25 +3408,101 @@ async fn create_rules_are_refused_until_enforceable_live() {
     )
     .await;
     let ana = cookie.unwrap().split(';').next().unwrap().to_string();
+    // ana may only create notes that are hers
+    let create = |method: &str, args: Value| {
+        let service = service.clone();
+        let method = method.to_string();
+        let cookie = ana.clone();
+        async move {
+            let (_, resp, _) = rpc_full(
+                router(service),
+                "/web/dataset/call_kw",
+                json!({"jsonrpc":"2.0","id":2,"method":"call",
+                       "params":{"model":"rusdoo.test.note","method":method,
+                                 "args":args,"kwargs":{}}}),
+                Some(&cookie),
+            )
+            .await;
+            resp
+        }
+    };
+
+    let resp = create("create", json!([{"name": "minha", "user_id": ana_uid}])).await;
+    assert!(
+        resp["result"].is_number(),
+        "a record she owns is created: {resp}"
+    );
+    let resp = create(
+        "web_save",
+        json!([[], {"name": "minha 2", "user_id": ana_uid},
+                                         {"name": {}}]),
+    )
+    .await;
+    assert_eq!(resp["result"][0]["name"], json!("minha 2"), "{resp}");
+
+    // one that would belong to someone else is refused...
     for (method, args) in [
-        ("create", json!([{"name": "nova"}])),
-        ("web_save", json!([[], {"name": "nova"}, {"name": {}}])),
+        ("create", json!([{"name": "alheia", "user_id": 1}])),
+        (
+            "web_save",
+            json!([[], {"name": "alheia", "user_id": 1}, {"name": {}}]),
+        ),
+        // ...including one with no owner at all
+        ("create", json!([{"name": "sem dono"}])),
     ] {
-        let (_, resp, _) = rpc_full(
-            router(service.clone()),
-            "/web/dataset/call_kw",
-            json!({"jsonrpc":"2.0","id":2,"method":"call",
-                   "params":{"model":"rusdoo.test.note","method":method,
-                             "args":args,"kwargs":{}}}),
-            Some(&ana),
-        )
-        .await;
+        let resp = create(method, args).await;
         assert!(
             resp["error"]["message"]
                 .as_str()
                 .unwrap()
-                .contains("not enforced yet"),
-            "{method} must refuse rather than ignore the rule: {resp}"
+                .contains("not allowed to create"),
+            "{method} must be refused: {resp}"
         );
     }
+
+    // and the refused records were rolled back, not merely reported
+    let left: i64 = sqlx::query_scalar(
+        r#"SELECT count(*) FROM "rusdoo_test_crule_note" WHERE "name" LIKE 'alheia%'
+              OR "name" = 'sem dono'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(left, 0, "a refused create must leave no row behind");
+    let mine: i64 = sqlx::query_scalar(r#"SELECT count(*) FROM "rusdoo_test_crule_note""#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(mine, 2, "only her own two notes exist");
+}
+
+#[tokio::test]
+async fn onchange_answers_no_change_for_a_model_without_logic() {
+    let app = router(test_service());
+    let (_, resp) = rpc(
+        app,
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "call",
+            "params": {"model": "res.partner", "method": "onchange",
+                       "args": [[], {"name": "Ana"}, ["name"], {"name": {}}],
+                       "kwargs": {}}
+        }),
+    )
+    .await;
+    // the form view needs the call to succeed; nothing computes yet
+    assert_eq!(resp["result"], json!({"value": {}}), "{resp}");
+
+    // an unknown model is still an error, not a shrug
+    let (_, resp) = rpc(
+        router(test_service()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "call",
+            "params": {"model": "nope.model", "method": "onchange",
+                       "args": [[], {}, [], {}], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert!(resp.get("error").is_some(), "{resp}");
 }

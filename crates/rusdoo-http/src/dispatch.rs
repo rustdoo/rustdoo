@@ -247,25 +247,58 @@ impl OrmService {
         })
     }
 
-    /// Creates are the one operation whose rule cannot be checked before
-    /// the record exists. Refusing keeps the rule meaningful; letting the
-    /// create through would quietly ignore it.
-    pub(crate) async fn refuse_unenforced_create_rules(
+    /// Create a record and hold it to the create rules: the check runs
+    /// inside the insert's own transaction, so a record the rules refuse
+    /// is rolled back before anyone else can see it. That is the only way
+    /// to check a rule about a record that does not exist yet.
+    pub(crate) async fn create_checked(
         &self,
         uid: i64,
         model: &str,
-    ) -> Result<(), RpcError> {
-        if self
-            .rule_domain(uid, model, Operation::Create)
-            .await?
-            .is_none()
-        {
-            return Ok(());
+        values: Vec<(&str, Value)>,
+    ) -> Result<i64, RpcError> {
+        let Some(rule) = self.rule_domain(uid, model, Operation::Create).await? else {
+            return Ok(self
+                .registry
+                .create_as(&self.pool, uid, model, values)
+                .await?);
+        };
+        let mut tx = self.pool.begin().await.map_err(sql_error)?;
+        let id = self
+            .registry
+            .create_as_tx(&mut tx, uid, model, values)
+            .await?;
+        let scope = Domain::And(vec![
+            Domain::Term(rusdoo_orm::domain::Term {
+                field: "id".to_string(),
+                op: rusdoo_orm::domain::Operator::Eq,
+                value: json!(id),
+            }),
+            rule,
+        ]);
+        // the record lives only in this transaction, so the check must run
+        // in it too; archived is not forbidden here either
+        let opts = SearchOptions {
+            active_test: false,
+            ..SearchOptions::default()
+        };
+        match self.registry.search_tx(&mut tx, model, &scope, &opts).await {
+            Ok(found) if !found.is_empty() => {
+                tx.commit().await.map_err(sql_error)?;
+                Ok(id)
+            }
+            Ok(_) => {
+                tx.rollback().await.map_err(sql_error)?;
+                Err(RpcError {
+                    code: crate::jsonrpc::SERVER_ERROR,
+                    message: format!("you are not allowed to create this {model} record"),
+                })
+            }
+            Err(error) => {
+                tx.rollback().await.map_err(sql_error)?;
+                Err(error.into())
+            }
         }
-        Err(RpcError {
-            code: crate::jsonrpc::SERVER_ERROR,
-            message: format!("create record rules on {model} are not enforced yet"),
-        })
     }
 
     /// Refuse the call when any of `ids` is out of the user's reach for
@@ -860,21 +893,13 @@ impl OrmService {
                 Ok(json!(rows))
             }
             "create" => {
-                // a create rule constrains a record that does not exist yet:
-                // enforcing it needs the check inside the insert's own
-                // transaction. Until that plumbing exists the call is
-                // refused, never let through unconstrained.
-                self.refuse_unenforced_create_rules(uid, model).await?;
                 let values = parse_values(args.first())?;
                 self.check_command_access_as(uid, model, &values).await?;
                 let pairs: Vec<(&str, Value)> = values
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
-                let id = self
-                    .registry
-                    .create_as(&self.pool, uid, model, pairs)
-                    .await?;
+                let id = self.create_checked(uid, model, pairs).await?;
                 Ok(json!(id))
             }
             "write" => {
@@ -1075,9 +1100,7 @@ impl OrmService {
                     self.check_operation(model, op, &ident)?;
                     self.check_operation(model, Operation::Read, &ident)?;
                 }
-                if ids.is_empty() {
-                    self.refuse_unenforced_create_rules(uid, model).await?;
-                } else {
+                if !ids.is_empty() {
                     self.check_records(uid, model, Operation::Write, &ids)
                         .await?;
                 }
@@ -1087,11 +1110,7 @@ impl OrmService {
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
                 let saved = if ids.is_empty() {
-                    vec![
-                        self.registry
-                            .create_as(&self.pool, uid, model, pairs)
-                            .await?,
-                    ]
+                    vec![self.create_checked(uid, model, pairs).await?]
                 } else {
                     // Odoo's write({}) is a no-op — an empty form save must
                     // not fail, and must not stamp write_date either
@@ -1201,6 +1220,17 @@ impl OrmService {
                     .await?;
                 Ok(json!({"groups": groups, "length": length}))
             }
+            // the form view calls this on every edit. A model with no
+            // onchange logic answers "nothing changes" — which is every
+            // model here, since Odoo's onchange bodies are Python and have
+            // no Rust counterpart yet. The endpoint has to exist all the
+            // same: a form whose onchange errors is a form that is stuck.
+            "onchange" => {
+                self.registry.get(model).ok_or_else(|| {
+                    RpcError::from(RusdooError::Validation(format!("unknown model: {model}")))
+                })?;
+                Ok(json!({"value": {}}))
+            }
             // what a fresh form starts from: the declared default of every
             // field asked for, overridden by the `default_<field>` entries
             // the client carries in its context (an action opening a line
@@ -1268,6 +1298,13 @@ fn name_search_args<'a>(
         .and_then(Value::as_u64)
         .unwrap_or(100);
     (pattern, operator, limit)
+}
+
+fn sql_error(e: sqlx::Error) -> RpcError {
+    RpcError {
+        code: crate::jsonrpc::SERVER_ERROR,
+        message: e.to_string(),
+    }
 }
 
 fn operation_label(op: Operation) -> &'static str {

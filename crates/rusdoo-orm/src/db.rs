@@ -439,6 +439,36 @@ impl Registry {
         self.create_in(tx, SUPERUSER_ID, model_name, values).await
     }
 
+    /// Like [`Registry::create_as`], inside a caller-managed transaction:
+    /// the caller can still refuse the record after it exists but before
+    /// anyone else can see it.
+    pub async fn create_as_tx(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        uid: i64,
+        model_name: &str,
+        values: Vec<(&str, Value)>,
+    ) -> Result<i64, RusdooError> {
+        self.create_in(tx, uid, model_name, values).await
+    }
+
+    /// Like [`Registry::search`], inside a caller-managed transaction —
+    /// it therefore sees that transaction's uncommitted rows.
+    pub async fn search_tx(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        model_name: &str,
+        domain: &Domain,
+        opts: &SearchOptions,
+    ) -> Result<Vec<i64>, RusdooError> {
+        let (sql, params) = self.search_sql(model_name, domain, opts)?;
+        let rows = build_query(&sql, &params)?
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(db_err)?;
+        rows.iter().map(row_id).collect()
+    }
+
     /// Like [`Registry::write`], inside a caller-managed transaction.
     pub async fn write_tx(
         &self,
