@@ -308,6 +308,129 @@ impl OrmService {
     }
 }
 
+/// The view types an act_window falls back to when it declares none.
+const DEFAULT_VIEW_MODE: &str = "list,form";
+
+impl OrmService {
+    /// `/web/action/load` (`odoo/addons/web/controllers/action.py`): the
+    /// action record a menu click opens, addressed by database id or by
+    /// external id.
+    ///
+    /// The client renders whatever comes back, so this is a read of a
+    /// record like any other: it goes through the same ACL the ORM
+    /// endpoints use, and it never invents a model the caller may not
+    /// see.
+    pub async fn load_action(
+        &self,
+        reference: &Value,
+        session: Option<&Session>,
+    ) -> Result<Value, RpcError> {
+        if let Some(session) = session {
+            self.check_access("ir.actions.act_window", "read", session)?;
+        }
+        let id = match reference {
+            Value::Number(number) => number.as_i64().ok_or_else(|| {
+                RpcError::invalid_params("action_id must be an integer or an external id")
+            })?,
+            Value::String(xml_id) => {
+                let (module, name) = xml_id.split_once('.').ok_or_else(|| {
+                    RpcError::invalid_params("an action external id reads module.name")
+                })?;
+                self.resolve_action_id(module, name).await?
+            }
+            _ => {
+                return Err(RpcError::invalid_params(
+                    "action_id must be an integer or an external id",
+                ))
+            }
+        };
+        let rows = self
+            .registry
+            .read(
+                &self.pool,
+                "ir.actions.act_window",
+                &[id],
+                &["name", "res_model", "view_mode", "domain"],
+            )
+            .await?;
+        let action = rows
+            .first()
+            .ok_or_else(|| RpcError::invalid_params(format!("no action with id {id}")))?;
+        let res_model = action
+            .get("res_model")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if res_model.is_empty() {
+            return Err(RpcError::invalid_params(format!(
+                "action {id} has no res_model"
+            )));
+        }
+        // reading the action must not become a way around the ACL of the
+        // model it opens: a user who cannot read the model gets the same
+        // answer as for an action that does not exist
+        if let Some(session) = session {
+            self.check_access(res_model, "read", session)?;
+        }
+        let view_mode = action
+            .get("view_mode")
+            .and_then(Value::as_str)
+            .filter(|mode| !mode.trim().is_empty())
+            .unwrap_or(DEFAULT_VIEW_MODE);
+        let views: Vec<Value> = view_mode
+            .split(',')
+            .map(str::trim)
+            .filter(|kind| !kind.is_empty())
+            .map(|kind| json!([Value::Bool(false), kind]))
+            .collect();
+        Ok(json!({
+            "id": id,
+            "type": "ir.actions.act_window",
+            "name": action.get("name").cloned().unwrap_or(Value::Bool(false)),
+            "res_model": res_model,
+            "view_mode": view_mode,
+            "views": views,
+            // the domain the client sends back on every search of this
+            // action, already a domain rather than the text the record
+            // holds — an action whose domain cannot be read is an error,
+            // never an unscoped list
+            "domain": action_domain(action.get("domain").and_then(Value::as_str))?,
+            "context": json!({}),
+            "target": "current",
+        }))
+    }
+
+    /// External id -> `ir.actions.act_window` id, without leaking whether
+    /// the id exists under another model.
+    async fn resolve_action_id(&self, module: &str, name: &str) -> Result<i64, RpcError> {
+        let row: Option<(i32,)> = sqlx::query_as(
+            r#"SELECT "res_id" FROM "ir_model_data"
+               WHERE "module" = $1 AND "name" = $2 AND "model" = 'ir.actions.act_window'"#,
+        )
+        .bind(module)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db_error)?;
+        row.map(|(id,)| i64::from(id))
+            .ok_or_else(|| RpcError::invalid_params(format!("unknown action {module}.{name}")))
+    }
+}
+
+/// The domain of an act_window as the client receives it: a real domain,
+/// checked here so a malformed one fails the action load instead of
+/// silently listing every row of the model.
+fn action_domain(raw: Option<&str>) -> Result<Value, RpcError> {
+    let trimmed = raw.unwrap_or("").trim();
+    if trimmed.is_empty() || trimmed == "[]" {
+        return Ok(json!([]));
+    }
+    let value: Value = serde_json::from_str(trimmed).map_err(|_| {
+        RpcError::invalid_params("action domain is not a JSON domain; refusing to open it unscoped")
+    })?;
+    rusdoo_orm::domain::parse_domain(&value).map_err(RpcError::from)?;
+    Ok(value)
+}
+
 /// Parse the `views` argument: `[[view_id_or_false, "type"], ...]`.
 pub(crate) fn parse_view_specs(
     raw: Option<&Value>,

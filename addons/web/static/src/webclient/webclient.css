@@ -1,0 +1,362 @@
+/* A folha de estilo do cliente. Sem dependências externas: a página é
+   servida com CSP estrita e nada é buscado de outro host. */
+
+:root {
+    --o-brand: #714b67;
+    --o-brand-light: #8f5f83;
+    --o-bg: #f9f9f9;
+    --o-surface: #ffffff;
+    --o-border: #dee2e6;
+    --o-text: #1f2937;
+    --o-muted: #6b7280;
+    --o-danger: #b91c1c;
+    --o-ok: #157347;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    color: var(--o-text);
+    background: var(--o-bg);
+}
+
+button {
+    font: inherit;
+    cursor: pointer;
+}
+
+/* barra superior ------------------------------------------------------ */
+
+.o_navbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+    height: 46px;
+    background: var(--o-brand);
+    color: #fff;
+}
+
+.o_brand {
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.o_apps {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+    overflow-x: auto;
+}
+
+.o_app {
+    background: transparent;
+    border: 0;
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.o_app:hover {
+    background: var(--o-brand-light);
+}
+
+.o_app.o_active {
+    background: rgba(0, 0, 0, 0.25);
+}
+
+.o_user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #fff;
+}
+
+/* corpo --------------------------------------------------------------- */
+
+.o_main {
+    display: flex;
+    align-items: stretch;
+    min-height: calc(100vh - 46px);
+}
+
+.o_sidebar {
+    width: 220px;
+    flex: 0 0 auto;
+    background: var(--o-surface);
+    border-right: 1px solid var(--o-border);
+    padding: 8px 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.o_sidebar:empty {
+    display: none;
+}
+
+.o_menu_item {
+    background: none;
+    border: 0;
+    text-align: left;
+    padding: 7px 16px;
+    color: var(--o-text);
+}
+
+.o_menu_item:hover {
+    background: var(--o-bg);
+}
+
+.o_depth_1 {
+    padding-left: 30px;
+}
+
+.o_depth_2 {
+    padding-left: 44px;
+}
+
+.o_depth_3 {
+    padding-left: 58px;
+}
+
+.o_content {
+    flex: 1;
+    min-width: 0;
+    padding: 16px;
+}
+
+/* painel de controle -------------------------------------------------- */
+
+.o_control_panel {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.o_breadcrumb {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.o_breadcrumb a {
+    color: var(--o-brand);
+    text-decoration: none;
+}
+
+.o_cp_actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.o_searchview {
+    padding: 5px 10px;
+    border: 1px solid var(--o-border);
+    border-radius: 4px;
+    min-width: 200px;
+}
+
+.o_pager {
+    color: var(--o-muted);
+    white-space: nowrap;
+}
+
+.btn {
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 5px 12px;
+}
+
+.btn-primary {
+    background: var(--o-brand);
+    border-color: var(--o-brand);
+    color: #fff;
+}
+
+.btn-primary:hover {
+    background: var(--o-brand-light);
+}
+
+.btn-ghost {
+    background: var(--o-surface);
+    border-color: var(--o-border);
+    color: var(--o-text);
+}
+
+.btn-danger {
+    background: var(--o-surface);
+    border-color: var(--o-danger);
+    color: var(--o-danger);
+}
+
+.btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+/* lista ---------------------------------------------------------------- */
+
+.o_list_table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--o-surface);
+    border: 1px solid var(--o-border);
+}
+
+.o_list_table th,
+.o_list_table td {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--o-border);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 320px;
+}
+
+.o_list_table th {
+    background: var(--o-bg);
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+
+.o_list_table th.o_sorted {
+    color: var(--o-brand);
+}
+
+.o_data_row:hover {
+    background: #f3f0f2;
+    cursor: pointer;
+}
+
+.o_nocontent {
+    color: var(--o-muted);
+    padding: 24px;
+    text-align: center;
+}
+
+/* formulário ----------------------------------------------------------- */
+
+.o_form_sheet {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    background: var(--o-surface);
+    border: 1px solid var(--o-border);
+    border-radius: 4px;
+    padding: 20px;
+}
+
+.o_group {
+    flex: 1 1 320px;
+    min-width: 280px;
+}
+
+.o_form_row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.o_form_row label {
+    width: 140px;
+    flex: 0 0 auto;
+    color: var(--o-muted);
+}
+
+.o_form_row label.o_required::after {
+    content: " *";
+    color: var(--o-danger);
+}
+
+.o_field {
+    flex: 1;
+    min-width: 0;
+}
+
+.o_input {
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid var(--o-border);
+    border-radius: 4px;
+    background: var(--o-surface);
+    color: var(--o-text);
+}
+
+input[type="checkbox"].o_input {
+    width: auto;
+}
+
+.o_readonly {
+    color: var(--o-muted);
+    padding: 5px 0;
+}
+
+/* login e avisos ------------------------------------------------------- */
+
+.o_login {
+    display: flex;
+    justify-content: center;
+    padding-top: 12vh;
+}
+
+.o_login_form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 300px;
+    background: var(--o-surface);
+    border: 1px solid var(--o-border);
+    border-radius: 6px;
+    padding: 24px;
+}
+
+.o_login_form h1 {
+    margin: 0 0 8px;
+    text-align: center;
+    color: var(--o-brand);
+}
+
+.o_login_form input {
+    padding: 8px 10px;
+    border: 1px solid var(--o-border);
+    border-radius: 4px;
+}
+
+.o_notification:empty {
+    display: none;
+}
+
+.o_error,
+.o_saved {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 8px 16px;
+    padding: 10px 14px;
+    border-radius: 4px;
+}
+
+.o_error {
+    background: #fdecec;
+    border: 1px solid var(--o-danger);
+    color: var(--o-danger);
+}
+
+.o_saved {
+    background: #e8f5ee;
+    border: 1px solid var(--o-ok);
+    color: var(--o-ok);
+}

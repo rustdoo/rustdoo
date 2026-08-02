@@ -3,11 +3,13 @@
     <record id="partner_rows" model="ir.ui.view">
         <field name="name">Linhas de parceiros</field>
         <field name="model">res.partner</field>
+        <field name="type">qweb</field>
         <field name="arch" type="xml"><table border="1" cellpadding="6" style="border-collapse:collapse"><tr><th>Nome</th><th>E-mail</th><th>Empresa</th></tr><tr t-foreach="records" t-as="p"><td t-field="p.name"/><td t-field="p.email"/><td t-field="p.company_id"/></tr></table></field>
     </record>
     <record id="view_partners" model="ir.ui.view">
         <field name="name">Parceiros Rusdoo</field>
         <field name="model">res.partner</field>
+        <field name="type">qweb</field>
         <field name="arch" type="xml"><div style="font-family:system-ui;max-width:640px;margin:3rem auto"><h1 t-esc="title"/><t t-call="rusdoo_demo.partner_rows"/><p t-if="records">Renderizado via t-call (layout + sub-template).</p></div></field>
     </record>
 </odoo>

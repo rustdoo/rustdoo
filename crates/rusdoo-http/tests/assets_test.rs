@@ -208,6 +208,31 @@ async fn an_addon_serves_only_its_own_static_directory() {
 }
 
 #[tokio::test]
+async fn web_serves_the_client_when_an_addon_ships_one() {
+    let fixture = Fixture::new("shell");
+    let (status, headers, body) = get(app(&fixture), "/web").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(headers["content-type"].starts_with("text/html"));
+    assert!(body.contains("/web/assets/web.assets_backend.js"), "{body}");
+    assert!(body.contains("/web/assets/web.assets_backend.css"), "{body}");
+    assert!(body.contains("id=\"rusdoo-app\""), "{body}");
+    // the shell carries no record data: it is safe before authentication
+    assert!(!body.contains("secret"), "{body}");
+}
+
+#[tokio::test]
+async fn without_a_client_bundle_web_keeps_the_server_rendered_index() {
+    let url = std::env::var("RUSDOO_TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:rusdoo@localhost:55432/postgres".into());
+    let service = OrmService::insecure(
+        Arc::new(Registry::new()),
+        rusdoo_orm::db::lazy_pool(&url).unwrap(),
+    );
+    let (_, _, body) = get(router(service), "/web").await;
+    assert!(!body.contains("rusdoo-app"), "{body}");
+}
+
+#[tokio::test]
 async fn the_rpc_routes_still_answer_alongside_the_asset_routes() {
     let fixture = Fixture::new("coexist");
     let response = app(&fixture)

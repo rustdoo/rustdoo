@@ -68,6 +68,29 @@ impl Bundles {
     }
 }
 
+/// The bundles of every installable addon under `paths`, plus where each
+/// addon lives — what a server needs to serve assets, whatever else the
+/// boot does. It only reads the filesystem, so it is safe (and correct)
+/// to run on every start, not just when installing.
+pub fn resolve_installed(
+    paths: &[&Path],
+) -> Result<(Bundles, HashMap<String, PathBuf>), RusdooError> {
+    let manifests = crate::loader::discover_addons(paths)?;
+    let order = crate::graph::dependency_order(&manifests)?;
+    let by_name: HashMap<&str, &Manifest> =
+        manifests.iter().map(|m| (m.name.as_str(), m)).collect();
+    let installed: Vec<&Manifest> = order
+        .iter()
+        .map(|name| by_name[name.as_str()])
+        .filter(|manifest| manifest.installable)
+        .collect();
+    let roots = installed
+        .iter()
+        .map(|manifest| (manifest.name.clone(), manifest.path.clone()))
+        .collect();
+    Ok((resolve_bundles(&installed)?, roots))
+}
+
 /// A declaration still to be applied: which module made it, and what it
 /// said. Kept per bundle in module order.
 struct Declaration<'a> {

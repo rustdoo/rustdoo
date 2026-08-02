@@ -22,10 +22,20 @@ async fn main() -> anyhow::Result<()> {
     let mut rules = rusdoo_orm::rules::RecordRules::new();
     let mut assets = rusdoo_http::assets::AssetHub::empty();
 
+    let addons = std::env::var("RUSDOO_ADDONS_PATH").unwrap_or_else(|_| "addons".into());
+    let addons_path = std::path::Path::new(&addons);
+
+    // What the addons ship to the browser is read off the filesystem, so
+    // it is resolved on every boot — a server restarted without --init
+    // still serves its client.
+    if addons_path.is_dir() {
+        let (bundles, roots) = rusdoo_modules::assets::resolve_installed(&[addons_path])?;
+        tracing::info!("{} client bundle(s) resolved", bundles.names().count());
+        assets = rusdoo_http::assets::AssetHub::new(bundles, roots);
+    }
+
     if std::env::args().any(|arg| arg == "--init") {
         use rusdoo_modules::installer::{install_modules, XmlIds};
-        let addons = std::env::var("RUSDOO_ADDONS_PATH").unwrap_or_else(|_| "addons".into());
-        let addons_path = std::path::Path::new(&addons);
         let mut xml_ids = XmlIds::load(&pool).await?;
         if addons_path.is_dir() {
             let report =
@@ -37,7 +47,6 @@ async fn main() -> anyhow::Result<()> {
             );
             access = report.access;
             rules = report.rules;
-            assets = rusdoo_http::assets::AssetHub::new(report.bundles, report.roots);
             seed_admin(&registry, &pool).await?;
         } else {
             for model in registry.models() {
@@ -63,8 +72,11 @@ async fn main() -> anyhow::Result<()> {
     if std::env::var("RUSDOO_INSECURE_COOKIES").is_ok() {
         service = service.allow_insecure_cookies();
     }
-    tracing::info!("rusdoo listening on {DEFAULT_ADDR} (/jsonrpc, /web/dataset/call_kw)");
-    rusdoo_http::serve(DEFAULT_ADDR, service).await?;
+    // o endereço é configurável: uma máquina que já roda um Odoo tem a
+    // 8069 ocupada, e um container publica em outra interface
+    let addr = std::env::var("RUSDOO_ADDR").unwrap_or_else(|_| DEFAULT_ADDR.to_string());
+    tracing::info!("rusdoo listening on {addr} (/web, /jsonrpc, /web/dataset/call_kw)");
+    rusdoo_http::serve(&addr, service).await?;
     Ok(())
 }
 
@@ -159,7 +171,9 @@ fn base_registry() -> anyhow::Result<Registry> {
         vec![
             Field::new("name", FieldType::Char { size: None }).required(),
             Field::new("email", FieldType::Char { size: None }),
-            Field::new("active", FieldType::Boolean),
+            // como todo modelo arquivável do Odoo: nasce ativo, senão
+            // cada registro novo já viria arquivado
+            Field::new("active", FieldType::Boolean).default_value(json!(true)),
             Field::new(
                 "company_id",
                 FieldType::Many2one {

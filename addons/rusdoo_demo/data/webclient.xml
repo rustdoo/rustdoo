@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- As views que o cliente web desenha (lista e formulário), a ação que
+     as abre e o menu que leva até ela. -->
+<odoo>
+    <record id="partner_list" model="ir.ui.view">
+        <field name="name">Parceiros (lista)</field>
+        <field name="model">res.partner</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name"/><field name="email"/><field name="company_id"/></list></field>
+    </record>
+
+    <record id="partner_form" model="ir.ui.view">
+        <field name="name">Parceiros (formulário)</field>
+        <field name="model">res.partner</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name"/><field name="email"/><field name="company_id"/><field name="active"/></group></form></field>
+    </record>
+
+    <record id="company_list" model="ir.ui.view">
+        <field name="name">Empresas (lista)</field>
+        <field name="model">res.company</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name"/></list></field>
+    </record>
+
+    <record id="company_form" model="ir.ui.view">
+        <field name="name">Empresas (formulário)</field>
+        <field name="model">res.company</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name"/></group></form></field>
+    </record>
+
+    <record id="act_partners" model="ir.actions.act_window">
+        <field name="name">Parceiros</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="act_companies" model="ir.actions.act_window">
+        <field name="name">Empresas</field>
+        <field name="res_model">res.company</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="menu_root" model="ir.ui.menu">
+        <field name="name">Cadastros</field>
+        <field name="sequence">10</field>
+    </record>
+
+    <record id="menu_partners" model="ir.ui.menu">
+        <field name="name">Parceiros</field>
+        <field name="parent_id" ref="menu_root"/>
+        <field name="sequence">10</field>
+        <field name="action">rusdoo_demo.act_partners</field>
+    </record>
+
+    <record id="menu_companies" model="ir.ui.menu">
+        <field name="name">Empresas</field>
+        <field name="parent_id" ref="menu_root"/>
+        <field name="sequence">20</field>
+        <field name="action">rusdoo_demo.act_companies</field>
+    </record>
+</odoo>
