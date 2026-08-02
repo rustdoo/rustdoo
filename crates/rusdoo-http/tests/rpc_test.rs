@@ -1645,3 +1645,427 @@ async fn web_name_search_shapes_by_specification_live() {
         json!([{"id": bob, "display_name": "Bob", "color": 3}])
     );
 }
+
+/// Order/line registry with distinct table names, the shape a form view
+/// saves: scalar fields plus one2many command tuples.
+fn save_registry(prefix: &str) -> Registry {
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.save.line".into(),
+            table: format!("{prefix}_line"),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("qty", FieldType::Integer),
+            Field::new(
+                "order_id",
+                FieldType::Many2one {
+                    comodel: "rusdoo.test.save.order".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.save.order".into(),
+            table: format!("{prefix}_order"),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "line_ids",
+                FieldType::One2many {
+                    comodel: "rusdoo.test.save.line".into(),
+                    inverse: "order_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg
+}
+
+#[tokio::test]
+async fn web_save_creates_then_writes_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let reg = save_registry("rusdoo_test_ws");
+    for t in ["rusdoo_test_ws_line", "rusdoo_test_ws_order"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in ["rusdoo.test.save.order", "rusdoo.test.save.line"] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+    let service = OrmService::insecure(Arc::new(reg), pool.clone());
+    let spec = json!({"name": {}, "line_ids": {"fields": {"name": {}, "qty": {}}}});
+
+    // no ids: web_save creates, then reads the new record back through
+    // the same specification (one record, in a list)
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "call",
+            "params": {"model": "rusdoo.test.save.order", "method": "web_save",
+                       "args": [[],
+                                {"name": "SO001",
+                                 "line_ids": [[0, 0, {"name": "l1", "qty": 2}]]},
+                                spec],
+                       "kwargs": {}}
+        }),
+    )
+    .await;
+    let records = resp["result"]
+        .as_array()
+        .unwrap_or_else(|| panic!("web_save must return a list, got: {resp}"));
+    assert_eq!(records.len(), 1);
+    let order = records[0]["id"].as_i64().unwrap();
+    assert_eq!(records[0]["name"], json!("SO001"));
+    let lines = records[0]["line_ids"].as_array().unwrap();
+    assert_eq!(lines.len(), 1, "the create command produced the line");
+    assert_eq!(lines[0]["name"], json!("l1"));
+    assert_eq!(lines[0]["qty"], json!(2));
+    let line = lines[0]["id"].as_i64().unwrap();
+
+    // with ids: web_save writes, and the reply reflects the new state
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "call",
+            "params": {"model": "rusdoo.test.save.order", "method": "web_save",
+                       "args": [[order],
+                                {"name": "SO001-rev",
+                                 "line_ids": [[1, line, {"qty": 9}],
+                                              [0, 0, {"name": "l2", "qty": 1}]]},
+                                spec],
+                       "kwargs": {}}
+        }),
+    )
+    .await;
+    let record = &resp["result"][0];
+    assert_eq!(record["id"], json!(order));
+    assert_eq!(record["name"], json!("SO001-rev"));
+    let lines = record["line_ids"].as_array().unwrap();
+    assert_eq!(lines.len(), 2);
+    let l1 = lines.iter().find(|l| l["id"] == json!(line)).unwrap();
+    assert_eq!(l1["qty"], json!(9), "update command applied");
+
+    // an empty save is a no-op that still reads the record back
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 3, "method": "call",
+            "params": {"model": "rusdoo.test.save.order", "method": "web_save",
+                       "args": [[order], {}, {"name": {}}], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"], json!([{"id": order, "name": "SO001-rev"}]));
+
+    // next_id: the pager moves on, so another record is read back
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 4, "method": "call",
+            "params": {"model": "rusdoo.test.save.order", "method": "web_save",
+                       "args": [[], {"name": "SO002"}, {"name": {}}], "kwargs": {}}
+        }),
+    )
+    .await;
+    let other = resp["result"][0]["id"].as_i64().unwrap();
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 5, "method": "call",
+            "params": {"model": "rusdoo.test.save.order", "method": "web_save",
+                       "args": [[order], {"name": "saved"}, {"name": {}}, other],
+                       "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(
+        resp["result"],
+        json!([{"id": other, "name": "SO002"}]),
+        "next_id decides which record comes back"
+    );
+    // ...and the write still landed on the saved record
+    let (_, resp) = rpc(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 6, "method": "call",
+            "params": {"model": "rusdoo.test.save.order", "method": "read",
+                       "args": [[order], ["name"]], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"][0]["name"], json!("saved"));
+}
+
+#[tokio::test]
+async fn web_save_and_commands_enforce_access_live() {
+    use rusdoo_orm::access::{AccessControl, Operation};
+
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let mut reg = save_registry("rusdoo_test_wsa");
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.groups".into(),
+            table: "rusdoo_test_wsa_groups".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.users".into(),
+            table: "rusdoo_test_wsa_users".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("login", FieldType::Char { size: None }).required(),
+            Field::new("password", FieldType::Char { size: None }).private(),
+            Field::new(
+                "groups_id",
+                FieldType::Many2many {
+                    comodel: "res.groups".into(),
+                    relation: "rusdoo_test_wsa_ug_rel".into(),
+                    column1: "user_id".into(),
+                    column2: "group_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    for t in [
+        "rusdoo_test_wsa_ug_rel",
+        "rusdoo_test_wsa_users",
+        "rusdoo_test_wsa_groups",
+        "rusdoo_test_wsa_line",
+        "rusdoo_test_wsa_order",
+    ] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in [
+        "res.groups",
+        "res.users",
+        "rusdoo.test.save.order",
+        "rusdoo.test.save.line",
+    ] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+    let admin_hash = rusdoo_http::session::hash_password("admin").unwrap();
+    let ana_hash = rusdoo_http::session::hash_password("segredo").unwrap();
+    reg.create(
+        &pool,
+        "res.users",
+        vec![("login", json!("admin")), ("password", json!(admin_hash))],
+    )
+    .await
+    .unwrap();
+    let ana_uid = reg
+        .create(
+            &pool,
+            "res.users",
+            vec![("login", json!("ana")), ("password", json!(ana_hash))],
+        )
+        .await
+        .unwrap();
+    let group = reg
+        .create(&pool, "res.groups", vec![("name", json!("vendas"))])
+        .await
+        .unwrap();
+    sqlx::query(r#"INSERT INTO "rusdoo_test_wsa_ug_rel" VALUES ($1, $2)"#)
+        .bind(ana_uid)
+        .bind(group)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let order = reg
+        .create(&pool, "rusdoo.test.save.order", vec![("name", json!("SO"))])
+        .await
+        .unwrap();
+    let loose = reg
+        .create(
+            &pool,
+            "rusdoo.test.save.line",
+            vec![("name", json!("loose"))],
+        )
+        .await
+        .unwrap();
+
+    // ana may read and write orders, and write (link) lines — she may
+    // neither create the order nor create/delete lines
+    let mut acl = AccessControl::new();
+    acl.grant(
+        "rusdoo.test.save.order",
+        group,
+        &[Operation::Read, Operation::Write],
+    );
+    acl.grant("rusdoo.test.save.line", group, &[Operation::Write]);
+    let service = OrmService::new(Arc::new(reg), pool.clone()).with_access(acl);
+
+    let (_, _, cookie) = rpc_full(
+        router(service.clone()),
+        "/web/session/authenticate",
+        json!({"jsonrpc":"2.0","id":1,"method":"call","params":{"login":"ana","password":"segredo"}}),
+        None,
+    )
+    .await;
+    let ana = cookie.unwrap().split(';').next().unwrap().to_string();
+
+    // no ids means create — and ana has no create grant on the order
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":2,"method":"call","params":{
+            "model":"rusdoo.test.save.order","method":"web_save",
+            "args":[[], {"name":"nova"}, {"name":{}}],"kwargs":{}}}),
+        Some(&ana),
+    )
+    .await;
+    assert_eq!(resp["error"]["code"], json!(-32000));
+    assert!(
+        resp["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("create"),
+        "web_save without ids needs create access: {resp}"
+    );
+
+    // writing an existing order is granted
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":3,"method":"call","params":{
+            "model":"rusdoo.test.save.order","method":"web_save",
+            "args":[[order], {"name":"SO-rev"}, {"name":{}}],"kwargs":{}}}),
+        Some(&ana),
+    )
+    .await;
+    assert_eq!(resp["result"], json!([{"id": order, "name": "SO-rev"}]));
+
+    // linking an existing line writes the line — granted
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":4,"method":"call","params":{
+            "model":"rusdoo.test.save.order","method":"web_save",
+            "args":[[order], {"line_ids": [[4, loose, 0]]}, {"name":{}}],"kwargs":{}}}),
+        Some(&ana),
+    )
+    .await;
+    assert!(resp.get("result").is_some(), "link command allowed: {resp}");
+
+    // creating a line through a command needs create access ON THE LINE
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":5,"method":"call","params":{
+            "model":"rusdoo.test.save.order","method":"web_save",
+            "args":[[order], {"line_ids": [[0, 0, {"name":"nova"}]]}, {"name":{}}],
+            "kwargs":{}}}),
+        Some(&ana),
+    )
+    .await;
+    assert!(
+        resp["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("create on rusdoo.test.save.line"),
+        "a create command must be checked on the comodel: {resp}"
+    );
+
+    // ...and deleting one needs unlink access on the line
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":6,"method":"call","params":{
+            "model":"rusdoo.test.save.order","method":"web_save",
+            "args":[[order], {"line_ids": [[2, loose, 0]]}, {"name":{}}],"kwargs":{}}}),
+        Some(&ana),
+    )
+    .await;
+    assert!(
+        resp["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unlink on rusdoo.test.save.line"),
+        "a delete command must be checked on the comodel: {resp}"
+    );
+
+    // the plain write path is gated exactly the same way
+    let (_, resp, _) = rpc_full(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":7,"method":"call","params":{
+            "model":"rusdoo.test.save.order","method":"write",
+            "args":[[order], {"line_ids": [[0, 0, {"name":"nova"}]]}],"kwargs":{}}}),
+        Some(&ana),
+    )
+    .await;
+    assert!(
+        resp["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("create on rusdoo.test.save.line"),
+        "write() must not be a back door into the comodel: {resp}"
+    );
+
+    // nothing of the refused calls reached the database
+    let lines: i64 = sqlx::query_scalar(r#"SELECT count(*) FROM "rusdoo_test_wsa_line""#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(lines, 1, "no line was created or deleted by a denied call");
+
+    // the superuser still creates through web_save
+    let (_, _, cookie) = rpc_full(
+        router(service.clone()),
+        "/web/session/authenticate",
+        json!({"jsonrpc":"2.0","id":8,"method":"call","params":{"login":"admin","password":"admin"}}),
+        None,
+    )
+    .await;
+    let admin = cookie.unwrap().split(';').next().unwrap().to_string();
+    let (_, resp, _) = rpc_full(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc":"2.0","id":9,"method":"call","params":{
+            "model":"rusdoo.test.save.order","method":"web_save",
+            "args":[[], {"name":"admin cria", "line_ids": [[0, 0, {"name":"l"}]]},
+                    {"name":{}, "line_ids": {"fields": {"name": {}}}}],
+            "kwargs":{}}}),
+        Some(&admin),
+    )
+    .await;
+    let record = &resp["result"][0];
+    assert_eq!(record["name"], json!("admin cria"));
+    assert_eq!(record["line_ids"].as_array().unwrap().len(), 1);
+}

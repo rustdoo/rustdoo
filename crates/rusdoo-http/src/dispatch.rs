@@ -2,6 +2,7 @@
 //! endpoints the Odoo web client uses on `odoo.models.BaseModel`.
 
 use rusdoo_core::RusdooError;
+use rusdoo_orm::access::Operation;
 use rusdoo_orm::crud::SearchOptions;
 use rusdoo_orm::domain::{parse_domain, Domain};
 use rusdoo_orm::fields::{Field, FieldType};
@@ -52,6 +53,13 @@ const MAX_CONCURRENT_VERIFY: usize = 8;
 /// Hard cap on rows rendered into a single view page.
 const VIEW_RECORD_LIMIT: u64 = 200;
 
+/// Methods whose CRUD operation is only knowable from the call arguments:
+/// `web_save` creates or writes depending on whether it was given ids.
+/// The dispatch gate lets them through and the handler enforces
+/// `ir.model.access` itself — every entry here MUST call
+/// [`OrmService::check_operation`] before touching the database.
+const SELF_CHECKED_METHODS: [&str; 1] = ["web_save"];
+
 #[derive(Clone)]
 pub struct OrmService {
     pub(crate) registry: Arc<Registry>,
@@ -93,6 +101,11 @@ impl OrmService {
         method: &str,
         session: &crate::session::Session,
     ) -> Result<(), RpcError> {
+        // a method whose operation depends on its arguments cannot be
+        // decided here; its handler runs the check instead
+        if SELF_CHECKED_METHODS.contains(&method) {
+            return Ok(());
+        }
         let Some(op) = rusdoo_orm::access::Operation::for_method(method) else {
             if session.is_superuser {
                 return Ok(());
@@ -108,6 +121,62 @@ impl OrmService {
                 code: crate::jsonrpc::SERVER_ERROR,
                 message: e.to_string(),
             })
+    }
+
+    /// Enforce `ir.model.access` for a concrete operation, when the
+    /// method name alone cannot imply it.
+    pub(crate) fn check_operation(
+        &self,
+        model: &str,
+        op: rusdoo_orm::access::Operation,
+        session: &crate::session::Session,
+    ) -> Result<(), RpcError> {
+        self.access
+            .check(model, op, &session.groups, session.is_superuser)
+            .map_err(|e| RpcError {
+                code: crate::jsonrpc::SERVER_ERROR,
+                message: e.to_string(),
+            })
+    }
+
+    /// Enforce access on every comodel the x2many commands in `values`
+    /// reach. Odoo performs those creates/writes/unlinks on the comodel
+    /// and checks them there; without this, write access on an order
+    /// would carry write access to its line model for free.
+    ///
+    /// Skipped in insecure mode, which disables ACL enforcement wholesale
+    /// (trusted tooling only) — the same policy the dispatch gate applies.
+    pub(crate) fn check_command_access(
+        &self,
+        ident: &crate::session::Session,
+        model: &str,
+        values: &Map<String, Value>,
+    ) -> Result<(), RpcError> {
+        if !self.require_auth {
+            return Ok(());
+        }
+        for (comodel, op) in rusdoo_orm::access::x2many_operations(&self.registry, model, values)? {
+            self.check_operation(&comodel, op, ident)?;
+        }
+        Ok(())
+    }
+
+    /// [`Self::check_command_access`] for callers that hold no identity
+    /// yet: resolving one costs a query, so it is only built when the
+    /// values actually carry commands.
+    pub(crate) async fn check_command_access_as(
+        &self,
+        uid: i64,
+        model: &str,
+        values: &Map<String, Value>,
+    ) -> Result<(), RpcError> {
+        if !self.require_auth
+            || rusdoo_orm::access::x2many_operations(&self.registry, model, values)?.is_empty()
+        {
+            return Ok(());
+        }
+        let ident = self.identity(uid).await;
+        self.check_command_access(&ident, model, values)
     }
 
     /// List every `ir.ui.view` as (external id, display name), for a
@@ -630,6 +699,7 @@ impl OrmService {
             }
             "create" => {
                 let values = parse_values(args.first())?;
+                self.check_command_access_as(uid, model, &values).await?;
                 let pairs: Vec<(&str, Value)> = values
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
@@ -643,6 +713,7 @@ impl OrmService {
             "write" => {
                 let ids = parse_ids(args.first())?;
                 let values = parse_values(args.get(1))?;
+                self.check_command_access_as(uid, model, &values).await?;
                 let pairs: Vec<(&str, Value)> = values
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
@@ -785,6 +856,64 @@ impl OrmService {
                     current_length
                 };
                 Ok(json!({"length": length, "records": records}))
+            }
+            // the web client's write path (`odoo/addons/web/models/models.py`):
+            // create-or-write, then read the result back through the same
+            // specification the form view uses
+            "web_save" => {
+                let ids = parse_ids(args.first())?;
+                let values = parse_values(args.get(1).or_else(|| kwargs.get("vals")))?;
+                let spec = crate::web_read::parse_web_spec(
+                    args.get(2).or_else(|| kwargs.get("specification")),
+                )?;
+                // the pager may hand the client another record to display;
+                // it is read back instead of the one just saved
+                let next_id = args
+                    .get(3)
+                    .or_else(|| kwargs.get("next_id"))
+                    .and_then(Value::as_i64);
+                let ident = self.identity(uid).await;
+                if self.require_auth {
+                    // create or write is decided by the ids, which is why
+                    // the dispatch gate defers to this handler; the reply
+                    // is a web_read, so read access is required as well
+                    let op = if ids.is_empty() {
+                        Operation::Create
+                    } else {
+                        Operation::Write
+                    };
+                    self.check_operation(model, op, &ident)?;
+                    self.check_operation(model, Operation::Read, &ident)?;
+                }
+                self.check_command_access(&ident, model, &values)?;
+                let pairs: Vec<(&str, Value)> = values
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.clone()))
+                    .collect();
+                let saved = if ids.is_empty() {
+                    vec![
+                        self.registry
+                            .create_as(&self.pool, uid, model, pairs)
+                            .await?,
+                    ]
+                } else {
+                    // Odoo's write({}) is a no-op — an empty form save must
+                    // not fail, and must not stamp write_date either
+                    if !pairs.is_empty() {
+                        self.registry
+                            .write_as(&self.pool, uid, model, &ids, pairs)
+                            .await?;
+                    }
+                    ids
+                };
+                let read_ids = match next_id {
+                    Some(id) => vec![id],
+                    None => saved,
+                };
+                let records = self
+                    .web_read_records(&ident, model, &read_ids, &spec)
+                    .await?;
+                Ok(json!(records))
             }
             // no field-level defaults are modeled yet; Odoo returns only
             // fields carrying an explicit default, so {} is the faithful reply

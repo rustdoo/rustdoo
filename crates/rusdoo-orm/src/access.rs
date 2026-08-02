@@ -10,8 +10,16 @@
 //! same safe default as an Odoo install whose `ir.model.access.csv`
 //! rows have not been loaded, never the fail-open "open to everyone".
 
+use crate::db::parse_commands;
+use crate::fields::FieldType;
+use crate::registry::Registry;
 use rusdoo_core::RusdooError;
+use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
+
+/// How deep nested command values may reach. The tree is client-supplied,
+/// so the walk is bounded like every other client-controlled recursion.
+const MAX_COMMAND_DEPTH: usize = 8;
 
 /// The four CRUD permissions of `ir.model.access`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -97,4 +105,81 @@ impl AccessControl {
             )))
         }
     }
+}
+
+/// The `(comodel, operation)` pairs implied by the x2many command tuples
+/// inside create/write values, nested values included.
+///
+/// A relational write reaches records in another model: Odoo performs
+/// those creates/writes/unlinks on the comodel and `ir.model.access`
+/// checks them there. Checking only the called model would let a user who
+/// may write on an order create, rewrite or delete rows of a line model
+/// they have no rights on at all.
+///
+/// Unknown field names are skipped: the write path itself rejects them,
+/// and an ACL walk must not be the thing that decides what a field is.
+pub fn x2many_operations(
+    registry: &Registry,
+    model_name: &str,
+    values: &Map<String, Value>,
+) -> Result<Vec<(String, Operation)>, RusdooError> {
+    let mut found = HashSet::new();
+    collect_x2many_operations(registry, model_name, values, 0, &mut found)?;
+    Ok(found.into_iter().collect())
+}
+
+fn collect_x2many_operations(
+    registry: &Registry,
+    model_name: &str,
+    values: &Map<String, Value>,
+    depth: usize,
+    found: &mut HashSet<(String, Operation)>,
+) -> Result<(), RusdooError> {
+    if depth > MAX_COMMAND_DEPTH {
+        return Err(RusdooError::Validation(format!(
+            "x2many command values nest deeper than {MAX_COMMAND_DEPTH} levels"
+        )));
+    }
+    let model = registry
+        .get(model_name)
+        .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
+    for (name, value) in values {
+        let Some(field) = model.field(name) else {
+            continue;
+        };
+        let (comodel, is_one2many) = match &field.ty {
+            FieldType::One2many { comodel, .. } => (comodel, true),
+            FieldType::Many2many { comodel, .. } => (comodel, false),
+            _ => continue,
+        };
+        for command in parse_commands(value)? {
+            let Some(arr) = command.as_array() else {
+                continue;
+            };
+            let Some(code) = arr.first().and_then(Value::as_i64) else {
+                continue;
+            };
+            let operation = match code {
+                0 => Some(Operation::Create),
+                1 => Some(Operation::Write),
+                2 => Some(Operation::Unlink),
+                // link/unlink/clear/set rewrite the child's inverse column
+                // on a one2many, which is a write on the comodel; on a
+                // many2many only relation rows move, and those belong to
+                // the field — covered by write access on this model
+                3..=6 if is_one2many => Some(Operation::Write),
+                _ => None,
+            };
+            if let Some(operation) = operation {
+                found.insert((comodel.clone(), operation));
+            }
+            // create/update carry values that may themselves hold commands
+            if matches!(code, 0 | 1) {
+                if let Some(Value::Object(nested)) = arr.get(2) {
+                    collect_x2many_operations(registry, comodel, nested, depth + 1, found)?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
