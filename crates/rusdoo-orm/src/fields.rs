@@ -48,6 +48,10 @@ pub struct Field {
     /// whether the field may be returned through RPC read/search_read;
     /// false for secrets like password hashes
     pub exposed: bool,
+    /// value the ORM writes when a create leaves the field out, and what
+    /// `default_get` serves to a fresh form (`odoo/orm/fields.py`'s
+    /// `default`)
+    pub default: Option<Value>,
 }
 
 impl Field {
@@ -60,6 +64,15 @@ impl Field {
             readonly: false,
             stored,
             exposed: true,
+            default: None,
+        }
+    }
+
+    /// Declare the field's default value.
+    pub fn default_value(self, value: Value) -> Self {
+        Field {
+            default: Some(value),
+            ..self
         }
     }
 

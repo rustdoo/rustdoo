@@ -2341,3 +2341,88 @@ async fn read_group_refuses_what_it_cannot_answer_live() {
     .await;
     assert!(resp.get("result").is_some(), "{resp}");
 }
+
+#[tokio::test]
+async fn default_get_serves_declared_and_context_defaults() {
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.partner".into(),
+            table: "rusdoo_test_defaults_partner".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("active", FieldType::Boolean).default_value(json!(true)),
+            Field::new("color", FieldType::Integer).default_value(json!(7)),
+            Field::new("token", FieldType::Char { size: None })
+                .private()
+                .default_value(json!("s3cret")),
+        ],
+    ))
+    .unwrap();
+    let service = OrmService::insecure(
+        Arc::new(reg),
+        rusdoo_orm::db::lazy_pool("postgres://localhost/does-not-matter").unwrap(),
+    );
+
+    // declared defaults, only for the fields asked for
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "call",
+            "params": {"model": "res.partner", "method": "default_get",
+                       "args": [["name", "active", "color"]], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"], json!({"active": true, "color": 7}));
+
+    // the client's context overrides them — how an action opens a form
+    // with values already filled in
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "call",
+            "params": {"model": "res.partner", "method": "default_get",
+                       "args": [["name", "color"]],
+                       "kwargs": {"context": {"default_name": "Ana", "default_color": 3,
+                                              "default_nope": 1, "lang": "pt_BR"}}}
+        }),
+    )
+    .await;
+    assert_eq!(
+        resp["result"],
+        json!({"name": "Ana", "color": 3}),
+        "a context default for a field not asked for is not invented"
+    );
+
+    // a private field is refused, not defaulted
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 3, "method": "call",
+            "params": {"model": "res.partner", "method": "default_get",
+                       "args": [["token"]], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["error"]["code"], json!(-32602), "{resp}");
+
+    // an unknown field is an error, not a silent omission
+    let (_, resp) = rpc(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 4, "method": "call",
+            "params": {"model": "res.partner", "method": "default_get",
+                       "args": [["nope"]], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["error"]["code"], json!(-32602), "{resp}");
+}

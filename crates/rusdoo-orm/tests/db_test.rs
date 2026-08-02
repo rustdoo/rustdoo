@@ -2170,3 +2170,77 @@ async fn date_and_datetime_roundtrip_live() {
     let rows = model.read(&pool, &[id], &["day"]).await.unwrap();
     assert_eq!(rows[0]["day"], json!("2026-08-02"));
 }
+
+#[tokio::test]
+async fn create_applies_declared_defaults_live() {
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let model = Model::new(
+        ModelMeta {
+            name: "rusdoo.test.defaulted".into(),
+            table: "rusdoo_test_defaulted".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("active", FieldType::Boolean).default_value(json!(true)),
+            Field::new("color", FieldType::Integer).default_value(json!(7)),
+            Field::new("note", FieldType::Text),
+        ],
+    );
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_defaulted""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    model.init_table(&pool).await.unwrap();
+
+    // a field the create leaves out gets its default
+    let id = model
+        .create(&pool, vec![("name", json!("a"))])
+        .await
+        .unwrap();
+    let rows = model
+        .read(&pool, &[id], &["active", "color", "note"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["active"], json!(true));
+    assert_eq!(rows[0]["color"], json!(7));
+    // a field without a default stays unset
+    assert_eq!(rows[0]["note"], json!(null));
+
+    // a value the caller passed always wins — including an explicit null,
+    // which says "unset on purpose"
+    let id = model
+        .create(
+            &pool,
+            vec![
+                ("name", json!("b")),
+                ("color", json!(1)),
+                ("active", json!(null)),
+            ],
+        )
+        .await
+        .unwrap();
+    let rows = model
+        .read(&pool, &[id], &["active", "color"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["color"], json!(1));
+    // the read path returns unset columns as null (Odoo would say False)
+    assert_eq!(
+        rows[0]["active"],
+        json!(null),
+        "an explicit null is kept, not replaced by the default"
+    );
+
+    // a write never re-applies defaults
+    model
+        .write(&pool, &[id], vec![("name", json!("b2"))])
+        .await
+        .unwrap();
+    let rows = model.read(&pool, &[id], &["color"]).await.unwrap();
+    assert_eq!(rows[0]["color"], json!(1));
+}

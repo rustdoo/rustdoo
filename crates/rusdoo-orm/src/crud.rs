@@ -76,6 +76,7 @@ impl Model {
         uid: i64,
         values: Vec<(&str, Value)>,
     ) -> Result<(String, Vec<Value>), RusdooError> {
+        let values = self.with_defaults(values);
         if values.is_empty() {
             // delegation may create a parent row with no explicit values;
             // it still gets the full LOG_ACCESS stamp
@@ -93,7 +94,7 @@ impl Model {
         for (name, value) in values {
             self.writable_field(name)?;
             columns.push(quote_ident(name)?);
-            let placeholder = bind(&mut params, value);
+            let placeholder = bind_or_null(&mut params, value);
             placeholders.push(format!("{placeholder}{}", self.column_cast(name)));
         }
         // audit columns Odoo stamps on every create (LOG_ACCESS)
@@ -130,7 +131,7 @@ impl Model {
         let mut assignments = Vec::new();
         for (name, value) in values {
             self.writable_field(name)?;
-            let placeholder = bind(&mut params, value);
+            let placeholder = bind_or_null(&mut params, value);
             assignments.push(format!(
                 "{} = {placeholder}{}",
                 quote_ident(name)?,
@@ -208,6 +209,28 @@ impl Model {
         }
     }
 
+    /// Fill in the declared defaults of every field the create left out
+    /// (`odoo/orm/models.py::create`). Values the caller passed always
+    /// win, including an explicit null — "unset on purpose" is a
+    /// decision, not a gap to fill.
+    fn with_defaults<'a>(&'a self, mut values: Vec<(&'a str, Value)>) -> Vec<(&'a str, Value)> {
+        for field in self.fields() {
+            let Some(default) = &field.default else {
+                continue;
+            };
+            // readonly fields are framework-owned (the LOG_ACCESS stamp);
+            // unstored ones have no column to write
+            if field.readonly || !field.stored {
+                continue;
+            }
+            if values.iter().any(|(name, _)| *name == field.name) {
+                continue;
+            }
+            values.push((field.name.as_str(), default.clone()));
+        }
+        values
+    }
+
     /// The cast a bound parameter needs to land in this column. Dates and
     /// datetimes travel as strings (the JSON-RPC wire format), so their
     /// parameter is text: PostgreSQL has no implicit text -> date, and
@@ -228,6 +251,17 @@ impl Model {
         }
         Ok(())
     }
+}
+
+/// A JSON null is "no value": it renders as an untyped SQL NULL literal
+/// instead of a bound parameter. A null parameter carries the type sqlx
+/// binds it as (text), which PostgreSQL then refuses to store in a
+/// boolean or integer column.
+fn bind_or_null(params: &mut Vec<Value>, value: Value) -> String {
+    if value.is_null() {
+        return "NULL".to_string();
+    }
+    bind(params, value)
 }
 
 pub(crate) fn bind_ids(ids: &[i64], params: &mut Vec<Value>) -> Result<String, RusdooError> {

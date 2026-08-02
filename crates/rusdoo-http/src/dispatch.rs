@@ -1000,13 +1000,35 @@ impl OrmService {
                     .await?;
                 Ok(json!({"groups": groups, "length": length}))
             }
-            // no field-level defaults are modeled yet; Odoo returns only
-            // fields carrying an explicit default, so {} is the faithful reply
+            // what a fresh form starts from: the declared default of every
+            // field asked for, overridden by the `default_<field>` entries
+            // the client carries in its context (an action opening a line
+            // from its parent, for instance)
             "default_get" => {
-                self.registry.get(model).ok_or_else(|| {
+                let m = self.registry.get(model).ok_or_else(|| {
                     RpcError::from(RusdooError::Validation(format!("unknown model: {model}")))
                 })?;
-                Ok(json!({}))
+                let fields = parse_fields(args.first().or_else(|| kwargs.get("fields_list")))?;
+                self.ensure_exposed(model, &fields)?;
+                let context = kwargs.get("context").and_then(Value::as_object);
+                let mut out = Map::new();
+                for name in &fields {
+                    let Some(field) = m.field(name) else {
+                        // Odoo raises on a field the model does not have;
+                        // answering with silence would look like "no default"
+                        return Err(RpcError::invalid_params(format!(
+                            "unknown field on {model}: {name:?}"
+                        )));
+                    };
+                    if let Some(value) = context
+                        .and_then(|ctx| ctx.get(&format!("default_{name}")))
+                        .cloned()
+                        .or_else(|| field.default.clone())
+                    {
+                        out.insert(name.clone(), value);
+                    }
+                }
+                Ok(Value::Object(out))
             }
             other => Err(RpcError::method_not_found(other)),
         }
