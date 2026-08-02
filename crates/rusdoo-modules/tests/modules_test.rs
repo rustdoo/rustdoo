@@ -15,6 +15,7 @@ fn stub(name: &str, deps: &[&str]) -> Manifest {
         summary: String::new(),
         depends: deps.iter().map(|s| s.to_string()).collect(),
         data: vec![],
+        assets: vec![],
         installable: true,
         auto_install: false,
         path: std::path::PathBuf::new(),
@@ -204,4 +205,135 @@ fn duplicate_module_names_are_reported() {
     let err = dependency_order(&mods).unwrap_err();
 
     assert!(err.to_string().contains("duplicate module name: foo"));
+}
+
+#[test]
+fn parses_asset_bundles_from_a_manifest() {
+    use rusdoo_modules::manifest::AssetDirective;
+
+    let manifest = parse_manifest(
+        r#"{
+            'name': 'Demo',
+            'assets': {
+                'web.assets_backend': [
+                    'demo/static/src/main.js',
+                    ('prepend', 'demo/static/src/first.js'),
+                    ('after', 'web/static/src/core/utils.js', 'demo/static/src/late.js'),
+                    ('remove', 'web/static/src/unwanted.js'),
+                    'demo/static/src/**/*.scss',
+                ],
+                'web.assets_frontend': ['demo/static/src/public.js'],
+            },
+        }"#,
+        "demo",
+    )
+    .unwrap();
+
+    assert_eq!(manifest.assets.len(), 6);
+    let backend: Vec<_> = manifest
+        .assets
+        .iter()
+        .filter(|a| a.bundle == "web.assets_backend")
+        .collect();
+    // a bare path appends, in declaration order
+    assert_eq!(backend[0].directive, AssetDirective::Append);
+    assert_eq!(backend[0].path, "demo/static/src/main.js");
+    assert_eq!(backend[1].directive, AssetDirective::Prepend);
+    // a positioning directive keeps what it positions against
+    assert_eq!(backend[2].directive, AssetDirective::After);
+    assert_eq!(
+        backend[2].target.as_deref(),
+        Some("web/static/src/core/utils.js")
+    );
+    assert_eq!(backend[2].path, "demo/static/src/late.js");
+    assert_eq!(backend[3].directive, AssetDirective::Remove);
+    // a glob is kept verbatim: expanding it needs the addon paths
+    assert_eq!(backend[4].path, "demo/static/src/**/*.scss");
+    assert_eq!(manifest.assets[5].bundle, "web.assets_frontend");
+}
+
+#[test]
+fn malformed_asset_entries_are_refused() {
+    for (source, why) in [
+        (
+            r#"{'assets': ['not', 'a', 'dict']}"#,
+            "assets must be a dict",
+        ),
+        (r#"{'assets': {'b': 'not a list'}}"#, "a bundle is a list"),
+        (
+            r#"{'assets': {'b': [('nope', 'x.js')]}}"#,
+            "unknown directive",
+        ),
+        (
+            r#"{'assets': {'b': [('after', 'x.js')]}}"#,
+            "after needs a target",
+        ),
+        (
+            r#"{'assets': {'b': [('append', 'a.js', 'b.js')]}}"#,
+            "append takes one path",
+        ),
+        (
+            r#"{'assets': {'b': [42]}}"#,
+            "an entry is a path or a tuple",
+        ),
+    ] {
+        assert!(
+            parse_manifest(source, "demo").is_err(),
+            "{why}: {source} must be refused"
+        );
+    }
+}
+
+/// A permanent measurement, like the data-file one: how much of the real
+/// Odoo asset declaration this parser understands.
+#[test]
+fn measure_real_odoo_asset_coverage() {
+    let roots = [
+        Path::new("../../odoo/addons"),
+        Path::new("../../odoo/odoo/addons"),
+    ];
+    if !roots[0].exists() {
+        eprintln!("skipped: reference clone not present");
+        return;
+    }
+    let (mut addons, mut with_assets, mut entries, mut failed) = (0, 0, 0, Vec::new());
+    for root in roots {
+        let Ok(dir) = std::fs::read_dir(root) else {
+            continue;
+        };
+        for entry in dir.flatten() {
+            let manifest_path = entry.path().join("__manifest__.py");
+            let Ok(source) = std::fs::read_to_string(&manifest_path) else {
+                continue;
+            };
+            let name = entry.file_name().to_string_lossy().to_string();
+            addons += 1;
+            match parse_manifest(&source, &name) {
+                Ok(manifest) => {
+                    if !manifest.assets.is_empty() {
+                        with_assets += 1;
+                        entries += manifest.assets.len();
+                    }
+                }
+                Err(error) => failed.push(format!("{name}: {error}")),
+            }
+        }
+    }
+    eprintln!(
+        "asset coverage: {addons} addons parsed, {with_assets} declare assets, \
+         {entries} entries; {} failures",
+        failed.len()
+    );
+    for failure in failed.iter().take(5) {
+        eprintln!("  {failure}");
+    }
+    assert!(
+        failed.is_empty(),
+        "{} manifest(s) no longer parse",
+        failed.len()
+    );
+    assert!(
+        with_assets > 100,
+        "expected the real addons to declare assets, got {with_assets}"
+    );
 }
