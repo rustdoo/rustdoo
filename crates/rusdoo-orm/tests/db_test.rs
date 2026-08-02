@@ -1523,3 +1523,559 @@ async fn json_field_roundtrips() {
     let rows = model.read(&pool, &[id], &["data"]).await.unwrap();
     assert_eq!(rows[0]["data"], payload);
 }
+
+/// Registry with an order/line pair: the shape a form view saves through
+/// `Command.CREATE/UPDATE/DELETE` on a one2many.
+fn order_registry() -> rusdoo_orm::registry::Registry {
+    use rusdoo_orm::registry::Registry;
+
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.ordr.line".into(),
+            table: "rusdoo_test_ordr_line".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("qty", FieldType::Integer),
+            Field::new(
+                "order_id",
+                FieldType::Many2one {
+                    comodel: "rusdoo.test.ordr".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.ordr".into(),
+            table: "rusdoo_test_ordr".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "line_ids",
+                FieldType::One2many {
+                    comodel: "rusdoo.test.ordr.line".into(),
+                    inverse: "order_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg
+}
+
+async fn line_ids_of(reg: &rusdoo_orm::registry::Registry, pool: &PgPool, order: i64) -> Vec<i64> {
+    let rows = reg
+        .read(pool, "rusdoo.test.ordr", &[order], &["line_ids"])
+        .await
+        .unwrap();
+    let mut ids: Vec<i64> = rows[0]["line_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    ids.sort();
+    ids
+}
+
+#[tokio::test]
+async fn o2m_create_update_delete_commands_live() {
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let reg = order_registry();
+    for t in ["rusdoo_test_ordr_line", "rusdoo_test_ordr"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in ["rusdoo.test.ordr", "rusdoo.test.ordr.line"] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+
+    // create(0): the lines are created with the order and linked to it,
+    // stamped with the acting user like any other write
+    let order = reg
+        .create_as(
+            &pool,
+            7,
+            "rusdoo.test.ordr",
+            vec![
+                ("name", json!("SO001")),
+                (
+                    "line_ids",
+                    json!([[0, 0, {"name": "a", "qty": 1}], [0, 0, {"name": "b", "qty": 2}]]),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+    let lines = line_ids_of(&reg, &pool, order).await;
+    assert_eq!(lines.len(), 2, "both lines must be created and linked");
+    let rows = reg
+        .read(
+            &pool,
+            "rusdoo.test.ordr.line",
+            &lines,
+            &["name", "qty", "create_uid"],
+        )
+        .await
+        .unwrap();
+    let mut named: Vec<(String, i64)> = rows
+        .iter()
+        .map(|r| {
+            (
+                r["name"].as_str().unwrap().to_string(),
+                r["qty"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    named.sort();
+    assert_eq!(named, vec![("a".into(), 1), ("b".into(), 2)]);
+    assert_eq!(
+        rows[0]["create_uid"][0],
+        json!(7),
+        "a line created through a command is stamped with the acting user"
+    );
+
+    // update(1): writes onto the linked line, leaving the link alone
+    let (line_a, line_b) = (lines[0], lines[1]);
+    reg.write(
+        &pool,
+        "rusdoo.test.ordr",
+        &[order],
+        vec![("line_ids", json!([[1, line_a, {"qty": 5}]]))],
+    )
+    .await
+    .unwrap();
+    let rows = reg
+        .read(&pool, "rusdoo.test.ordr.line", &[line_a], &["qty"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["qty"], json!(5));
+    assert_eq!(line_ids_of(&reg, &pool, order).await, lines);
+
+    // delete(2): the line row itself is gone, not merely unlinked
+    reg.write(
+        &pool,
+        "rusdoo.test.ordr",
+        &[order],
+        vec![("line_ids", json!([[2, line_b, 0]]))],
+    )
+    .await
+    .unwrap();
+    assert_eq!(line_ids_of(&reg, &pool, order).await, vec![line_a]);
+    let left: i64 =
+        sqlx::query_scalar(r#"SELECT count(*) FROM "rusdoo_test_ordr_line" WHERE "id" = $1"#)
+            .bind(line_b as i32)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(left, 0, "delete(2) removes the record, not just the link");
+}
+
+#[tokio::test]
+async fn o2m_create_command_cannot_reassign_the_link() {
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let reg = order_registry();
+    // own tables: the sibling command test runs in parallel on the others
+    for t in ["rusdoo_test_ordr_line2", "rusdoo_test_ordr2"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let mut reg2 = rusdoo_orm::registry::Registry::new();
+    for (name, table) in [
+        ("rusdoo.test.ordr.line", "rusdoo_test_ordr_line2"),
+        ("rusdoo.test.ordr", "rusdoo_test_ordr2"),
+    ] {
+        let model = reg.get(name).unwrap();
+        reg2.register(Model::new(
+            ModelMeta {
+                name: name.into(),
+                table: table.into(),
+                inherit: vec![],
+                inherits: vec![],
+            },
+            model
+                .fields()
+                .iter()
+                .filter(|f| {
+                    !["create_uid", "create_date", "write_uid", "write_date"]
+                        .contains(&f.name.as_str())
+                })
+                .cloned()
+                .collect(),
+        ))
+        .unwrap();
+    }
+    for m in ["rusdoo.test.ordr", "rusdoo.test.ordr.line"] {
+        reg2.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+
+    let other = reg2
+        .create(&pool, "rusdoo.test.ordr", vec![("name", json!("other"))])
+        .await
+        .unwrap();
+    // the values carry a foreign link; the owner of the command wins
+    let order = reg2
+        .create(
+            &pool,
+            "rusdoo.test.ordr",
+            vec![
+                ("name", json!("mine")),
+                (
+                    "line_ids",
+                    json!([[0, 0, {"name": "l", "order_id": other}]]),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+    let rows = reg2
+        .read(&pool, "rusdoo.test.ordr", &[other], &["line_ids"])
+        .await
+        .unwrap();
+    assert_eq!(
+        rows[0]["line_ids"],
+        json!([]),
+        "a client-supplied inverse must not steal the new line"
+    );
+    let rows = reg2
+        .read(&pool, "rusdoo.test.ordr", &[order], &["line_ids"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["line_ids"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn x2many_update_and_delete_are_scoped_to_the_owner() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.node3".into(),
+            table: "rusdoo_test_node3".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "parent_id",
+                FieldType::Many2one {
+                    comodel: "rusdoo.test.node3".into(),
+                },
+            ),
+            Field::new(
+                "child_ids",
+                FieldType::One2many {
+                    comodel: "rusdoo.test.node3".into(),
+                    inverse: "parent_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_node3""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.node3")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    let p1 = reg
+        .create(&pool, "rusdoo.test.node3", vec![("name", json!("p1"))])
+        .await
+        .unwrap();
+    let p2 = reg
+        .create(&pool, "rusdoo.test.node3", vec![("name", json!("p2"))])
+        .await
+        .unwrap();
+    // c belongs to p2
+    let c = reg
+        .create(
+            &pool,
+            "rusdoo.test.node3",
+            vec![("name", json!("c")), ("parent_id", json!(p2))],
+        )
+        .await
+        .unwrap();
+
+    // p1 tries to write onto a child it does not own
+    let err = reg
+        .write(
+            &pool,
+            "rusdoo.test.node3",
+            &[p1],
+            vec![("child_ids", json!([[1, c, {"name": "hijacked"}]]))],
+        )
+        .await;
+    assert!(err.is_err(), "cross-owner update must be refused");
+    // ...and p1 tries to delete it
+    let err = reg
+        .write(
+            &pool,
+            "rusdoo.test.node3",
+            &[p1],
+            vec![("child_ids", json!([[2, c, 0]]))],
+        )
+        .await;
+    assert!(err.is_err(), "cross-owner delete must be refused");
+
+    let rows = reg
+        .read(&pool, "rusdoo.test.node3", &[c], &["name", "parent_id"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["name"], json!("c"), "c must be untouched");
+    assert_eq!(rows[0]["parent_id"], json!([p2, "p2"]));
+
+    // the owner itself may do both
+    reg.write(
+        &pool,
+        "rusdoo.test.node3",
+        &[p2],
+        vec![("child_ids", json!([[1, c, {"name": "renamed"}]]))],
+    )
+    .await
+    .unwrap();
+    let rows = reg
+        .read(&pool, "rusdoo.test.node3", &[c], &["name"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["name"], json!("renamed"));
+    reg.write(
+        &pool,
+        "rusdoo.test.node3",
+        &[p2],
+        vec![("child_ids", json!([[2, c, 0]]))],
+    )
+    .await
+    .unwrap();
+    let left: i64 =
+        sqlx::query_scalar(r#"SELECT count(*) FROM "rusdoo_test_node3" WHERE "id" = $1"#)
+            .bind(c as i32)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(left, 0);
+}
+
+#[tokio::test]
+async fn m2m_create_and_delete_commands_live() {
+    use rusdoo_orm::registry::Registry;
+
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.tag3".into(),
+            table: "rusdoo_test_tag3".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.doc3".into(),
+            table: "rusdoo_test_doc3".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "tag_ids",
+                FieldType::Many2many {
+                    comodel: "rusdoo.test.tag3".into(),
+                    relation: "rusdoo_test_doc3_tag_rel".into(),
+                    column1: "doc_id".into(),
+                    column2: "tag_id".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    for t in [
+        "rusdoo_test_doc3_tag_rel",
+        "rusdoo_test_doc3",
+        "rusdoo_test_tag3",
+    ] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in ["rusdoo.test.tag3", "rusdoo.test.doc3"] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+
+    // create(0) on a many2many creates the record AND the relation row
+    let doc = reg
+        .create(
+            &pool,
+            "rusdoo.test.doc3",
+            vec![
+                ("name", json!("doc")),
+                ("tag_ids", json!([[0, 0, {"name": "fresh"}]])),
+            ],
+        )
+        .await
+        .unwrap();
+    let rows = reg
+        .read(&pool, "rusdoo.test.doc3", &[doc], &["tag_ids"])
+        .await
+        .unwrap();
+    let tags: Vec<i64> = rows[0]["tag_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    assert_eq!(tags.len(), 1);
+    let rows = reg
+        .read(&pool, "rusdoo.test.tag3", &tags, &["name"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["name"], json!("fresh"));
+
+    // update(1) reaches the linked tag
+    reg.write(
+        &pool,
+        "rusdoo.test.doc3",
+        &[doc],
+        vec![("tag_ids", json!([[1, tags[0], {"name": "renamed"}]]))],
+    )
+    .await
+    .unwrap();
+    let rows = reg
+        .read(&pool, "rusdoo.test.tag3", &tags, &["name"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["name"], json!("renamed"));
+
+    // delete(2) drops the relation row and the tag itself
+    reg.write(
+        &pool,
+        "rusdoo.test.doc3",
+        &[doc],
+        vec![("tag_ids", json!([[2, tags[0], 0]]))],
+    )
+    .await
+    .unwrap();
+    let rows = reg
+        .read(&pool, "rusdoo.test.doc3", &[doc], &["tag_ids"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["tag_ids"], json!([]));
+    let left: i64 =
+        sqlx::query_scalar(r#"SELECT count(*) FROM "rusdoo_test_tag3" WHERE "id" = $1"#)
+            .bind(tags[0] as i32)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(left, 0, "delete(2) removes the tag record itself");
+    let dangling: i64 = sqlx::query_scalar(
+        r#"SELECT count(*) FROM "rusdoo_test_doc3_tag_rel" WHERE "tag_id" = $1"#,
+    )
+    .bind(tags[0] as i32)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(dangling, 0, "no dangling relation rows are left behind");
+}
+
+#[tokio::test]
+async fn malformed_create_and_update_commands_are_refused() {
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let reg = order_registry();
+    for t in ["rusdoo_test_ordr_line3", "rusdoo_test_ordr3"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let mut reg3 = rusdoo_orm::registry::Registry::new();
+    for (name, table) in [
+        ("rusdoo.test.ordr.line", "rusdoo_test_ordr_line3"),
+        ("rusdoo.test.ordr", "rusdoo_test_ordr3"),
+    ] {
+        let model = reg.get(name).unwrap();
+        reg3.register(Model::new(
+            ModelMeta {
+                name: name.into(),
+                table: table.into(),
+                inherit: vec![],
+                inherits: vec![],
+            },
+            model
+                .fields()
+                .iter()
+                .filter(|f| {
+                    !["create_uid", "create_date", "write_uid", "write_date"]
+                        .contains(&f.name.as_str())
+                })
+                .cloned()
+                .collect(),
+        ))
+        .unwrap();
+    }
+    for m in ["rusdoo.test.ordr", "rusdoo.test.ordr.line"] {
+        reg3.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+
+    // a create command whose third slot is not a values object
+    let err = reg3
+        .create(
+            &pool,
+            "rusdoo.test.ordr",
+            vec![("name", json!("x")), ("line_ids", json!([[0, 0, 0]]))],
+        )
+        .await;
+    assert!(err.is_err(), "create(0) without values must be refused");
+
+    // an update command missing its record id
+    let order = reg3
+        .create(&pool, "rusdoo.test.ordr", vec![("name", json!("y"))])
+        .await
+        .unwrap();
+    let err = reg3
+        .write(
+            &pool,
+            "rusdoo.test.ordr",
+            &[order],
+            vec![("line_ids", json!([[1, null, {"qty": 1}]]))],
+        )
+        .await;
+    assert!(err.is_err(), "update(1) without an id must be refused");
+}

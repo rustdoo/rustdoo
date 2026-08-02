@@ -717,7 +717,7 @@ impl Registry {
 /// Normalize an x2many field value into a list of command tuples.
 /// Accepts `[[code, id, values], ...]` (commands) or `[id, id, ...]`
 /// (a bare id list, treated as `set`).
-fn parse_commands(value: &Value) -> Result<Vec<Value>, RusdooError> {
+pub(crate) fn parse_commands(value: &Value) -> Result<Vec<Value>, RusdooError> {
     let arr = value.as_array().ok_or_else(|| {
         RusdooError::Validation("x2many value must be a list of commands or ids".into())
     })?;
@@ -791,11 +791,7 @@ impl Registry {
         owner: i64,
         commands: &[Value],
     ) -> Result<(), RusdooError> {
-        let want_id = |arr: &[Value]| -> Result<i64, RusdooError> {
-            arr.get(1)
-                .and_then(Value::as_i64)
-                .ok_or_else(|| RusdooError::Validation("x2many command needs a record id".into()))
-        };
+        let want_id = command_id;
         for cmd in commands {
             let arr = cmd
                 .as_array()
@@ -803,6 +799,26 @@ impl Registry {
             let code = arr.first().and_then(Value::as_i64).ok_or_else(|| {
                 RusdooError::Validation("x2many command needs a numeric code".into())
             })?;
+            // CREATE/UPDATE/DELETE act on the comodel record itself, so both
+            // x2many kinds share them — only how the link is established
+            // (one2many inverse column vs relation row) differs
+            match code {
+                0 => {
+                    self.command_create(&mut *tx, uid, field, owner, arr)
+                        .await?;
+                    continue;
+                }
+                1 => {
+                    self.command_update(&mut *tx, uid, field, owner, arr)
+                        .await?;
+                    continue;
+                }
+                2 => {
+                    self.command_delete(&mut *tx, field, owner, arr).await?;
+                    continue;
+                }
+                _ => {}
+            }
             match &field.ty {
                 FieldType::Many2many {
                     relation,
@@ -958,5 +974,210 @@ impl Registry {
             }
         }
         Ok(())
+    }
+
+    /// `Command.CREATE` (`[0, 0, {values}]`): create a record in the
+    /// comodel and link it to `owner`. The link itself is framework-owned:
+    /// an inverse supplied in the values would attach the new record to
+    /// someone else, so the owner always wins over it.
+    async fn command_create(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        uid: i64,
+        field: &Field,
+        owner: i64,
+        arr: &[Value],
+    ) -> Result<(), RusdooError> {
+        let values = command_values(arr)?;
+        match &field.ty {
+            FieldType::One2many { comodel, inverse } => {
+                let mut values: Vec<(&str, Value)> = values
+                    .into_iter()
+                    .filter(|(name, _)| *name != inverse.as_str())
+                    .collect();
+                values.push((inverse.as_str(), Value::from(owner)));
+                self.create_in(&mut *tx, uid, comodel, values).await?;
+            }
+            FieldType::Many2many {
+                comodel,
+                relation,
+                column1,
+                column2,
+            } => {
+                let id = self.create_in(&mut *tx, uid, comodel, values).await?;
+                let sql = format!(
+                    "INSERT INTO {} ({}, {}) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    quote_ident(relation)?,
+                    quote_ident(column1)?,
+                    quote_ident(column2)?
+                );
+                sqlx::query(&sql)
+                    .bind(owner as i32)
+                    .bind(id as i32)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(db_err)?;
+            }
+            other => {
+                return Err(RusdooError::Validation(format!(
+                    "x2many create on non-x2many field type {other:?}"
+                )))
+            }
+        }
+        Ok(())
+    }
+
+    /// `Command.UPDATE` (`[1, id, {values}]`): write onto a linked record.
+    /// Scoped to `owner` — with no record rules yet, an unscoped update
+    /// would turn any relational field into a lever for writing arbitrary
+    /// comodel rows, the same corruption the unlink path already refuses.
+    ///
+    /// Type-erased on purpose: the write it delegates to reaches back here
+    /// through `apply_x2many`, and only a declared `Send` bound (rather
+    /// than an inferred one) closes that cycle for the compiler.
+    fn command_update<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'static, Postgres>,
+        uid: i64,
+        field: &'a Field,
+        owner: i64,
+        arr: &'a [Value],
+    ) -> Pin<Box<dyn Future<Output = Result<(), RusdooError>> + Send + 'a>> {
+        Box::pin(async move {
+            let id = command_id(arr)?;
+            let values = command_values(arr)?;
+            self.ensure_linked(&mut *tx, field, owner, id).await?;
+            if values.is_empty() {
+                // Odoo's write({}) is a no-op, not even a LOG_ACCESS stamp
+                return Ok(());
+            }
+            let comodel = comodel_of(field)?;
+            self.write_in(&mut *tx, uid, comodel, &[id], values).await
+        })
+    }
+
+    /// `Command.DELETE` (`[2, id, 0]`): unlink the record and delete it
+    /// from the comodel, scoped to `owner` like UPDATE. Relation rows go
+    /// first: they carry no foreign key, so deleting the record alone
+    /// would leave dangling links behind.
+    async fn command_delete(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        field: &Field,
+        owner: i64,
+        arr: &[Value],
+    ) -> Result<(), RusdooError> {
+        let id = command_id(arr)?;
+        self.ensure_linked(&mut *tx, field, owner, id).await?;
+        if let FieldType::Many2many {
+            relation, column2, ..
+        } = &field.ty
+        {
+            // every link to the deleted record, not just this owner's
+            sqlx::query(&format!(
+                "DELETE FROM {} WHERE {} = $1",
+                quote_ident(relation)?,
+                quote_ident(column2)?
+            ))
+            .bind(id as i32)
+            .execute(&mut **tx)
+            .await
+            .map_err(db_err)?;
+        }
+        let comodel = comodel_of(field)?;
+        let model = self
+            .get(comodel)
+            .ok_or_else(|| RusdooError::Validation(format!("comodel not registered: {comodel}")))?;
+        let (sql, params) = model.delete_sql(&[id])?;
+        build_query(&sql, &params)?
+            .execute(&mut **tx)
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Fail unless `id` is currently linked to `owner` through `field`:
+    /// the one2many child's inverse column points at it, or the relation
+    /// table carries the pair.
+    async fn ensure_linked(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        field: &Field,
+        owner: i64,
+        id: i64,
+    ) -> Result<(), RusdooError> {
+        let sql = match &field.ty {
+            FieldType::One2many { comodel, inverse } => {
+                let model = self.get(comodel).ok_or_else(|| {
+                    RusdooError::Validation(format!("comodel not registered: {comodel}"))
+                })?;
+                format!(
+                    r#"SELECT 1 FROM {} WHERE "id" = $1 AND {} = $2"#,
+                    quote_ident(&model.meta.table)?,
+                    quote_ident(inverse)?
+                )
+            }
+            FieldType::Many2many {
+                relation,
+                column1,
+                column2,
+                ..
+            } => format!(
+                "SELECT 1 FROM {} WHERE {} = $2 AND {} = $1",
+                quote_ident(relation)?,
+                quote_ident(column1)?,
+                quote_ident(column2)?
+            ),
+            other => {
+                return Err(RusdooError::Validation(format!(
+                    "x2many command on non-x2many field type {other:?}"
+                )))
+            }
+        };
+        let linked = sqlx::query(&sql)
+            .bind(id as i32)
+            .bind(owner as i32)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(db_err)?
+            .is_some();
+        if linked {
+            Ok(())
+        } else {
+            Err(RusdooError::Validation(format!(
+                "record {id} is not linked to record {owner} through field {:?}",
+                field.name
+            )))
+        }
+    }
+}
+
+/// The record id an x2many command targets (its second slot).
+fn command_id(arr: &[Value]) -> Result<i64, RusdooError> {
+    arr.get(1)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| RusdooError::Validation("x2many command needs a record id".into()))
+}
+
+/// The values a CREATE/UPDATE command carries (its third slot). A missing
+/// or non-object slot is a malformed command — very likely a link tuple
+/// (`[4, id, 0]`) that lost its code, so it is refused rather than read as
+/// "no values".
+fn command_values(arr: &[Value]) -> Result<Vec<(&str, Value)>, RusdooError> {
+    match arr.get(2) {
+        Some(Value::Object(map)) => Ok(map.iter().map(|(k, v)| (k.as_str(), v.clone())).collect()),
+        _ => Err(RusdooError::Validation(
+            "x2many create/update command needs a values object in its third slot".into(),
+        )),
+    }
+}
+
+/// The comodel an x2many field points at.
+fn comodel_of(field: &Field) -> Result<&str, RusdooError> {
+    match &field.ty {
+        FieldType::One2many { comodel, .. } | FieldType::Many2many { comodel, .. } => Ok(comodel),
+        other => Err(RusdooError::Validation(format!(
+            "x2many command on non-x2many field type {other:?}"
+        ))),
     }
 }
