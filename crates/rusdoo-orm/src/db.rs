@@ -199,6 +199,26 @@ impl Model {
 }
 
 impl Registry {
+    /// How many records the domain matches, counted in the database.
+    pub async fn search_count(
+        &self,
+        pool: &PgPool,
+        model_name: &str,
+        domain: &Domain,
+        opts: &SearchOptions,
+    ) -> Result<i64, RusdooError> {
+        let model = self
+            .get(model_name)
+            .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
+        let (sql, params) =
+            model.count_sql_with(domain, opts, crate::sql::Ctx::full(model, self))?;
+        let row = build_query(&sql, &params)?
+            .fetch_one(pool)
+            .await
+            .map_err(db_err)?;
+        row.try_get::<i64, _>(0).map_err(db_err)
+    }
+
     /// Run a grouped read: one map per group, keyed by the specs the
     /// caller asked for (`"country_id"`, `"__count"`, `"qty:sum"`, ...).
     /// Values arrive as JSON because every aggregate produces its own SQL

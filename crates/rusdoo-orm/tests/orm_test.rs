@@ -501,3 +501,40 @@ fn date_values_are_cast_in_domains() {
     assert!(sql.contains(r#""day" IS NULL"#), "{sql}");
     assert!(params.is_empty());
 }
+
+// ---------- counting ----------
+
+#[test]
+fn count_sql_counts_in_the_database() {
+    let model = partner_model();
+    let dom = parse_domain(&json!([["color", ">", 3]])).unwrap();
+    let opts = SearchOptions {
+        active_test: false,
+        ..SearchOptions::default()
+    };
+    let (sql, params) = model.count_sql(&dom, &opts).unwrap();
+    // no ids travel just to be counted
+    assert_eq!(
+        sql,
+        r#"SELECT COUNT(*) FROM "res_partner" WHERE "color" > $1"#
+    );
+    assert_eq!(params, vec![json!(3)]);
+
+    // a capped count keeps the paging clauses, so it can still answer
+    // "at least n" like Odoo's search_count(limit=n)
+    let opts = SearchOptions {
+        limit: Some(80),
+        active_test: false,
+        ..SearchOptions::default()
+    };
+    let (sql, _) = model.count_sql(&dom, &opts).unwrap();
+    assert!(
+        sql.starts_with("SELECT COUNT(*) FROM (SELECT \"id\""),
+        "{sql}"
+    );
+    assert!(sql.contains("LIMIT 80"), "{sql}");
+
+    // and the archive filter applies to a count like to any search
+    let (sql, _) = model.count_sql(&dom, &SearchOptions::default()).unwrap();
+    assert!(sql.contains(r#""active" = $2"#), "{sql}");
+}

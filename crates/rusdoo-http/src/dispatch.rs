@@ -824,11 +824,11 @@ impl OrmService {
                 let domain = self
                     .scoped_domain(uid, model, Operation::Read, domain)
                     .await?;
-                let ids = self
+                let count = self
                     .registry
-                    .search(&self.pool, model, &domain, &opts)
+                    .search_count(&self.pool, model, &domain, &opts)
                     .await?;
-                Ok(json!(ids.len()))
+                Ok(json!(count))
             }
             "search_read" => {
                 let domain = self.arg_domain(args.first().or_else(|| kwargs.get("domain")))?;
@@ -1036,12 +1036,12 @@ impl OrmService {
                 let length = if opts.limit.is_some() && limit_reached && !count_limit_reached {
                     let count_opts = SearchOptions {
                         limit: count_limit,
+                        active_test: opts.active_test,
                         ..SearchOptions::default()
                     };
                     self.registry
-                        .search(&self.pool, model, &domain, &count_opts)
-                        .await?
-                        .len() as u64
+                        .search_count(&self.pool, model, &domain, &count_opts)
+                        .await? as u64
                 } else {
                     current_length
                 };

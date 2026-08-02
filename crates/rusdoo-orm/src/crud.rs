@@ -70,6 +70,43 @@ impl Model {
         Ok((sql, params))
     }
 
+    /// How many records the domain matches, as SQL.
+    pub fn count_sql(
+        &self,
+        domain: &Domain,
+        opts: &SearchOptions,
+    ) -> Result<(String, Vec<Value>), RusdooError> {
+        self.count_sql_with(domain, opts, Ctx::model(self))
+    }
+
+    /// `SELECT COUNT(*)` over the same WHERE a search would run.
+    /// Counting in the database is the point: materializing every id only
+    /// to call `.len()` on them pulls the whole table through the wire
+    /// for a number.
+    ///
+    /// A `limit` still caps the count (Odoo's `search_count(limit=n)`
+    /// answers "at least n"), so the subquery keeps the paging clauses.
+    pub(crate) fn count_sql_with(
+        &self,
+        domain: &Domain,
+        opts: &SearchOptions,
+        ctx: Ctx,
+    ) -> Result<(String, Vec<Value>), RusdooError> {
+        let (inner, params) = self.search_sql_with(domain, opts, ctx)?;
+        if opts.limit.is_none() && opts.offset.is_none() {
+            // no paging: count straight from the table
+            let from = inner
+                .split_once(" FROM ")
+                .map(|(_, rest)| rest)
+                .expect("search SQL always has a FROM");
+            return Ok((format!("SELECT COUNT(*) FROM {from}"), params));
+        }
+        Ok((
+            format!("SELECT COUNT(*) FROM ({inner}) AS \"counted\""),
+            params,
+        ))
+    }
+
     pub fn read_sql(
         &self,
         ids: &[i64],
