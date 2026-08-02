@@ -2519,3 +2519,282 @@ async fn active_test_context_controls_archived_records_live() {
     let resp = call("read", json!([[archived], ["name"]]), json!({})).await;
     assert_eq!(resp["result"][0]["name"], json!("Antiga"));
 }
+
+/// What the Owl client fetches before drawing anything: its session and
+/// the navigation tree.
+#[tokio::test]
+async fn webclient_boot_endpoints_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    // own schema: dispatch queries ir_ui_menu/ir_model_data by their fixed
+    // names, so this must not share `public` with the other system tests
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                sqlx::Executor::execute(&mut *conn, "CREATE SCHEMA IF NOT EXISTS rusdoo_boot_test")
+                    .await?;
+                sqlx::Executor::execute(&mut *conn, "SET search_path TO rusdoo_boot_test").await?;
+                Ok(())
+            })
+        })
+        .connect_lazy(&url)
+        .unwrap();
+
+    let mut reg = Registry::new();
+    for (name, table, fields) in [
+        (
+            "ir.actions.act_window",
+            "ir_act_window",
+            vec![
+                Field::new("name", FieldType::Char { size: None }),
+                Field::new("res_model", FieldType::Char { size: None }).required(),
+            ],
+        ),
+        (
+            "ir.ui.menu",
+            "ir_ui_menu",
+            vec![
+                Field::new("name", FieldType::Char { size: None }),
+                Field::new(
+                    "parent_id",
+                    FieldType::Many2one {
+                        comodel: "ir.ui.menu".into(),
+                    },
+                ),
+                Field::new("sequence", FieldType::Integer),
+                Field::new("action", FieldType::Char { size: None }),
+            ],
+        ),
+        (
+            "res.partner",
+            "res_partner",
+            vec![Field::new("name", FieldType::Char { size: None }).required()],
+        ),
+        (
+            "res.users",
+            "res_users",
+            vec![
+                Field::new("login", FieldType::Char { size: None }).required(),
+                Field::new("password", FieldType::Char { size: None }).private(),
+            ],
+        ),
+    ] {
+        reg.register(Model::new(
+            ModelMeta {
+                name: name.into(),
+                table: table.into(),
+                inherit: vec![],
+                inherits: vec![],
+            },
+            fields,
+        ))
+        .unwrap();
+    }
+    for t in ["ir_act_window", "ir_ui_menu", "res_partner", "res_users"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in [
+        "ir.actions.act_window",
+        "ir.ui.menu",
+        "res.partner",
+        "res.users",
+    ] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+    sqlx::query(r#"DROP TABLE IF EXISTS "ir_model_data""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"CREATE TABLE "ir_model_data" ("module" varchar, "name" varchar,
+           "model" varchar, "res_id" int4)"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let action = reg
+        .create(
+            &pool,
+            "ir.actions.act_window",
+            vec![
+                ("name", json!("Parceiros")),
+                ("res_model", json!("res.partner")),
+            ],
+        )
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"INSERT INTO "ir_model_data" ("module", "name", "model", "res_id")
+           VALUES ('test', 'act_partners', 'ir.actions.act_window', $1)"#,
+    )
+    .bind(action as i32)
+    .execute(&pool)
+    .await
+    .unwrap();
+    // an app menu with no action of its own, and a child that has one
+    let app = reg
+        .create(
+            &pool,
+            "ir.ui.menu",
+            vec![("name", json!("Vendas")), ("sequence", json!(1))],
+        )
+        .await
+        .unwrap();
+    let child = reg
+        .create(
+            &pool,
+            "ir.ui.menu",
+            vec![
+                ("name", json!("Parceiros")),
+                ("parent_id", json!(app)),
+                ("action", json!("test.act_partners")),
+                ("sequence", json!(1)),
+            ],
+        )
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"INSERT INTO "ir_model_data" ("module", "name", "model", "res_id")
+           VALUES ('test', 'menu_vendas', 'ir.ui.menu', $1)"#,
+    )
+    .bind(app as i32)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let service = OrmService::insecure(Arc::new(reg), pool.clone());
+    let (status, body) = get_html(router(service.clone()), "/web/webclient/load_menus").await;
+    assert_eq!(status, StatusCode::OK);
+    let menus: Value = serde_json::from_str(&body).unwrap();
+
+    // the synthetic root holds the apps
+    assert_eq!(menus["root"]["children"], json!([app]));
+    assert_eq!(menus["root"]["id"], json!("root"));
+
+    // an app opens the action of its first descendant that has one
+    let app_menu = &menus[app.to_string()];
+    assert_eq!(app_menu["name"], json!("Vendas"));
+    assert_eq!(app_menu["children"], json!([child]));
+    assert_eq!(app_menu["appID"], json!(app));
+    assert_eq!(app_menu["xmlid"], json!("test.menu_vendas"));
+    assert_eq!(app_menu["actionID"], json!(action));
+    assert_eq!(app_menu["actionModel"], json!("ir.actions.act_window"));
+
+    // the child carries its own action and points back at its app
+    let child_menu = &menus[child.to_string()];
+    assert_eq!(child_menu["appID"], json!(app));
+    assert_eq!(child_menu["actionID"], json!(action));
+    assert_eq!(child_menu["children"], json!([]));
+    // no external id was recorded for the child
+    assert_eq!(child_menu["xmlid"], json!(""));
+
+    // an anonymous session gets the public answer, and the client routes
+    // itself to the login page
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/session/get_session_info",
+        json!({"jsonrpc": "2.0", "id": 1, "method": "call", "params": {}}),
+    )
+    .await;
+    assert_eq!(resp["result"]["uid"], json!(null));
+    assert_eq!(resp["result"]["is_public"], json!(true));
+    assert_eq!(resp["result"]["server_version"], json!("19.0"));
+
+    // with a session it answers as that user
+    let hash = rusdoo_http::session::hash_password("admin").unwrap();
+    reg_users_insert(&pool, "admin", &hash).await;
+    let secure = OrmService::new(Arc::new(boot_registry()), pool.clone());
+    let (_, _, cookie) = rpc_full(
+        router(secure.clone()),
+        "/web/session/authenticate",
+        json!({"jsonrpc":"2.0","id":2,"method":"call",
+               "params":{"login":"admin","password":"admin"}}),
+        None,
+    )
+    .await;
+    let cookie = cookie.unwrap().split(';').next().unwrap().to_string();
+    let (_, resp, _) = rpc_full(
+        router(secure.clone()),
+        "/web/session/get_session_info",
+        json!({"jsonrpc": "2.0", "id": 3, "method": "call", "params": {}}),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(resp["result"]["uid"], json!(1));
+    assert_eq!(resp["result"]["username"], json!("admin"));
+    assert_eq!(
+        resp["result"]["is_system"],
+        json!(true),
+        "uid 1 is the superuser"
+    );
+    assert_eq!(resp["result"]["user_context"]["uid"], json!(1));
+
+    // ...and the menus need that session
+    let response = router(secure)
+        .oneshot(
+            Request::get("/web/webclient/load_menus")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// The same registry as the boot test, for the authenticated half.
+fn boot_registry() -> Registry {
+    let mut reg = Registry::new();
+    for (name, table, fields) in [
+        (
+            "ir.ui.menu",
+            "ir_ui_menu",
+            vec![
+                Field::new("name", FieldType::Char { size: None }),
+                Field::new(
+                    "parent_id",
+                    FieldType::Many2one {
+                        comodel: "ir.ui.menu".into(),
+                    },
+                ),
+                Field::new("sequence", FieldType::Integer),
+                Field::new("action", FieldType::Char { size: None }),
+            ],
+        ),
+        (
+            "res.users",
+            "res_users",
+            vec![
+                Field::new("login", FieldType::Char { size: None }).required(),
+                Field::new("password", FieldType::Char { size: None }).private(),
+            ],
+        ),
+    ] {
+        reg.register(Model::new(
+            ModelMeta {
+                name: name.into(),
+                table: table.into(),
+                inherit: vec![],
+                inherits: vec![],
+            },
+            fields,
+        ))
+        .unwrap();
+    }
+    reg
+}
+
+async fn reg_users_insert(pool: &sqlx::PgPool, login: &str, hash: &str) {
+    sqlx::query(r#"INSERT INTO "res_users" ("login", "password") VALUES ($1, $2)"#)
+        .bind(login)
+        .bind(hash)
+        .execute(pool)
+        .await
+        .unwrap();
+}

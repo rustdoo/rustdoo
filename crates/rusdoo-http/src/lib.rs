@@ -11,6 +11,7 @@ pub mod jsonrpc;
 pub mod routes;
 pub mod session;
 mod web_read;
+mod webclient;
 
 use dispatch::OrmService;
 

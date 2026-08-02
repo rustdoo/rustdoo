@@ -2,7 +2,7 @@
 //! web client and classic RPC clients.
 
 use axum::extract::{Path, State};
-use axum::http::{header, HeaderMap};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{AppendHeaders, Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -24,6 +24,8 @@ pub fn router(service: OrmService) -> Router {
         .route("/web/dataset/call_kw", post(call_kw))
         .route("/web/session/authenticate", post(authenticate))
         .route("/web/session/destroy", post(destroy))
+        .route("/web/session/get_session_info", post(session_info))
+        .route("/web/webclient/load_menus", get(load_menus))
         .route("/web", get(web_index))
         .route("/web/view/{xml_id}", get(render_view_page))
         .route("/web/action/{xml_id}", get(render_action_page))
@@ -223,6 +225,50 @@ async fn jsonrpc_endpoint(
     warn_unverified_attribution(&service, uid);
     let outcome = service.call_kw(uid, model, method, &args, &kwargs).await;
     respond(request.id, outcome)
+}
+
+/// `/web/session/get_session_info` — what the web client boots with.
+/// Anonymous sessions get the public answer (uid null), like Odoo:
+/// the client itself decides to route to the login page.
+async fn session_info(
+    State(service): State<OrmService>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Json<JsonRpcResponse> {
+    let request = match parse_envelope(body) {
+        Ok(request) => request,
+        Err(error) => return Json(error),
+    };
+    let session = current_session(&service, &headers);
+    let info = service.session_info(session.as_ref()).await;
+    Json(JsonRpcResponse::result(request.id, info))
+}
+
+/// `/web/webclient/load_menus` — the navigation tree, flat and keyed by
+/// id. A plain JSON body (not a JSON-RPC envelope), like Odoo's http
+/// route, and never cached: menus depend on who is asking.
+async fn load_menus(State(service): State<OrmService>, headers: HeaderMap) -> Response {
+    let session = current_session(&service, &headers);
+    if service.require_auth && session.is_none() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            AppendHeaders([(header::CACHE_CONTROL, "no-store")]),
+            Json(json!({"error": "rusdoo session expired"})),
+        )
+            .into_response();
+    }
+    match service.web_menus(session.as_ref()).await {
+        Ok(menus) => (
+            AppendHeaders([(header::CACHE_CONTROL, "no-store")]),
+            Json(menus),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": error.message})),
+        )
+            .into_response(),
+    }
 }
 
 fn current_session(service: &OrmService, headers: &HeaderMap) -> Option<crate::session::Session> {

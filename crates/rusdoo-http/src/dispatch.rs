@@ -465,6 +465,15 @@ impl OrmService {
 
     /// The target model of an `ir.actions.act_window` external id, or None
     /// if it can't be resolved (used to gate menu visibility).
+    /// The numeric id of an `ir.actions.act_window` external id, or None
+    /// when it does not resolve (a menu pointing at a missing action).
+    pub(crate) async fn action_id(&self, xml_id: &str) -> Option<i64> {
+        let (module, name) = xml_id.split_once('.')?;
+        self.resolve_external_id(module, name, "ir.actions.act_window")
+            .await
+            .ok()
+    }
+
     async fn action_res_model(&self, xml_id: &str) -> Option<String> {
         let (module, name) = xml_id.split_once('.')?;
         let res_id = self
