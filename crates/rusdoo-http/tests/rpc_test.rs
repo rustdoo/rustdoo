@@ -2069,3 +2069,275 @@ async fn web_save_and_commands_enforce_access_live() {
     assert_eq!(record["name"], json!("admin cria"));
     assert_eq!(record["line_ids"].as_array().unwrap().len(), 1);
 }
+
+fn group_registry(prefix: &str) -> Registry {
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.country".into(),
+            table: format!("{prefix}_country"),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.rg.sale".into(),
+            table: format!("{prefix}_sale"),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new("amount", FieldType::Integer),
+            Field::new("day", FieldType::Date),
+            Field::new("secret", FieldType::Integer).private(),
+            Field::new(
+                "country_id",
+                FieldType::Many2one {
+                    comodel: "res.country".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg
+}
+
+#[tokio::test]
+async fn read_group_shapes_groups_for_the_web_client_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let reg = group_registry("rusdoo_test_rg");
+    for t in ["rusdoo_test_rg_sale", "rusdoo_test_rg_country"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in ["res.country", "rusdoo.test.rg.sale"] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+    let br = reg
+        .create(&pool, "res.country", vec![("name", json!("Brasil"))])
+        .await
+        .unwrap();
+    let pt = reg
+        .create(&pool, "res.country", vec![("name", json!("Portugal"))])
+        .await
+        .unwrap();
+    for (name, amount, country, day) in [
+        ("a", 10, Some(br), "2026-01-05"),
+        ("b", 20, Some(br), "2026-01-20"),
+        ("c", 5, Some(pt), "2026-02-03"),
+        ("d", 7, None, "2026-02-11"),
+    ] {
+        reg.create(
+            &pool,
+            "rusdoo.test.rg.sale",
+            vec![
+                ("name", json!(name)),
+                ("amount", json!(amount)),
+                ("country_id", country.map_or(json!(null), |c| json!(c))),
+                ("day", json!(day)),
+            ],
+        )
+        .await
+        .unwrap();
+    }
+    let service = OrmService::insecure(Arc::new(reg), pool.clone());
+
+    // formatted_read_group: a many2one group carries [id, display_name]
+    // and the domain that reopens it
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "call",
+            "params": {"model": "rusdoo.test.rg.sale", "method": "formatted_read_group",
+                       "args": [[], ["country_id"], ["amount:sum"]],
+                       "kwargs": {"order": "amount:sum desc"}}
+        }),
+    )
+    .await;
+    let groups = resp["result"]
+        .as_array()
+        .unwrap_or_else(|| panic!("formatted_read_group must return a list, got: {resp}"));
+    assert_eq!(groups.len(), 3);
+    assert_eq!(groups[0]["country_id"], json!([br, "Brasil"]));
+    assert_eq!(groups[0]["amount:sum"], json!(30));
+    assert_eq!(
+        groups[0]["__extra_domain"],
+        json!([["country_id", "=", br]])
+    );
+    // the group with no country is false, and its domain is the unset one
+    let empty = groups
+        .iter()
+        .find(|g| g["country_id"] == json!(false))
+        .expect("the empty group is present");
+    assert_eq!(empty["__extra_domain"], json!([["country_id", "=", false]]));
+
+    // web_read_group adds __count and the total number of groups
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "call",
+            "params": {"model": "rusdoo.test.rg.sale", "method": "web_read_group",
+                       "args": [[], ["country_id"], []], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"]["length"], json!(3));
+    let groups = resp["result"]["groups"].as_array().unwrap();
+    assert_eq!(groups.len(), 3);
+    assert!(groups.iter().all(|g| g["__count"].is_number()));
+
+    // a page of groups still reports how many there are in total
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 3, "method": "call",
+            "params": {"model": "rusdoo.test.rg.sale", "method": "web_read_group",
+                       "args": [[], ["country_id"], [], 1], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"]["groups"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        resp["result"]["length"],
+        json!(3),
+        "length counts every group, not the page"
+    );
+
+    // a date bucket's domain is the half-open interval it covers — and
+    // feeding it back as a search returns exactly the group's records
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 4, "method": "call",
+            "params": {"model": "rusdoo.test.rg.sale", "method": "web_read_group",
+                       "args": [[], ["day:month"], []], "kwargs": {}}
+        }),
+    )
+    .await;
+    let groups = resp["result"]["groups"].as_array().unwrap().clone();
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0]["day:month"], json!("2026-01-01"));
+    assert_eq!(
+        groups[0]["__extra_domain"],
+        json!([["day", ">=", "2026-01-01"], ["day", "<", "2026-02-01"]])
+    );
+    for group in &groups {
+        let (_, resp) = rpc(
+            router(service.clone()),
+            "/web/dataset/call_kw",
+            json!({
+                "jsonrpc": "2.0", "id": 5, "method": "call",
+                "params": {"model": "rusdoo.test.rg.sale", "method": "search_count",
+                           "args": [group["__extra_domain"]], "kwargs": {}}
+            }),
+        )
+        .await;
+        assert_eq!(
+            resp["result"], group["__count"],
+            "the group domain must select exactly the group"
+        );
+    }
+
+    // the domain filters before grouping
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 6, "method": "call",
+            "params": {"model": "rusdoo.test.rg.sale", "method": "web_read_group",
+                       "args": [[["amount", ">=", 10]], ["country_id"], []], "kwargs": {}}
+        }),
+    )
+    .await;
+    assert_eq!(resp["result"]["length"], json!(1));
+    assert_eq!(resp["result"]["groups"][0]["__count"], json!(2));
+}
+
+#[tokio::test]
+async fn read_group_refuses_what_it_cannot_answer_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    // own tables: the sibling grouping test drops and recreates its own
+    let reg = group_registry("rusdoo_test_rgx");
+    for t in ["rusdoo_test_rgx_sale", "rusdoo_test_rgx_country"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for m in ["res.country", "rusdoo.test.rg.sale"] {
+        reg.get(m).unwrap().init_table(&pool).await.unwrap();
+    }
+    let service = OrmService::insecure(Arc::new(reg), pool);
+
+    let refused = [
+        // an aggregate over a private field would disclose it
+        json!({"model": "rusdoo.test.rg.sale", "method": "formatted_read_group",
+               "args": [[], ["country_id"], ["secret:sum"]], "kwargs": {}}),
+        // unknown field, unknown function, unknown granularity
+        json!({"model": "rusdoo.test.rg.sale", "method": "formatted_read_group",
+               "args": [[], ["nope"], []], "kwargs": {}}),
+        json!({"model": "rusdoo.test.rg.sale", "method": "formatted_read_group",
+               "args": [[], ["country_id"], ["amount:median"]], "kwargs": {}}),
+        json!({"model": "rusdoo.test.rg.sale", "method": "web_read_group",
+               "args": [[], ["day:fortnight"], []], "kwargs": {}}),
+        // having filters on the aggregates; ignoring it would answer with
+        // groups the caller excluded
+        json!({"model": "rusdoo.test.rg.sale", "method": "formatted_read_group",
+               "args": [[], ["country_id"], [], [["amount:sum", ">", 5]]], "kwargs": {}}),
+        // unfolding is not implemented — better refused than silently folded
+        json!({"model": "rusdoo.test.rg.sale", "method": "web_read_group",
+               "args": [[], ["country_id"], []], "kwargs": {"auto_unfold": true}}),
+        json!({"model": "rusdoo.test.rg.sale", "method": "web_read_group",
+               "args": [[], ["country_id"], []],
+               "kwargs": {"opening_info": [{"value": 1, "folded": false}]}}),
+        // grouping by nothing has no meaning for the client
+        json!({"model": "rusdoo.test.rg.sale", "method": "web_read_group",
+               "args": [[], [], []], "kwargs": {}}),
+        // a second level with a typo must not pass because only the first
+        // level is read
+        json!({"model": "rusdoo.test.rg.sale", "method": "web_read_group",
+               "args": [[], ["country_id", "nope"], []], "kwargs": {}}),
+    ];
+    for (index, params) in refused.iter().enumerate() {
+        let (_, resp) = rpc(
+            router(service.clone()),
+            "/web/dataset/call_kw",
+            json!({"jsonrpc": "2.0", "id": index, "method": "call", "params": params}),
+        )
+        .await;
+        assert!(
+            resp.get("error").is_some(),
+            "call {index} must be refused: {params} -> {resp}"
+        );
+    }
+
+    // auto_unfold: false is the list view's normal call, not a refusal
+    let (_, resp) = rpc(
+        router(service),
+        "/web/dataset/call_kw",
+        json!({"jsonrpc": "2.0", "id": 99, "method": "call",
+               "params": {"model": "rusdoo.test.rg.sale", "method": "web_read_group",
+                          "args": [[], ["country_id"], []],
+                          "kwargs": {"auto_unfold": false, "opening_info": []}}}),
+    )
+    .await;
+    assert!(resp.get("result").is_some(), "{resp}");
+}

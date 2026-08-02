@@ -6,6 +6,7 @@
 //! routing, session expiry.
 
 pub mod dispatch;
+mod group;
 pub mod jsonrpc;
 pub mod routes;
 pub mod session;

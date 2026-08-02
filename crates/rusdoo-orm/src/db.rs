@@ -493,7 +493,7 @@ impl Registry {
             if linked.is_empty() {
                 continue;
             }
-            let names = self.name_map(pool, &comodel, &linked).await?;
+            let names = self.display_names(pool, &comodel, &linked).await?;
             for record in &mut records {
                 if let Some(id) = record.get(&name).and_then(Value::as_i64) {
                     let display = names.get(&id).cloned().unwrap_or_default();
@@ -510,7 +510,7 @@ impl Registry {
     /// Resolve display names for a set of comodel ids (Odoo's name_get):
     /// the comodel's `name`/`display_name` field, or the id when neither
     /// exists. A single flat query, no per-record round-trips.
-    async fn name_map(
+    pub async fn display_names(
         &self,
         pool: &PgPool,
         comodel: &str,

@@ -50,6 +50,11 @@ impl Granularity {
     }
 }
 
+/// The wire formats dates take, shared by the read path and the group
+/// buckets (`odoo/tools/misc.py` DEFAULT_SERVER_*_FORMAT).
+const DATE_FORMAT: &str = "%Y-%m-%d";
+const DATETIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+
 /// One `groupby` entry: a stored field, bucketed by a granularity when it
 /// holds a date (`create_date:month`).
 #[derive(Debug, Clone)]
@@ -104,6 +109,37 @@ impl AggFunc {
             AggFunc::BoolOr => format!("bool_or({column})"),
             AggFunc::ArrayAgg => format!("array_agg({column})"),
         }
+    }
+}
+
+impl Granularity {
+    /// The exclusive upper bound of the bucket `start` opens, in the same
+    /// wire format. It is what turns a bucket into a domain
+    /// (`>= start AND < end`), and months and quarters make that calendar
+    /// arithmetic, not a fixed number of days.
+    pub fn bucket_end(self, start: &str) -> Option<String> {
+        let (datetime, has_time) =
+            match chrono::NaiveDateTime::parse_from_str(start, DATETIME_FORMAT) {
+                Ok(moment) => (moment, true),
+                Err(_) => (
+                    chrono::NaiveDate::parse_from_str(start, DATE_FORMAT)
+                        .ok()?
+                        .and_hms_opt(0, 0, 0)?,
+                    false,
+                ),
+            };
+        let end = match self {
+            Granularity::Day => datetime.checked_add_days(chrono::Days::new(1))?,
+            Granularity::Week => datetime.checked_add_days(chrono::Days::new(7))?,
+            Granularity::Month => datetime.checked_add_months(chrono::Months::new(1))?,
+            Granularity::Quarter => datetime.checked_add_months(chrono::Months::new(3))?,
+            Granularity::Year => datetime.checked_add_months(chrono::Months::new(12))?,
+        };
+        Some(if has_time {
+            end.format(DATETIME_FORMAT).to_string()
+        } else {
+            end.date().format(DATE_FORMAT).to_string()
+        })
     }
 }
 

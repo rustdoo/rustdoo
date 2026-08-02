@@ -6,6 +6,7 @@ use rusdoo_orm::access::Operation;
 use rusdoo_orm::crud::SearchOptions;
 use rusdoo_orm::domain::{parse_domain, Domain};
 use rusdoo_orm::fields::{Field, FieldType};
+use rusdoo_orm::group::GroupOptions;
 use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
@@ -915,6 +916,90 @@ impl OrmService {
                     .await?;
                 Ok(json!(records))
             }
+            // the grouped read path (`odoo/addons/web/models/models.py`):
+            // one row per group, with the aggregates the view asked for
+            "formatted_read_group" => {
+                let domain = self.arg_domain(args.first().or_else(|| kwargs.get("domain")))?;
+                let groupby = crate::group::parse_specs(
+                    args.get(1).or_else(|| kwargs.get("groupby")),
+                    "groupby",
+                )?;
+                let aggregates = crate::group::parse_specs(
+                    args.get(2).or_else(|| kwargs.get("aggregates")),
+                    "aggregates",
+                )?;
+                // `having` filters on the aggregates themselves; ignoring
+                // it would answer with groups the caller excluded
+                if is_set(args.get(3).or_else(|| kwargs.get("having"))) {
+                    return Err(RpcError::invalid_params(
+                        "having is not supported yet on formatted_read_group",
+                    ));
+                }
+                let options = group_options(
+                    args.get(4).or_else(|| kwargs.get("offset")),
+                    args.get(5).or_else(|| kwargs.get("limit")),
+                    args.get(6).or_else(|| kwargs.get("order")),
+                );
+                let request = self.parse_group_request(model, &groupby, &aggregates, options)?;
+                let groups = self.formatted_groups(model, &domain, &request).await?;
+                Ok(json!(groups))
+            }
+            // what the list and kanban views load: the first level of
+            // groups plus how many there are in total
+            "web_read_group" => {
+                let domain = self.arg_domain(args.first().or_else(|| kwargs.get("domain")))?;
+                let groupby = crate::group::parse_specs(
+                    args.get(1).or_else(|| kwargs.get("groupby")),
+                    "groupby",
+                )?;
+                if groupby.is_empty() {
+                    return Err(RpcError::invalid_params(
+                        "web_read_group needs at least one groupby",
+                    ));
+                }
+                let mut aggregates = crate::group::parse_specs(
+                    args.get(2).or_else(|| kwargs.get("aggregates")),
+                    "aggregates",
+                )?;
+                // Odoo adds the count itself: the client needs it to size
+                // every group, opened or not
+                if !aggregates.iter().any(|a| a == "__count") {
+                    aggregates.push("__count".to_string());
+                }
+                // unfolding a group means reading its records (or its
+                // subgroups) inside the same call; until that lands, a
+                // request asking for it is refused rather than answered
+                // with silently folded groups
+                for key in [
+                    "auto_unfold",
+                    "opening_info",
+                    "unfold_read_specification",
+                    "groupby_read_specification",
+                ] {
+                    if is_set(kwargs.get(key)) {
+                        return Err(RpcError::invalid_params(format!(
+                            "web_read_group does not support {key} yet"
+                        )));
+                    }
+                }
+                // note the positional order: limit comes before offset here
+                let options = group_options(
+                    args.get(4).or_else(|| kwargs.get("offset")),
+                    args.get(3).or_else(|| kwargs.get("limit")),
+                    args.get(5).or_else(|| kwargs.get("order")),
+                );
+                // deeper levels are validated but not read: Odoo returns
+                // them only for groups that are opened, and nothing is
+                // opened here — a typo in level two must still be an error
+                self.parse_group_request(model, &groupby, &aggregates, GroupOptions::default())?;
+                let request =
+                    self.parse_group_request(model, &groupby[..1], &aggregates, options)?;
+                let groups = self.formatted_groups(model, &domain, &request).await?;
+                let length = self
+                    .count_groups(model, &domain, &request, groups.len())
+                    .await?;
+                Ok(json!({"groups": groups, "length": length}))
+            }
             // no field-level defaults are modeled yet; Odoo returns only
             // fields carrying an explicit default, so {} is the faithful reply
             "default_get" => {
@@ -960,6 +1045,31 @@ fn name_search_args<'a>(
         .and_then(Value::as_u64)
         .unwrap_or(100);
     (pattern, operator, limit)
+}
+
+/// Whether an optional argument carries anything: absent, null, false
+/// and the empty collections all mean "not asked for".
+fn is_set(raw: Option<&Value>) -> bool {
+    match raw {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => false,
+        Some(Value::Array(items)) => !items.is_empty(),
+        Some(Value::Object(map)) => !map.is_empty(),
+        Some(Value::String(s)) => !s.is_empty(),
+        Some(_) => true,
+    }
+}
+
+/// Paging over the groups themselves.
+fn group_options(
+    offset: Option<&Value>,
+    limit: Option<&Value>,
+    order: Option<&Value>,
+) -> GroupOptions {
+    GroupOptions {
+        offset: offset.and_then(Value::as_u64),
+        limit: limit.and_then(Value::as_u64),
+        order: order.and_then(Value::as_str).map(str::to_string),
+    }
 }
 
 fn search_options(kwargs: &Map<String, Value>) -> Result<SearchOptions, RpcError> {
