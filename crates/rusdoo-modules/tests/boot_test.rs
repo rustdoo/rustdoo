@@ -202,7 +202,10 @@ async fn ir_model_access_csv_loads_into_acl() {
             inherit: vec![],
             inherits: vec![],
         },
-        vec![Field::new("title", FieldType::Char { size: None })],
+        vec![
+            Field::new("title", FieldType::Char { size: None }),
+            Field::new("owner_id", FieldType::Integer),
+        ],
     ))
     .unwrap();
     for t in ["rusdoo_test_acl_groups", "rusdoo_test_acl_doc"] {
@@ -239,6 +242,37 @@ async fn ir_model_access_csv_loads_into_acl() {
         .check("x_demo.doc", Operation::Read, &[], false)
         .is_err());
     assert!(acl.check("x_demo.doc", Operation::Write, &[], true).is_ok());
+
+    // the ir.rule in the same addon becomes a record rule: it constrains
+    // the group it names, for the operations it declares, and nobody else
+    let rules = &report.rules;
+    assert!(rules.covers("x_demo.doc"));
+    let domain = rules
+        .domain_for("x_demo.doc", Operation::Read, 42, &[group_id], false)
+        .unwrap()
+        .expect("the reader group is constrained");
+    let (sql, params) = reg
+        .search_sql("x_demo.doc", &domain, &SearchOptions::default())
+        .unwrap();
+    assert!(sql.contains(r#""owner_id" = $1"#), "{sql}");
+    assert_eq!(
+        params,
+        vec![json!(42)],
+        "\"user.id\" resolves to the acting user"
+    );
+    // ...not the operations it left out, nor users outside the group
+    assert!(rules
+        .domain_for("x_demo.doc", Operation::Unlink, 42, &[group_id], false)
+        .unwrap()
+        .is_none());
+    assert!(rules
+        .domain_for("x_demo.doc", Operation::Read, 42, &[], false)
+        .unwrap()
+        .is_none());
+    assert!(rules
+        .domain_for("x_demo.doc", Operation::Read, 1, &[group_id], true)
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]

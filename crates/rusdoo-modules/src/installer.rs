@@ -7,11 +7,13 @@ use crate::eval::eval_expr;
 use crate::graph::dependency_order;
 use crate::loader::discover_addons;
 use crate::manifest::Manifest;
+use crate::pyliteral::parse_py_literal;
 use rusdoo_core::RusdooError;
 use rusdoo_orm::access::{AccessControl, Operation};
 use rusdoo_orm::fields::{Field, FieldType};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
+use rusdoo_orm::rules::{RecordRules, Rule};
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::HashMap;
@@ -210,6 +212,8 @@ pub struct InstallReport {
     pub modules: Vec<(String, LoadStats)>,
     /// ir.model.access rules gathered from the installed modules
     pub access: AccessControl,
+    /// ir.rule record rules gathered from the installed modules
+    pub rules: RecordRules,
 }
 
 /// The integrated boot, port of `odoo/modules/loading.py`:
@@ -273,6 +277,8 @@ pub async fn install_modules(
             // group refs they use are already published by earlier files
             let records =
                 apply_access_records(&mut report.access, registry, &records, name, xml_ids)?;
+            // ir.rule records become RecordRules, resolved the same way
+            let records = apply_rule_records(&mut report.rules, registry, &records, name, xml_ids)?;
             let stats = load_records(pool, registry, name, &records, xml_ids).await?;
             totals.created += stats.created;
             totals.updated += stats.updated;
@@ -287,6 +293,154 @@ pub async fn install_modules(
         report.modules.push((name.clone(), totals));
     }
     Ok(report)
+}
+
+/// Consume `ir.rule` records into `rules`, returning the rest.
+///
+/// Two deviations from Odoo's data format, both because the expression
+/// evaluator only reads literals:
+/// - the target model comes from a `model` text column (tech name),
+///   like `ir.model.access` here, not from a `model_id` ref to ir.model;
+/// - `domain_force` is a literal domain, and the acting user is named by
+///   the string `"user.id"` where Odoo writes the bare `user.id`.
+///
+/// A rule that cannot be understood is an error, never a skipped rule:
+/// silently dropping one would open the rows it was meant to close.
+pub fn apply_rule_records(
+    rules: &mut RecordRules,
+    registry: &Registry,
+    records: &[DataRecord],
+    module: &str,
+    xml_ids: &XmlIds,
+) -> Result<Vec<DataRecord>, RusdooError> {
+    let mut remaining = Vec::new();
+    for record in records {
+        if record.model != "ir.rule" {
+            remaining.push(record.clone());
+            continue;
+        }
+        let Some(model) = text_of(record_field(record, "model")) else {
+            return Err(RusdooError::Validation(
+                "ir.rule needs a 'model' column with the model tech name".into(),
+            ));
+        };
+        if registry.get(&model).is_none() {
+            return Err(RusdooError::Validation(format!(
+                "ir.rule constrains unknown model {model:?}"
+            )));
+        }
+        let domain = match record_field(record, "domain_force") {
+            Some(FieldValue::Text(text)) => parse_py_literal(text)?,
+            Some(FieldValue::Eval(value)) => value.clone(),
+            _ => {
+                return Err(RusdooError::Validation(format!(
+                    "ir.rule on {model} needs a 'domain_force' domain"
+                )))
+            }
+        };
+        if !domain.is_array() {
+            return Err(RusdooError::Validation(format!(
+                "ir.rule on {model}: domain_force must be a list, got {domain}"
+            )));
+        }
+        let groups = rule_groups(record, &model, module, xml_ids)?;
+        let mut operations = Vec::new();
+        for (column, operation) in [
+            ("perm_read", Operation::Read),
+            ("perm_write", Operation::Write),
+            ("perm_create", Operation::Create),
+            ("perm_unlink", Operation::Unlink),
+        ] {
+            if perm_true(record_field(record, column)) {
+                operations.push(operation);
+            }
+        }
+        if operations.is_empty() {
+            return Err(RusdooError::Validation(format!(
+                "ir.rule on {model} covers no operation (every perm_* is false)"
+            )));
+        }
+        rules.add(Rule {
+            model,
+            domain,
+            groups,
+            operations,
+        });
+    }
+    Ok(remaining)
+}
+
+/// The `res.groups` ids a rule applies to. Absent means a global rule,
+/// which is the widest-reaching kind — so anything present must resolve
+/// to real groups or the whole install fails.
+fn rule_groups(
+    record: &DataRecord,
+    model: &str,
+    module: &str,
+    xml_ids: &XmlIds,
+) -> Result<Vec<i64>, RusdooError> {
+    let Some(value) = record_field(record, "groups") else {
+        return Ok(Vec::new());
+    };
+    let commands = match value {
+        // `eval="[Command.link(ref('base.group_user'))]"` is evaluated at
+        // load time, where the external ids are known
+        FieldValue::Expr(expr) => {
+            let resolve = |name: &str| xml_ids.get(&qualify(module, name)).map(|(_, id)| *id);
+            eval_expr(expr, &resolve)?
+        }
+        FieldValue::Eval(value) => value.clone(),
+        FieldValue::Ref(xml_id) => {
+            let key = qualify(module, xml_id);
+            let (group_model, id) = xml_ids.get(&key).ok_or_else(|| {
+                RusdooError::Validation(format!("ir.rule on {model}: unknown group ref {key}"))
+            })?;
+            if group_model != "res.groups" {
+                return Err(RusdooError::Validation(format!(
+                    "ir.rule on {model}: {key} is a {group_model}, not a res.groups"
+                )));
+            }
+            return Ok(vec![*id]);
+        }
+        FieldValue::Text(text) => {
+            return Err(RusdooError::Validation(format!(
+                "ir.rule on {model}: 'groups' must be a ref or command list, got {text:?}"
+            )))
+        }
+    };
+    let mut ids = Vec::new();
+    for command in commands.as_array().into_iter().flatten() {
+        let Some(tuple) = command.as_array() else {
+            return Err(RusdooError::Validation(format!(
+                "ir.rule on {model}: 'groups' must hold command tuples"
+            )));
+        };
+        match tuple.first().and_then(Value::as_i64) {
+            // link(id)
+            Some(4) => ids.extend(tuple.get(1).and_then(Value::as_i64)),
+            // set([ids])
+            Some(6) => ids.extend(
+                tuple
+                    .get(2)
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_i64),
+            ),
+            other => {
+                return Err(RusdooError::Validation(format!(
+                    "ir.rule on {model}: unsupported 'groups' command {other:?}"
+                )))
+            }
+        }
+    }
+    if ids.is_empty() {
+        return Err(RusdooError::Validation(format!(
+            "ir.rule on {model}: 'groups' is present but names no group; \
+             omit it for a global rule"
+        )));
+    }
+    Ok(ids)
 }
 
 fn record_field<'a>(record: &'a DataRecord, name: &str) -> Option<&'a FieldValue> {

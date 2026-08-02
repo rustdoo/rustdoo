@@ -19,6 +19,7 @@ async fn main() -> anyhow::Result<()> {
     let mut registry = base_registry()?;
     let pool = rusdoo_orm::db::connect(&db_url).await?;
     let mut access = rusdoo_orm::access::AccessControl::new();
+    let mut rules = rusdoo_orm::rules::RecordRules::new();
 
     if std::env::args().any(|arg| arg == "--init") {
         use rusdoo_modules::installer::{install_modules, XmlIds};
@@ -30,6 +31,7 @@ async fn main() -> anyhow::Result<()> {
                 install_modules(&pool, &mut registry, &[addons_path], &mut xml_ids).await?;
             tracing::info!("installed {} module(s)", report.modules.len());
             access = report.access;
+            rules = report.rules;
             seed_admin(&registry, &pool).await?;
         } else {
             for model in registry.models() {
@@ -48,7 +50,9 @@ async fn main() -> anyhow::Result<()> {
              (rode com --init sobre addons que tragam ir.model.access.csv)"
         );
     }
-    let mut service = OrmService::new(Arc::new(registry), pool).with_access(access);
+    let mut service = OrmService::new(Arc::new(registry), pool)
+        .with_access(access)
+        .with_rules(rules);
     if std::env::var("RUSDOO_INSECURE_COOKIES").is_ok() {
         service = service.allow_insecure_cookies();
     }

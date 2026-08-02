@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- row-level: a reader only reaches the docs they own. The acting
+         user is named by the "user.id" string (rusdoo reads literals,
+         where Odoo evaluates a Python expression). -->
+    <record id="rule_own_docs" model="ir.rule">
+        <field name="name">Docs próprios</field>
+        <field name="model">x_demo.doc</field>
+        <field name="domain_force">[('owner_id', '=', 'user.id')]</field>
+        <field name="groups" eval="[Command.link(ref('group_reader'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+    </record>
+</odoo>
