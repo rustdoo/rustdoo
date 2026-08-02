@@ -12,7 +12,7 @@ use crate::model::Model;
 use crate::registry::Registry;
 use crate::sql::{bind, quote_ident};
 use rusdoo_core::{RusdooError, SUPERUSER_ID};
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use sqlx::postgres::{PgArguments, PgPool, PgPoolOptions, PgRow};
 use sqlx::{PgConnection, Postgres, Row, Transaction};
 use std::collections::HashMap;
@@ -678,7 +678,11 @@ impl Registry {
                     .expect("filtered above")
                     .depends
                     .iter()
-                    .any(|dep| changed.contains(&dep.as_str())),
+                    // `order_line.price_subtotal` is watched by writing
+                    // `order_line`: the commands that changed the lines
+                    // came through the parent's write
+                    .map(|dep| dep.split_once('.').map_or(dep.as_str(), |(head, _)| head))
+                    .any(|dep| changed.contains(&dep)),
             })
             .cloned()
             .collect();
@@ -785,6 +789,85 @@ impl Registry {
         })
     }
 
+    /// The values of `head.rest` for each record in `ids`, as a list per
+    /// record — Odoo's `@api.depends('order_line.price_subtotal')`.
+    ///
+    /// Two queries whatever the number of parents: the links, then the
+    /// field on every linked record at once. A many2one hop yields a
+    /// one-element list, so a compute reads both shapes the same way.
+    fn read_over_x2many<'a>(
+        &'a self,
+        conn: &'a mut PgConnection,
+        model_name: &'a str,
+        ids: &'a [i64],
+        path: &'a str,
+        owner_field: &'a str,
+    ) -> RelatedFuture<'a> {
+        Box::pin(async move {
+            let (head, rest) = path.split_once('.').expect("caller checked for the dot");
+            let model = self
+                .get(model_name)
+                .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
+            let comodel = match model.field(head).map(|f| &f.ty) {
+                Some(
+                    FieldType::One2many { comodel, .. }
+                    | FieldType::Many2many { comodel, .. }
+                    | FieldType::Many2one { comodel },
+                ) => comodel.clone(),
+                _ => {
+                    return Err(RusdooError::Validation(format!(
+                        "computed field {owner_field:?} depends on {path:?}, but {head:?} is \
+                         not a relational field"
+                    )))
+                }
+            };
+            // parent -> the records it links to
+            let rows = self.read_conn(&mut *conn, model_name, ids, &[head]).await?;
+            let mut links: Vec<(i64, Vec<i64>)> = Vec::new();
+            let mut linked_ids: Vec<i64> = Vec::new();
+            for row in &rows {
+                let Some(owner) = row.get("id").and_then(Value::as_i64) else {
+                    continue;
+                };
+                let children: Vec<i64> = match row.get(head) {
+                    // x2many reads as a list of ids, m2o as [id, name]
+                    Some(Value::Array(items)) => match items.first() {
+                        Some(Value::Number(_)) if items.len() == 2 && items[1].is_string() => {
+                            items[0].as_i64().into_iter().collect()
+                        }
+                        _ => items.iter().filter_map(Value::as_i64).collect(),
+                    },
+                    Some(Value::Number(number)) => number.as_i64().into_iter().collect(),
+                    _ => Vec::new(),
+                };
+                linked_ids.extend(children.iter().copied());
+                links.push((owner, children));
+            }
+            linked_ids.sort_unstable();
+            linked_ids.dedup();
+            if linked_ids.is_empty() {
+                return Ok(links
+                    .into_iter()
+                    .map(|(owner, _)| (owner, json!([])))
+                    .collect());
+            }
+            // the field itself, on every linked record in one read
+            let values = self
+                .read_related(&mut *conn, &comodel, &linked_ids, rest, 0)
+                .await?;
+            Ok(links
+                .into_iter()
+                .map(|(owner, children)| {
+                    let gathered: Vec<Value> = children
+                        .iter()
+                        .map(|child| values.get(child).cloned().unwrap_or(Value::Null))
+                        .collect();
+                    (owner, Value::Array(gathered))
+                })
+                .collect())
+        })
+    }
+
     /// Run a field's compute over `ids`: read what it depends on, then
     /// call it once per record. One read for the whole batch, so a
     /// computed column costs a query, not a query per row.
@@ -820,18 +903,47 @@ impl Registry {
             // a dependency that does not exist is a broken declaration,
             // not a null: the compute would silently return the wrong
             // value for every record
+            let mut plain: Vec<&str> = Vec::new();
+            let mut through_lines: Vec<&str> = Vec::new();
             for name in &compute.depends {
-                if model.field(name).is_none() && name != "id" {
-                    return Err(RusdooError::Validation(format!(
-                        "computed field {:?} depends on unknown field {name:?}",
-                        field.name
-                    )));
+                match name.split_once('.') {
+                    // `order_line.price_subtotal`: the values of a field
+                    // on the records the x2many points at
+                    Some((head, _)) => {
+                        if model.field(head).is_none() {
+                            return Err(RusdooError::Validation(format!(
+                                "computed field {:?} depends on unknown field {head:?}",
+                                field.name
+                            )));
+                        }
+                        through_lines.push(name);
+                    }
+                    None => {
+                        if model.field(name).is_none() && name != "id" {
+                            return Err(RusdooError::Validation(format!(
+                                "computed field {:?} depends on unknown field {name:?}",
+                                field.name
+                            )));
+                        }
+                        plain.push(name);
+                    }
                 }
             }
-            let depends: Vec<&str> = compute.depends.iter().map(String::as_str).collect();
-            let rows = self
-                .read_conn(&mut *conn, model_name, ids, &depends)
-                .await?;
+            let mut rows = self.read_conn(&mut *conn, model_name, ids, &plain).await?;
+            for path in through_lines {
+                let gathered = self
+                    .read_over_x2many(&mut *conn, model_name, ids, path, &field.name)
+                    .await?;
+                for row in &mut rows {
+                    let Some(id) = row.get("id").and_then(Value::as_i64) else {
+                        continue;
+                    };
+                    row.insert(
+                        path.to_string(),
+                        gathered.get(&id).cloned().unwrap_or_else(|| json!([])),
+                    );
+                }
+            }
             Ok(rows
                 .into_iter()
                 .filter_map(|row| {
