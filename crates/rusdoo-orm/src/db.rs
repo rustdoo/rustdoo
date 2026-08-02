@@ -7,6 +7,7 @@ use crate::crud::{bind_ids, SearchOptions};
 use crate::ddl::{create_relation_table_sql, create_table_sql};
 use crate::domain::Domain;
 use crate::fields::{Field, FieldType};
+use crate::group::{Aggregate, GroupBy, GroupOptions};
 use crate::model::Model;
 use crate::registry::Registry;
 use crate::sql::{bind, quote_ident};
@@ -198,6 +199,39 @@ impl Model {
 }
 
 impl Registry {
+    /// Run a grouped read: one map per group, keyed by the specs the
+    /// caller asked for (`"country_id"`, `"__count"`, `"qty:sum"`, ...).
+    /// Values arrive as JSON because every aggregate produces its own SQL
+    /// type; `to_jsonb` in the query makes the decoding uniform.
+    pub async fn read_group(
+        &self,
+        pool: &PgPool,
+        model_name: &str,
+        domain: &Domain,
+        groupby: &[GroupBy],
+        aggregates: &[Aggregate],
+        opts: &GroupOptions,
+    ) -> Result<Vec<Map<String, Value>>, RusdooError> {
+        let query = self.read_group_sql(model_name, domain, groupby, aggregates, opts)?;
+        let rows = build_query(&query.sql, &query.params)?
+            .fetch_all(pool)
+            .await
+            .map_err(db_err)?;
+        rows.iter()
+            .map(|row| {
+                let mut group = Map::new();
+                for column in &query.columns {
+                    // an empty group value (NULL) selects as SQL NULL, not
+                    // as a JSON null — decode it as one
+                    let value: Option<Value> =
+                        row.try_get(column.alias.as_str()).map_err(db_err)?;
+                    group.insert(column.spec.clone(), value.unwrap_or(Value::Null));
+                }
+                Ok(group)
+            })
+            .collect()
+    }
+
     /// Like [`Model::search`], but with relational context: dotted paths
     /// and any/not any resolve against this registry.
     pub async fn search(

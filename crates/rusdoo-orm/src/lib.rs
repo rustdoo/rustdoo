@@ -6,6 +6,7 @@ pub mod db;
 pub mod ddl;
 pub mod domain;
 pub mod fields;
+pub mod group;
 pub mod model;
 pub mod registry;
 pub mod sql;
