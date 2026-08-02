@@ -902,7 +902,8 @@ impl OrmService {
                 Ok(json!(rows))
             }
             "create" => {
-                let values = parse_values(args.first())?;
+                let mut values = parse_values(args.first())?;
+                hash_credentials(model, &mut values)?;
                 self.check_command_access_as(uid, model, &values).await?;
                 let pairs: Vec<(&str, Value)> = values
                     .iter()
@@ -915,7 +916,8 @@ impl OrmService {
                 let ids = parse_ids(args.first())?;
                 self.check_records(uid, model, Operation::Write, &ids)
                     .await?;
-                let values = parse_values(args.get(1))?;
+                let mut values = parse_values(args.get(1))?;
+                hash_credentials(model, &mut values)?;
                 self.check_command_access_as(uid, model, &values).await?;
                 let pairs: Vec<(&str, Value)> = values
                     .iter()
@@ -1086,7 +1088,8 @@ impl OrmService {
             // specification the form view uses
             "web_save" => {
                 let ids = parse_ids(args.first())?;
-                let values = parse_values(args.get(1).or_else(|| kwargs.get("vals")))?;
+                let mut values = parse_values(args.get(1).or_else(|| kwargs.get("vals")))?;
+                hash_credentials(model, &mut values)?;
                 let spec = crate::web_read::parse_web_spec(
                     args.get(2).or_else(|| kwargs.get("specification")),
                 )?;
@@ -1414,6 +1417,39 @@ fn parse_values(raw: Option<&Value>) -> Result<Map<String, Value>, RpcError> {
     match raw {
         Some(Value::Object(map)) => Ok(map.clone()),
         _ => Err(RpcError::invalid_params("expected a values object")),
+    }
+}
+
+/// The model whose password column is a credential, and the column.
+const CREDENTIAL_MODEL: &str = "res.users";
+const CREDENTIAL_FIELD: &str = "password";
+
+/// Hash a password on its way into the database, like Odoo's
+/// `res.users._set_password`.
+///
+/// Without this a password written over RPC would be stored as the user
+/// typed it: readable to anyone with the database, and useless at login,
+/// where it is compared against an Argon2 hash. An empty value is
+/// dropped rather than hashed — "" is how a client says "leave it".
+fn hash_credentials(model: &str, values: &mut Map<String, Value>) -> Result<(), RpcError> {
+    if model != CREDENTIAL_MODEL {
+        return Ok(());
+    }
+    let Some(raw) = values.get(CREDENTIAL_FIELD) else {
+        return Ok(());
+    };
+    match raw {
+        Value::String(plain) if !plain.is_empty() => {
+            let hash = crate::session::hash_password(plain).map_err(RpcError::from)?;
+            values.insert(CREDENTIAL_FIELD.into(), Value::from(hash));
+            Ok(())
+        }
+        // false/""/null: the client is not setting a password
+        Value::String(_) | Value::Bool(false) | Value::Null => {
+            values.remove(CREDENTIAL_FIELD);
+            Ok(())
+        }
+        _ => Err(RpcError::invalid_params("password must be a string")),
     }
 }
 

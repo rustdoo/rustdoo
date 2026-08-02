@@ -154,6 +154,9 @@ impl Model {
         ids: &[i64],
         fields: &[&str],
     ) -> Result<Vec<Map<String, Value>>, RusdooError> {
+        // `id` is always in the answer, and asking for it explicitly is
+        // legal (Odoo's read does the same) — it is not a column to select
+        let fields = &without_id(fields)[..];
         let (sql, params) = self.read_sql(ids, fields)?;
         let rows = build_query(&sql, &params)?
             .fetch_all(pool)
@@ -209,6 +212,12 @@ impl Model {
         }
         Ok(record)
     }
+}
+
+/// The requested fields minus `id`, which every read returns anyway and
+/// no model declares as a column.
+fn without_id<'a>(fields: &[&'a str]) -> Vec<&'a str> {
+    fields.iter().copied().filter(|name| *name != "id").collect()
 }
 
 impl Registry {
@@ -520,6 +529,7 @@ impl Registry {
             // fields without a column of their own are split out and fetched
             // separately: x2many from the relation table / inverse column,
             // related fields by following their path
+            let fields = &without_id(fields)[..];
             let mut scalar: Vec<&str> = Vec::new();
             let mut x2many: Vec<&Field> = Vec::new();
             let mut related: Vec<&Field> = Vec::new();

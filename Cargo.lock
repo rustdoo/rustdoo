@@ -1219,6 +1219,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-base"
+version = "0.1.0"
+dependencies = [
+ "rusdoo-core",
+ "rusdoo-orm",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-core"
 version = "0.1.0"
 dependencies = [
@@ -1235,6 +1245,7 @@ dependencies = [
  "argon2",
  "axum",
  "http-body-util",
+ "rusdoo-base",
  "rusdoo-core",
  "rusdoo-modules",
  "rusdoo-orm",
@@ -1296,6 +1307,7 @@ name = "rusdoo-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "rusdoo-base",
  "rusdoo-core",
  "rusdoo-http",
  "rusdoo-modules",
