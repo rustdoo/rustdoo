@@ -34,6 +34,6 @@
         <field name="model">res.partner</field>
         <field name="type">search</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><search><field name="name"/><field name="email"/><field name="city"/><filter name="companies" string="Empresas" domain="[[&quot;is_company&quot;, &quot;=&quot;, true]]"/><filter name="people" string="Pessoas" domain="[[&quot;is_company&quot;, &quot;=&quot;, false]]"/></search></field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="email"/><field name="city"/><filter name="companies" string="Empresas" domain="[[&quot;is_company&quot;, &quot;=&quot;, true]]"/><filter name="people" string="Pessoas" domain="[[&quot;is_company&quot;, &quot;=&quot;, false]]"/><groupby name="company_id" string="Empresa"/><groupby name="city" string="Cidade"/></search></field>
     </record>
 </odoo>

@@ -27,6 +27,6 @@
         <field name="model">product.product</field>
         <field name="type">search</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><search><field name="name"/><field name="default_code"/><filter name="goods" string="Produtos" domain="[[&quot;type&quot;, &quot;=&quot;, &quot;consu&quot;]]"/><filter name="services" string="Serviços" domain="[[&quot;type&quot;, &quot;=&quot;, &quot;service&quot;]]"/></search></field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="default_code"/><filter name="goods" string="Produtos" domain="[[&quot;type&quot;, &quot;=&quot;, &quot;consu&quot;]]"/><filter name="services" string="Serviços" domain="[[&quot;type&quot;, &quot;=&quot;, &quot;service&quot;]]"/><groupby name="type" string="Tipo"/></search></field>
     </record>
 </odoo>

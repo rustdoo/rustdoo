@@ -22,14 +22,20 @@
      */
     function filtersOf(arch) {
         if (!arch) {
-            return { filters: [], fields: [] };
+            return { filters: [], fields: [], groupbys: [] };
         }
         let root;
         try {
             root = rusdoo.utils.parseArch(arch);
         } catch (error) {
-            return { filters: [], fields: [] };
+            return { filters: [], fields: [], groupbys: [] };
         }
+        const groupbys = Array.from(root.getElementsByTagName("groupby"))
+            .map((node) => ({
+                name: node.getAttribute("name"),
+                label: node.getAttribute("string") || node.getAttribute("name"),
+            }))
+            .filter((entry) => entry.name);
         const filters = Array.from(root.getElementsByTagName("filter"))
             .map((node) => {
                 let domain = [];
@@ -50,7 +56,7 @@
         const fields = Array.from(root.getElementsByTagName("field"))
             .map((node) => node.getAttribute("name"))
             .filter(Boolean);
-        return { filters: filters, fields: fields };
+        return { filters: filters, fields: fields, groupbys: groupbys };
     }
 
     /**
@@ -99,6 +105,12 @@
             // busca quando existe, senão as colunas textuais da lista
             this.searchFields = search.fields.filter((name) => this.fields[name]);
             this.active = new Set();
+            this.groupbys = (search.groupbys || []).filter((entry) => this.fields[entry.name]);
+            // um agrupamento por vez: o servidor aceita vários, mas uma
+            // lista com dois níveis abertos é mais árvore do que lista
+            this.groupBy = null;
+            this.groups = [];
+            this.opened = new Map();
 
             this.offset = 0;
             this.order = null;
@@ -135,6 +147,12 @@
             return domain.concat(or, terms);
         }
 
+        setGroupBy(name) {
+            this.groupBy = this.groupBy === name ? null : name;
+            this.offset = 0;
+            this.refresh();
+        }
+
         toggleFilter(name) {
             if (this.active.has(name)) {
                 this.active.delete(name);
@@ -146,9 +164,27 @@
         }
 
         renderFilters() {
-            if (!this.filters.length) {
+            if (!this.filters.length && !this.groupbys.length) {
                 return null;
             }
+            const groups = this.groupbys.length
+                ? [el("span", { class: "o_filter_label" }, "Agrupar por:")].concat(
+                      this.groupbys.map((entry) =>
+                          el(
+                              "button",
+                              {
+                                  class:
+                                      this.groupBy === entry.name
+                                          ? "o_filter o_filter_on"
+                                          : "o_filter",
+                                  type: "button",
+                                  onclick: () => this.setGroupBy(entry.name),
+                              },
+                              entry.label
+                          )
+                      )
+                  )
+                : [];
             return el(
                 "div",
                 { class: "o_filters" },
@@ -164,11 +200,140 @@
                         },
                         filter.label
                     )
-                )
+                ).concat(groups)
             );
         }
 
+        /** O rótulo de um grupo: um many2one vem como [id, nome]. */
+        groupLabel(group) {
+            const meta = this.fields[this.groupBy] || {};
+            const value = group[this.groupBy];
+            if (Array.isArray(value)) {
+                return value[1] !== undefined ? String(value[1]) : "Não definido";
+            }
+            if (value === false || value === null || value === undefined) {
+                return "Não definido";
+            }
+            if (meta.type === "selection") {
+                const option = (meta.selection || []).find((pair) => pair[0] === value);
+                return option ? option[1] : String(value);
+            }
+            return formatValue(value, meta);
+        }
+
+        /** Uma lista agrupada: um cabeçalho por grupo, aberto sob demanda. */
+        renderGroups() {
+            const rows = [];
+            this.groups.forEach((group, index) => {
+                const count = group.__count || 0;
+                const sums = this.sumColumns()
+                    .map((name) => group[name + ":sum"])
+                    .filter((value) => value !== undefined && value !== null && value !== false)
+                    .map((value) => formatValue(value, { type: "float" }));
+                rows.push(
+                    el(
+                        "tr",
+                        {
+                            class: "o_group_row",
+                            onclick: () =>
+                                this.toggleGroup(index).catch((error) => this.onError(error)),
+                        },
+                        [
+                            el("td", { colspan: String(Math.max(this.columns.length, 1)) }, [
+                                el("span", { class: "o_group_caret" }, this.opened.has(index) ? "▾" : "▸"),
+                                this.groupLabel(group),
+                                el("span", { class: "o_group_count" }, "(" + count + ")"),
+                                sums.length
+                                    ? el("span", { class: "o_group_sum" }, sums.join(" · "))
+                                    : null,
+                            ]),
+                        ]
+                    )
+                );
+                for (const record of this.opened.get(index) || []) {
+                    rows.push(
+                        el(
+                            "tr",
+                            { class: "o_data_row", onclick: () => this.onOpen(record.id) },
+                            this.columns.map((column) =>
+                                el("td", {}, formatValue(record[column.name], column.meta))
+                            )
+                        )
+                    );
+                }
+            });
+            if (!rows.length) {
+                rows.push(
+                    el("tr", {}, [
+                        el(
+                            "td",
+                            { class: "o_nocontent", colspan: String(this.columns.length || 1) },
+                            "Nenhum registro."
+                        ),
+                    ])
+                );
+            }
+            return el("table", { class: "o_list_table" }, [
+                el(
+                    "thead",
+                    {},
+                    el(
+                        "tr",
+                        {},
+                        this.columns.map((column) => el("th", {}, column.label))
+                    )
+                ),
+                el("tbody", {}, rows),
+            ]);
+        }
+
+        /** As colunas numéricas que um grupo soma. */
+        sumColumns() {
+            return this.columns
+                .filter((column) =>
+                    ["integer", "float", "monetary"].includes(column.meta.type)
+                )
+                .map((column) => column.name);
+        }
+
+        /** Os grupos do domínio atual, com contagem e somas. */
+        async loadGroups() {
+            const aggregates = this.sumColumns().map((name) => name + ":sum");
+            const result = await callKw(this.model, "web_read_group", [], {
+                domain: this.domain(),
+                groupby: [this.groupBy],
+                aggregates: aggregates,
+            });
+            this.groups = result.groups || [];
+            this.length = result.length || this.groups.length;
+        }
+
+        /** Abre (ou fecha) um grupo, lendo os registros dele. */
+        async toggleGroup(index) {
+            if (this.opened.has(index)) {
+                this.opened.delete(index);
+                this.render();
+                return;
+            }
+            const group = this.groups[index];
+            const extra = group.__extra_domain || [];
+            const names = this.columns.map((column) => column.name);
+            const result = await callKw(this.model, "web_search_read", [], {
+                domain: this.domain().concat(extra),
+                specification: specFor(names, this.fields),
+                limit: PAGE_SIZE,
+                order: this.order || undefined,
+            });
+            this.opened.set(index, result.records || []);
+            this.render();
+        }
+
         async load() {
+            if (this.groupBy) {
+                this.opened.clear();
+                await this.loadGroups();
+                return;
+            }
             const names = this.columns.map((column) => column.name);
             const result = await callKw(this.model, "web_search_read", [], {
                 domain: this.domain(),
@@ -303,7 +468,7 @@
             fill(this.root, [
                 this.renderControlPanel(),
                 this.renderFilters(),
-                this.renderTable(),
+                this.groupBy ? this.renderGroups() : this.renderTable(),
             ]);
             return this.root;
         }

@@ -483,3 +483,39 @@ input[type="checkbox"].o_input {
     border-color: var(--o-brand);
     color: #fff;
 }
+
+/* lista agrupada ---------------------------------------------------------- */
+
+.o_filter_label {
+    color: var(--o-muted);
+    align-self: center;
+    margin-left: 8px;
+}
+
+.o_group_row {
+    background: var(--o-bg);
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.o_group_row:hover {
+    background: #f0ebee;
+}
+
+.o_group_caret {
+    display: inline-block;
+    width: 16px;
+    color: var(--o-brand);
+}
+
+.o_group_count {
+    color: var(--o-muted);
+    font-weight: 400;
+    margin-left: 6px;
+}
+
+.o_group_sum {
+    color: var(--o-muted);
+    font-weight: 400;
+    margin-left: 12px;
+}

@@ -27,6 +27,6 @@
         <field name="model">sale.order</field>
         <field name="type">search</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><search><field name="name"/><filter name="draft" string="Orçamentos" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;draft&quot;]]"/><filter name="confirmed" string="Confirmados" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;sale&quot;]]"/><filter name="cancelled" string="Cancelados" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;cancel&quot;]]"/></search></field>
+        <field name="arch" type="xml"><search><field name="name"/><filter name="draft" string="Orçamentos" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;draft&quot;]]"/><filter name="confirmed" string="Confirmados" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;sale&quot;]]"/><filter name="cancelled" string="Cancelados" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;cancel&quot;]]"/><groupby name="state" string="Situação"/><groupby name="partner_id" string="Cliente"/></search></field>
     </record>
 </odoo>

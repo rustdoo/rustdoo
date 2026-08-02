@@ -27,6 +27,6 @@
         <field name="model">account.move</field>
         <field name="type">search</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><search><field name="name"/><field name="invoice_origin"/><filter name="draft" string="Rascunhos" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;draft&quot;]]"/><filter name="posted" string="Lançadas" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;posted&quot;]]"/></search></field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="invoice_origin"/><filter name="draft" string="Rascunhos" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;draft&quot;]]"/><filter name="posted" string="Lançadas" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;posted&quot;]]"/><groupby name="state" string="Situação"/><groupby name="partner_id" string="Cliente"/></search></field>
     </record>
 </odoo>
