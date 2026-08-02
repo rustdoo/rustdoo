@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="seq_account_move" model="ir.sequence">
+            <field name="name">Fatura</field>
+            <field name="code">account.move</field>
+            <field name="prefix">FAT/</field>
+            <field name="padding">5</field>
+            <field name="number_next">1</field>
+        </record>
+    </data>
+</odoo>

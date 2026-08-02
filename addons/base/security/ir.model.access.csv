@@ -15,3 +15,5 @@ access_ir_ui_menu_user,ir.ui.menu usuário,ir.ui.menu,group_user,1,0,0,0
 access_ir_ui_menu_system,ir.ui.menu admin,ir.ui.menu,group_system,1,1,1,1
 access_ir_act_window_user,ir.actions.act_window usuário,ir.actions.act_window,group_user,1,0,0,0
 access_ir_act_window_system,ir.actions.act_window admin,ir.actions.act_window,group_system,1,1,1,1
+access_ir_sequence_user,ir.sequence usuário,ir.sequence,group_user,1,0,0,0
+access_ir_sequence_system,ir.sequence admin,ir.sequence,group_system,1,1,1,1

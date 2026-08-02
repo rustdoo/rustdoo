@@ -396,6 +396,50 @@ impl Registry {
         Ok(id)
     }
 
+    /// Fill in the fields numbered by an `ir.sequence` that the caller
+    /// left empty, drawing each number inside this create's own
+    /// transaction. A caller who passed a number keeps it — importing
+    /// documents that already have one must not renumber them.
+    async fn draw_sequences<'a>(
+        &self,
+        conn: &mut PgConnection,
+        model: &'a Model,
+        mut values: Vec<(&'a str, Value)>,
+    ) -> Result<Vec<(&'a str, Value)>, RusdooError> {
+        for field in model.fields() {
+            let Some(code) = field.sequence.as_deref() else {
+                continue;
+            };
+            let given = values.iter().any(|(name, value)| {
+                *name == field.name && !matches!(value, Value::Null | Value::Bool(false))
+            });
+            if given {
+                continue;
+            }
+            let Some(number) = crate::sequence::next_by_code(&mut *conn, self, code).await? else {
+                // a document that must be numbered and has no sequence is
+                // a missing configuration, and saying which one beats a
+                // not-null violation from the database
+                if field.required {
+                    return Err(RusdooError::Validation(format!(
+                        "{}.{} é numerado pela sequência {code:?}, que não existe: \
+                         instale o módulo que a define",
+                        model.meta.name, field.name
+                    )));
+                }
+                tracing::warn!(
+                    "field {:?} of {} wants sequence {code:?}, which does not exist",
+                    field.name,
+                    model.meta.name
+                );
+                continue;
+            };
+            values.retain(|(name, _)| *name != field.name);
+            values.push((field.name.as_str(), Value::from(number)));
+        }
+        Ok(values)
+    }
+
     fn create_in<'a>(
         &'a self,
         tx: &'a mut Transaction<'static, Postgres>,
@@ -408,6 +452,7 @@ impl Registry {
                 .get(model_name)
                 .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
             let (values, x2many) = self.split_x2many(model, values)?;
+            let values = self.draw_sequences(&mut *tx, model, values).await?;
             if model.meta.inherits.is_empty() {
                 let id = model.create_conn(&mut *tx, uid, values).await?;
                 self.apply_x2many_all(&mut *tx, uid, &x2many, id).await?;

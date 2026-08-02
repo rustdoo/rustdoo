@@ -220,7 +220,6 @@ fn action_create_delivery<'a>(
                 ctx.uid,
                 "stock.picking",
                 vec![
-                    ("name", json!(format!("Entrega de {name}"))),
                     ("picking_type", json!("outgoing")),
                     (
                         "partner_id",
@@ -341,7 +340,9 @@ fn action_create_invoice<'a>(
                 ctx.uid,
                 "account.move",
                 vec![
-                    ("name", json!(format!("Rascunho de {name}"))),
+                    // no name: the sequence numbers it, like every other
+                    // invoice, so a billed order does not produce a
+                    // document numbered differently from the rest
                     ("move_type", json!("out_invoice")),
                     (
                         "partner_id",
@@ -445,7 +446,7 @@ fn order() -> Model {
     Model::new(
         meta("sale.order", "sale_order"),
         vec![
-            char("name").required().default_value(json!("Novo")),
+            char("name").required().from_sequence("sale.order"),
             m2o("partner_id", "res.partner").required(),
             m2o("company_id", "res.company"),
             Field::new("date_order", FieldType::Datetime),

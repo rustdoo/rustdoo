@@ -58,6 +58,7 @@ pub fn extend(reg: &mut Registry) -> Result<(), RusdooError> {
 
 fn models() -> Vec<Model> {
     vec![
+        sequence(),
         country(),
         company(),
         partner(),
@@ -67,6 +68,24 @@ fn models() -> Vec<Model> {
         act_window(),
         ui_menu(),
     ]
+}
+
+/// `ir.sequence` — the numbers documents carry.
+fn sequence() -> Model {
+    Model::new(
+        meta("ir.sequence", "ir_sequence"),
+        vec![
+            char("name").required(),
+            // what a field asks for by name
+            char("code").required(),
+            char("prefix"),
+            char("suffix"),
+            Field::new("padding", FieldType::Integer).default_value(json!(0)),
+            Field::new("number_next", FieldType::Integer).default_value(json!(1)),
+            Field::new("number_increment", FieldType::Integer).default_value(json!(1)),
+            Field::new("active", FieldType::Boolean).default_value(json!(true)),
+        ],
+    )
 }
 
 /// `res.country` — the country of an address.
@@ -229,6 +248,7 @@ mod tests {
     fn every_base_model_registers() {
         let reg = registry().expect("base models register");
         for name in [
+            "ir.sequence",
             "res.country",
             "res.company",
             "res.partner",

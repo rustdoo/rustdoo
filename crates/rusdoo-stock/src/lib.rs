@@ -97,7 +97,7 @@ fn picking() -> Model {
     Model::new(
         meta("stock.picking", "stock_picking"),
         vec![
-            char("name").required().default_value(json!("Novo")),
+            char("name").required().from_sequence("stock.picking.out"),
             m2o("partner_id", "res.partner"),
             m2o("company_id", "res.company"),
             m2o("location_id", "stock.location"),

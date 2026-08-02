@@ -85,6 +85,11 @@ pub struct Field {
     /// how this field is derived from others, when it is not read from a
     /// column of its own
     pub compute: Option<Compute>,
+    /// the `ir.sequence` code this field's default comes from — the port
+    /// of Odoo's `default=lambda self: ...next_by_code(...)`. Resolved
+    /// inside the create's own transaction, so two clients creating at
+    /// once never get the same number.
+    pub sequence: Option<String>,
 }
 
 impl Field {
@@ -100,6 +105,7 @@ impl Field {
             default: None,
             related: None,
             compute: None,
+            sequence: None,
         }
     }
 
@@ -131,6 +137,15 @@ impl Field {
     /// path and written by writing the target, so it is not stored and
     /// is readonly here — Odoo lets a related field be made writable,
     /// which needs write-through the ORM does not do yet.
+    /// The field is numbered by an `ir.sequence`: creating a record
+    /// without a value for it draws the next one.
+    pub fn from_sequence(self, code: &str) -> Self {
+        Field {
+            sequence: Some(code.to_string()),
+            ..self
+        }
+    }
+
     pub fn related(self, path: &str) -> Self {
         Field {
             related: Some(path.to_string()),

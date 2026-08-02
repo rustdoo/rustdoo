@@ -11,4 +11,5 @@ pub mod methods;
 pub mod model;
 pub mod registry;
 pub mod rules;
+pub mod sequence;
 pub mod sql;

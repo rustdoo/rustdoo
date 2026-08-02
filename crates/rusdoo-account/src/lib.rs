@@ -111,7 +111,7 @@ fn mv() -> Model {
     Model::new(
         meta("account.move", "account_move"),
         vec![
-            char("name").required().default_value(json!("Rascunho")),
+            char("name").required().from_sequence("account.move"),
             char("ref"),
             m2o("partner_id", "res.partner").required(),
             m2o("company_id", "res.company"),

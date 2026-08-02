@@ -152,7 +152,7 @@ async fn the_addons_tree_installs_and_adds_up_live() {
             &pool,
             "sale.order",
             vec![
-                ("name", json!("SO-TEST")),
+                // no name: the sequence of the sale module numbers it
                 ("partner_id", json!(partner)),
                 (
                     "order_line",
@@ -166,10 +166,14 @@ async fn the_addons_tree_installs_and_adds_up_live() {
         .await
         .expect("the order saves");
     let rows = registry
-        .read(&pool, "sale.order", &[order], &["amount_total"])
+        .read(&pool, "sale.order", &[order], &["amount_total", "name"])
         .await
         .unwrap();
     assert_eq!(rows[0]["amount_total"], json!(6062.0));
+    assert_eq!(
+        rows[0]["name"], "SO00001",
+        "the order carries the number its module's sequence gave it"
+    );
 
     // removing a line moves the total with it
     let lines = registry

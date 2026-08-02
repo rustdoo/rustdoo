@@ -50,6 +50,7 @@ async fn fixture(url: &str, schema: &'static str) -> OrmService {
         "res_partner",
         "res_company",
         "res_country",
+        "ir_sequence",
     ] {
         sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{table}" CASCADE"#))
             .execute(&pool)
@@ -57,6 +58,9 @@ async fn fixture(url: &str, schema: &'static str) -> OrmService {
             .unwrap();
     }
     for model in [
+        // every registered model gets its table, like the real boot —
+        // a document numbered by a sequence needs the sequence table
+        "ir.sequence",
         "res.country",
         "res.company",
         "res.partner",
@@ -68,6 +72,35 @@ async fn fixture(url: &str, schema: &'static str) -> OrmService {
     ] {
         registry.get(model).unwrap().init_table(&pool).await.unwrap();
     }
+    // the sequences these modules ship, like their data files load
+    registry
+        .create(
+            &pool,
+            "ir.sequence",
+            vec![
+                ("name", json!("sale.order")),
+                ("code", json!("sale.order")),
+                ("prefix", json!("SO")),
+                ("padding", json!(5)),
+                ("number_next", json!(1)),
+            ],
+        )
+        .await
+        .unwrap();
+    registry
+        .create(
+            &pool,
+            "ir.sequence",
+            vec![
+                ("name", json!("account.move")),
+                ("code", json!("account.move")),
+                ("prefix", json!("FAT/")),
+                ("padding", json!(5)),
+                ("number_next", json!(1)),
+            ],
+        )
+        .await
+        .unwrap();
     let mut methods = MethodRegistry::new();
     rusdoo_account::extend_methods(&mut methods).unwrap();
     rusdoo_sale::extend_methods(&mut methods).unwrap();

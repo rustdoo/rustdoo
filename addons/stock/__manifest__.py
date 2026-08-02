@@ -5,6 +5,7 @@
     'summary': 'Entregas e recebimentos: documentos e movimentos',
     'depends': ['base', 'web', 'mail', 'product'],
     'data': [
+        'data/sequences.xml',
         'security/stock_groups.xml',
         'security/ir.model.access.csv',
         'data/locations.xml',
