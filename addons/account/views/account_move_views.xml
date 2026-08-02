@@ -21,4 +21,12 @@
         <field name="res_model">account.move</field>
         <field name="view_mode">list,form</field>
     </record>
+
+    <record id="view_move_search" model="ir.ui.view">
+        <field name="name">account.move.search</field>
+        <field name="model">account.move</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="invoice_origin"/><filter name="draft" string="Rascunhos" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;draft&quot;]]"/><filter name="posted" string="Lançadas" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;posted&quot;]]"/></search></field>
+    </record>
 </odoo>

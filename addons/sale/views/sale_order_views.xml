@@ -21,4 +21,12 @@
         <field name="res_model">sale.order</field>
         <field name="view_mode">list,form</field>
     </record>
+
+    <record id="view_order_search" model="ir.ui.view">
+        <field name="name">sale.order.search</field>
+        <field name="model">sale.order</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><filter name="draft" string="Orçamentos" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;draft&quot;]]"/><filter name="confirmed" string="Confirmados" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;sale&quot;]]"/><filter name="cancelled" string="Cancelados" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;cancel&quot;]]"/></search></field>
+    </record>
 </odoo>

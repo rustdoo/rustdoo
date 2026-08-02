@@ -21,4 +21,12 @@
         <field name="res_model">product.product</field>
         <field name="view_mode">list,form</field>
     </record>
+
+    <record id="view_product_search" model="ir.ui.view">
+        <field name="name">product.product.search</field>
+        <field name="model">product.product</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="default_code"/><filter name="goods" string="Produtos" domain="[[&quot;type&quot;, &quot;=&quot;, &quot;consu&quot;]]"/><filter name="services" string="Serviços" domain="[[&quot;type&quot;, &quot;=&quot;, &quot;service&quot;]]"/></search></field>
+    </record>
 </odoo>

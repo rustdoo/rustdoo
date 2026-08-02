@@ -12,6 +12,9 @@
     /** As views que uma ação pode pedir e este cliente sabe desenhar. */
     const SUPPORTED_VIEWS = ["list", "form"];
 
+    /** A view de busca não é pedida pela ação: acompanha a lista. */
+    const SEARCH_VIEW = [false, "search"];
+
     class WebClient {
         constructor(target) {
             this.target = target;
@@ -201,7 +204,7 @@
                 throw new Error("ação sem view suportada: " + (action.view_mode || ""));
             }
             const payload = await api.callKw(action.res_model, "get_views", [], {
-                views: wanted.map((kind) => [false, kind]),
+                views: wanted.map((kind) => [false, kind]).concat([SEARCH_VIEW]),
             });
             this.action = {
                 action: action,
@@ -224,6 +227,7 @@
                 fields: fields,
                 domain: action.domain || [],
                 title: action.name || action.res_model,
+                searchArch: views.search ? views.search.arch : null,
                 onOpen: (id) => this.showForm(id),
                 onCreate: views.form ? () => this.showForm(null) : null,
                 onError: (error) => this.notify(error),
@@ -240,7 +244,7 @@
             try {
                 const wanted = ["list", "form"];
                 const payload = await api.callKw(action.res_model, "get_views", [], {
-                    views: wanted.map((kind) => [false, kind]),
+                    views: wanted.map((kind) => [false, kind]).concat([SEARCH_VIEW]),
                 });
                 this.action = {
                     action: {

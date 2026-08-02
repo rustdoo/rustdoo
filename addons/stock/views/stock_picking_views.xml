@@ -43,4 +43,12 @@
         <field name="res_model">stock.location</field>
         <field name="view_mode">list,form</field>
     </record>
+
+    <record id="view_picking_search" model="ir.ui.view">
+        <field name="name">stock.picking.search</field>
+        <field name="model">stock.picking</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="origin"/><filter name="todo" string="A fazer" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;confirmed&quot;]]"/><filter name="done" string="Concluídas" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;done&quot;]]"/><filter name="outgoing" string="Entregas" domain="[[&quot;picking_type&quot;, &quot;=&quot;, &quot;outgoing&quot;]]"/></search></field>
+    </record>
 </odoo>

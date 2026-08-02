@@ -242,7 +242,19 @@ impl OrmService {
         }
         let mut views = Map::new();
         for (view_id, kind) in specs {
-            views.insert(kind.clone(), self.find_view(model, *view_id, kind).await?);
+            // asking for "the default view of this type" and finding
+            // none omits it: a client that can draw four kinds of view
+            // should not be refused the two that exist. Asking for a
+            // specific id that is missing stays an error.
+            match self.find_view(model, *view_id, kind).await {
+                Ok(view) => {
+                    views.insert(kind.clone(), view);
+                }
+                Err(error) if view_id.is_none() => {
+                    tracing::debug!("{model}: {}", error.message);
+                }
+                Err(error) => return Err(error),
+            }
         }
         let fields = self.fields_metadata(model, &std::collections::HashSet::new())?;
         Ok(json!({

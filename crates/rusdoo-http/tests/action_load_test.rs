@@ -63,7 +63,7 @@ async fn fixture(url: &str, schema: &str) -> OrmService {
     ))
     .unwrap();
 
-    for table in ["ir_act_window", "res_partner", "ir_model_data"] {
+    for table in ["ir_act_window", "res_partner", "ir_model_data", "ir_ui_view"] {
         sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{table}""#))
             .execute(&pool)
             .await
@@ -218,4 +218,53 @@ async fn unknown_actions_are_errors_live() {
             "{reference} must not resolve: {body}"
         );
     }
+}
+
+/// `get_views` answers with the views that exist. A client that can draw
+/// four kinds should not be refused the two a model has — but asking for
+/// a specific view id that is missing is still an error, because that id
+/// came from somewhere and pointing at nothing is a bug.
+#[tokio::test]
+async fn a_missing_default_view_is_omitted_not_an_error_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let service = fixture(&url, "rusdoo_action_views").await;
+    // the fixture has no ir.ui.view rows at all
+    let body = json!({"jsonrpc": "2.0", "id": 1, "method": "call",
+                      "params": {"model": "res.partner", "method": "get_views", "args": [],
+                                 "kwargs": {"views": [[false, "list"], [false, "form"]]}}});
+    let response = router(service.clone())
+        .oneshot(
+            Request::post("/web/dataset/call_kw")
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let answer: Value = serde_json::from_slice(&bytes).unwrap();
+    let views = &answer["result"]["views"];
+    assert!(views.is_object(), "{answer}");
+    assert!(views.as_object().unwrap().is_empty(), "{answer}");
+    // the field metadata still comes back: it is what the client draws with
+    assert!(answer["result"]["models"]["res.partner"]["fields"]["name"].is_object());
+
+    let body = json!({"jsonrpc": "2.0", "id": 2, "method": "call",
+                      "params": {"model": "res.partner", "method": "get_views", "args": [],
+                                 "kwargs": {"views": [[4242, "form"]]}}});
+    let response = router(service)
+        .oneshot(
+            Request::post("/web/dataset/call_kw")
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let answer: Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(answer.get("result").is_none(), "{answer}");
 }

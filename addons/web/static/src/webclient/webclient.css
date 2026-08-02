@@ -456,3 +456,30 @@ input[type="checkbox"].o_input {
     margin-top: 4px;
     white-space: pre-wrap;
 }
+
+/* filtros da busca -------------------------------------------------------- */
+
+.o_filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.o_filter {
+    background: var(--o-surface);
+    border: 1px solid var(--o-border);
+    border-radius: 999px;
+    padding: 4px 12px;
+    color: var(--o-muted);
+}
+
+.o_filter:hover {
+    color: var(--o-text);
+}
+
+.o_filter.o_filter_on {
+    background: var(--o-brand);
+    border-color: var(--o-brand);
+    color: #fff;
+}
