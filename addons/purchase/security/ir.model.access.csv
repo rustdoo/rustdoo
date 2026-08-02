@@ -1,0 +1,9 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_purchase_order_user,pedido usuário,purchase.order,group_purchase_user,1,1,1,0
+access_purchase_order_manager,pedido gerente,purchase.order,group_purchase_manager,1,1,1,1
+access_purchase_order_line_user,linha usuário,purchase.order.line,group_purchase_user,1,1,1,1
+access_purchase_order_line_manager,linha gerente,purchase.order.line,group_purchase_manager,1,1,1,1
+access_account_move_purchase,fatura compras,account.move,group_purchase_user,1,1,1,0
+access_account_move_line_purchase,linha de fatura compras,account.move.line,group_purchase_user,1,1,1,1
+access_stock_picking_purchase,recebimento compras,stock.picking,group_purchase_user,1,1,1,0
+access_stock_move_purchase,movimento compras,stock.move,group_purchase_user,1,1,1,1

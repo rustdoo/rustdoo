@@ -1,0 +1,17 @@
+[package]
+name = "rusdoo-purchase"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+rusdoo-core = { path = "../rusdoo-core" }
+rusdoo-orm = { path = "../rusdoo-orm" }
+rusdoo-product = { path = "../rusdoo-product" }
+rusdoo-account = { path = "../rusdoo-account" }
+rusdoo-stock = { path = "../rusdoo-stock" }
+
+[dev-dependencies]
+tokio.workspace = true
+rusdoo-base = { path = "../rusdoo-base" }

@@ -24,6 +24,7 @@ rusdoo-base = { path = "../rusdoo-base" }
 rusdoo-mail = { path = "../rusdoo-mail" }
 rusdoo-account = { path = "../rusdoo-account" }
 rusdoo-product = { path = "../rusdoo-product" }
+rusdoo-purchase = { path = "../rusdoo-purchase" }
 rusdoo-sale = { path = "../rusdoo-sale" }
 rusdoo-stock = { path = "../rusdoo-stock" }
 tokio.workspace = true

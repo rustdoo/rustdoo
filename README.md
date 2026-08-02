@@ -29,6 +29,7 @@ Cada crate espelha um subsistema do núcleo Python (`odoo/odoo/`):
 | `rusdoo-product` | `odoo/addons/product/models/` | O catálogo compartilhado |
 | `rusdoo-account` | `odoo/addons/account/models/` | Faturas: linhas, totais e lançamento |
 | `rusdoo-stock` | `odoo/addons/stock/models/` | Entregas e recebimentos |
+| `rusdoo-purchase` | `odoo/addons/purchase/models/` | Pedidos de compra |
 | `rusdoo-sale` | `odoo/addons/sale/models/` | Pedidos de venda, faturamento e entrega |
 | `rusdoo-server` | `odoo-bin` | Binário `rusdoo` (CLI + bootstrap) |
 
@@ -43,6 +44,7 @@ num diretório de `addons/`.
 | `addons/product` | Catálogo: ACL, views e produtos de demonstração |
 | `addons/account` | Grupos, ACL, views e menus de faturamento |
 | `addons/stock` | Grupos, ACL, locais, views e menus de estoque |
+| `addons/purchase` | Grupos, ACL, views e menus de compras |
 | `addons/sale` | Grupos, ACL, views e menus de vendas |
 | `addons/rusdoo_demo` | Dados de demonstração |
 

@@ -78,6 +78,21 @@ pub async fn next_by_code(
     )))
 }
 
+impl Registry {
+    /// Draw the next number of `code` on a connection of `pool` — for a
+    /// module method that numbers a document itself, because which
+    /// sequence applies depends on what it is creating (a receipt is not
+    /// numbered like a delivery).
+    pub async fn next_sequence(
+        &self,
+        pool: &sqlx::PgPool,
+        code: &str,
+    ) -> Result<Option<String>, RusdooError> {
+        let mut conn = pool.acquire().await.map_err(db_err)?;
+        next_by_code(&mut conn, self, code).await
+    }
+}
+
 fn db_err(error: sqlx::Error) -> RusdooError {
     RusdooError::Database(error.to_string())
 }

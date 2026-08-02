@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_purchase_root" model="ir.ui.menu">
+        <field name="name">Compras</field>
+        <field name="sequence">25</field>
+    </record>
+    <record id="menu_purchases" model="ir.ui.menu">
+        <field name="name">Pedidos</field>
+        <field name="parent_id" ref="menu_purchase_root"/>
+        <field name="sequence">10</field>
+        <field name="action">purchase.action_purchases</field>
+    </record>
+</odoo>

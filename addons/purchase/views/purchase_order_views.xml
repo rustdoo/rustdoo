@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_purchase_list" model="ir.ui.view">
+        <field name="name">purchase.order.list</field>
+        <field name="model">purchase.order</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Número"/><field name="partner_id" string="Fornecedor"/><field name="date_order" string="Data"/><field name="state" string="Situação"/><field name="amount_total" string="Total"/></list></field>
+    </record>
+
+    <record id="view_purchase_form" model="ir.ui.view">
+        <field name="name">purchase.order.form</field>
+        <field name="model">purchase.order</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_confirm" type="object" string="Confirmar" class="btn-primary"/><button name="action_create_receipt" type="object" string="Criar recebimento"/><button name="action_create_bill" type="object" string="Criar fatura"/><button name="action_cancel" type="object" string="Cancelar"/><group><field name="name" string="Número"/><field name="partner_id" string="Fornecedor"/><field name="partner_ref" string="Referência do fornecedor"/><field name="date_order" string="Data do pedido"/></group><group><field name="state" string="Situação"/><field name="date_planned" string="Entrega prevista"/><field name="company_id" string="Empresa"/><field name="amount_total" string="Total"/></group><field name="order_line" string="Linhas do pedido"><list><field name="product_id" string="Produto"/><field name="name" string="Descrição"/><field name="product_qty" string="Quantidade"/><field name="price_unit" string="Preço unitário"/><field name="price_subtotal" string="Subtotal"/></list></field><group><field name="notes" string="Observações"/></group><chatter/></form></field>
+    </record>
+
+    <record id="view_purchase_search" model="ir.ui.view">
+        <field name="name">purchase.order.search</field>
+        <field name="model">purchase.order</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="partner_ref"/><filter name="draft" string="Cotações" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;draft&quot;]]"/><filter name="confirmed" string="Confirmados" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;purchase&quot;]]"/><groupby name="state" string="Situação"/><groupby name="partner_id" string="Fornecedor"/></search></field>
+    </record>
+
+    <record id="action_purchases" model="ir.actions.act_window">
+        <field name="name">Pedidos de compra</field>
+        <field name="res_model">purchase.order</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

@@ -7,6 +7,7 @@ members = [
     "crates/rusdoo-account",
     "crates/rusdoo-mail",
     "crates/rusdoo-product",
+    "crates/rusdoo-purchase",
     "crates/rusdoo-sale",
     "crates/rusdoo-stock",
     "crates/rusdoo-http",
