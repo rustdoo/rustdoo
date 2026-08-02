@@ -43,13 +43,44 @@ fn boot_registry() -> Registry {
     reg
 }
 
+/// A pool bound to a schema of this test's own. Every boot test installs
+/// modules that create the same system tables (ir_model_data and the
+/// fixture models), so sharing `public` makes them collide on concurrent
+/// DDL — isolation belongs in the fixture, not in a --test-threads=1 rule
+/// the runner has to remember.
+async fn schema_pool(url: &str, schema: &'static str) -> sqlx::PgPool {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .after_connect(move |conn, _meta| {
+            Box::pin(async move {
+                sqlx::Executor::execute(
+                    conn,
+                    &*format!("CREATE SCHEMA IF NOT EXISTS {schema}; SET search_path TO {schema}"),
+                )
+                .await?;
+                Ok(())
+            })
+        })
+        .connect_lazy(url)
+        .unwrap();
+    // start from an empty schema: these tests assert on what an install
+    // creates, not on what a previous run left behind
+    sqlx::query(&format!(
+        "DROP SCHEMA {schema} CASCADE; CREATE SCHEMA {schema}"
+    ))
+    .execute(&pool)
+    .await
+    .ok();
+    pool
+}
+
 #[tokio::test]
 async fn boots_fixture_addons_in_dependency_order() {
     let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = schema_pool(&url, "rusdoo_boot_order").await;
     for table in ["rusdoo_test_bootpartner", "rusdoo_test_bootco"] {
         sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{table}""#))
             .execute(&pool)
@@ -131,7 +162,7 @@ async fn addon_defined_models_are_registered_and_loaded() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = schema_pool(&url, "rusdoo_boot_models").await;
     sqlx::query(r#"DROP TABLE IF EXISTS "x_lib_livro""#)
         .execute(&pool)
         .await
@@ -183,7 +214,7 @@ async fn ir_model_access_csv_loads_into_acl() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = schema_pool(&url, "rusdoo_boot_acl").await;
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {
@@ -281,7 +312,7 @@ async fn command_link_loads_m2m_end_to_end() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = schema_pool(&url, "rusdoo_boot_m2m").await;
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {

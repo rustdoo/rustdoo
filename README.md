@@ -69,12 +69,11 @@ variável eles se auto-ignoram (com aviso no stderr).
 
 ```sh
 createdb rusdoo_test
-RUSDOO_TEST_DATABASE_URL="postgres:///rusdoo_test" \
-  cargo test --workspace -- --test-threads=1
+RUSDOO_TEST_DATABASE_URL="postgres:///rusdoo_test" cargo test --workspace
 ```
 
-`--test-threads=1` porque alguns testes de instalação de módulo criam as
-mesmas tabelas de sistema (`ir_model_data`, …) e colidem em paralelo.
+Testes que criam tabelas de sistema (`ir_model_data`, …) rodam cada um em
+seu próprio schema, então a suíte é segura em paralelo.
 
 ## Licença
 
