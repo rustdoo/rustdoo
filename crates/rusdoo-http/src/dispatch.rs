@@ -71,6 +71,7 @@ pub struct OrmService {
     pub(crate) verify_gate: Arc<Semaphore>,
     pub(crate) access: Arc<rusdoo_orm::access::AccessControl>,
     pub(crate) rules: Arc<rusdoo_orm::rules::RecordRules>,
+    pub(crate) assets: Arc<crate::assets::AssetHub>,
 }
 
 impl OrmService {
@@ -85,12 +86,20 @@ impl OrmService {
             verify_gate: Arc::new(Semaphore::new(MAX_CONCURRENT_VERIFY)),
             access: Arc::new(rusdoo_orm::access::AccessControl::new()),
             rules: Arc::new(rusdoo_orm::rules::RecordRules::new()),
+            assets: crate::assets::AssetHub::empty(),
         }
     }
 
     /// Install the access-control table (`ir.model.access`).
     pub fn with_access(mut self, access: rusdoo_orm::access::AccessControl) -> Self {
         self.access = Arc::new(access);
+        self
+    }
+
+    /// Install what the addons ship to the browser (their bundles and
+    /// `static/` directories).
+    pub fn with_assets(mut self, assets: Arc<crate::assets::AssetHub>) -> Self {
+        self.assets = assets;
         self
     }
 

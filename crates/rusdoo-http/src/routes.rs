@@ -9,6 +9,7 @@ use axum::{Json, Router};
 use rusdoo_orm::crud::SearchOptions;
 use rusdoo_orm::domain::parse_domain;
 use serde_json::{json, Map, Value};
+use std::sync::Arc;
 
 /// Odoo's JSON-RPC error code for a missing/expired session.
 const SESSION_EXPIRED: i64 = 100;
@@ -19,6 +20,9 @@ use crate::jsonrpc::{
 };
 
 pub fn router(service: OrmService) -> Router {
+    // the asset routes carry their own state, so they are merged after
+    // the ORM routes have taken theirs
+    let assets = crate::assets::routes(Arc::clone(&service.assets));
     Router::new()
         .route("/", get(index))
         .route("/web/dataset/call_kw", post(call_kw))
@@ -31,6 +35,7 @@ pub fn router(service: OrmService) -> Router {
         .route("/web/action/{xml_id}", get(render_action_page))
         .route("/jsonrpc", post(jsonrpc_endpoint))
         .with_state(service)
+        .merge(assets)
 }
 
 /// Browser-visible status page (the web client lands here in Phase 5).

@@ -5,6 +5,7 @@
 //! Not yet ported: access rights (ir.model.access), multi-database
 //! routing, session expiry.
 
+pub mod assets;
 pub mod dispatch;
 mod group;
 pub mod jsonrpc;

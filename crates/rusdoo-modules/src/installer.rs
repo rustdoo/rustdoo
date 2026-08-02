@@ -2,6 +2,7 @@
 //! creation in `odoo/tools/convert.py` + the external-id bookkeeping
 //! of `ir.model.data` (in-memory until the base models are ported).
 
+use crate::assets::{resolve_bundles, Bundles};
 use crate::data::{parse_csv_data, parse_xml_data, DataRecord, FieldValue};
 use crate::eval::eval_expr;
 use crate::graph::dependency_order;
@@ -214,6 +215,10 @@ pub struct InstallReport {
     pub access: AccessControl,
     /// ir.rule record rules gathered from the installed modules
     pub rules: RecordRules,
+    /// client bundles contributed by the installed modules, in load order
+    pub bundles: Bundles,
+    /// installed module -> its directory, what the static routes serve from
+    pub roots: HashMap<String, std::path::PathBuf>,
 }
 
 /// The integrated boot, port of `odoo/modules/loading.py`:
@@ -235,6 +240,19 @@ pub async fn install_modules(
         manifests.iter().map(|m| (m.name.as_str(), m)).collect();
 
     let mut report = InstallReport::default();
+    // the addons that actually load, in dependency order — the same
+    // sequence that gives the client bundles their load order
+    let installed: Vec<&Manifest> = order
+        .iter()
+        .map(|name| by_name[name.as_str()])
+        .filter(|manifest| manifest.installable)
+        .collect();
+    report.bundles = resolve_bundles(&installed)?;
+    report.roots = installed
+        .iter()
+        .map(|manifest| (manifest.name.clone(), manifest.path.clone()))
+        .collect();
+
     for name in &order {
         let manifest = by_name[name.as_str()];
         if !manifest.installable {
