@@ -1,0 +1,5 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_account_move_user,fatura usuário,account.move,group_account_user,1,1,1,0
+access_account_move_manager,fatura gerente,account.move,group_account_manager,1,1,1,1
+access_account_move_line_user,linha usuário,account.move.line,group_account_user,1,1,1,1
+access_account_move_line_manager,linha gerente,account.move.line,group_account_manager,1,1,1,1

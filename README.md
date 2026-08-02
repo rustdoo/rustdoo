@@ -25,7 +25,10 @@ Cada crate espelha um subsistema do núcleo Python (`odoo/odoo/`):
 | `rusdoo-qweb` | `ir_qweb.py` | Engine de templates QWeb (XML) |
 | `rusdoo-modules` | `odoo/modules/` | Manifests, grafo de dependências, loading, assets |
 | `rusdoo-base` | `odoo/addons/base/models/` | Os modelos que todo addon usa |
-| `rusdoo-sale` | `odoo/addons/sale/models/` | Produtos, pedidos e linhas (primeiro módulo de negócio) |
+| `rusdoo-mail` | `odoo/addons/mail/models/` | Mensagens: o chatter de cada registro |
+| `rusdoo-product` | `odoo/addons/product/models/` | O catálogo compartilhado |
+| `rusdoo-account` | `odoo/addons/account/models/` | Faturas: linhas, totais e lançamento |
+| `rusdoo-sale` | `odoo/addons/sale/models/` | Pedidos de venda e o faturamento deles |
 | `rusdoo-server` | `odoo-bin` | Binário `rusdoo` (CLI + bootstrap) |
 
 Um addon segue a mesma divisão do Odoo: **código** num crate, **dados**
@@ -35,6 +38,9 @@ num diretório de `addons/`.
 |---|---|
 | `addons/base` | Grupos, `ir.model.access.csv`, views e menus dos modelos base |
 | `addons/web` | O cliente web (JS/CSS servido pelo bundle `web.assets_backend`) |
+| `addons/mail` | ACL das mensagens |
+| `addons/product` | Catálogo: ACL, views e produtos de demonstração |
+| `addons/account` | Grupos, ACL, views e menus de faturamento |
 | `addons/sale` | Grupos, ACL, views e menus de vendas |
 | `addons/rusdoo_demo` | Dados de demonstração |
 
@@ -67,13 +73,22 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
 6. **Fase 5 — Cliente web** ✅ no essencial: o addon `web` traz um
    cliente próprio (JS sem dependências) que fala o mesmo JSON-RPC do
    Odoo: login, apps e menus, view de lista (busca, ordenação, paginação)
-   view de formulário (criar, editar, excluir) e linhas x2many editáveis
-   (as linhas de um pedido). Falta: kanban, painel de filtros, anexos.
+   view de formulário (criar, editar, excluir), linhas x2many editáveis
+   (as linhas de um pedido), botões de ação do arch e o chatter.
+   Falta: kanban, painel de filtros, anexos.
 7. **Fase 6 — Addons de negócio** *(atual)*: port módulo a módulo em ordem
-   do grafo de dependências. O primeiro é `sale` (produtos, pedidos,
-   linhas, totais calculados no servidor); em seguida `mail`, `account`,
-   `stock`. O web client JS original (1,33M linhas) pode ser mantido como
-   está — ele só fala JSON-RPC — ou substituído pelo cliente daqui.
+   do grafo de dependências. Já portados: `mail` (chatter), `product`,
+   `sale` (pedidos, linhas, totais e botões de estado) e `account`
+   (faturas, com a ação "criar fatura" a partir do pedido). Em seguida:
+   `stock`, `purchase`, `project`. O web client JS original (1,33M
+   linhas) pode ser mantido como está — ele só fala JSON-RPC — ou
+   substituído pelo cliente daqui.
+
+Um módulo de negócio segue sempre a mesma forma: **modelos e métodos**
+num crate (`rusdoo-<módulo>`), **registros** num addon (`addons/<módulo>`).
+Um método de modelo declara o acesso que precisa (`action_confirm`
+escreve, `message_post` só lê), e é isso que o despacho verifica antes de
+executá-lo.
 
 ## Build
 

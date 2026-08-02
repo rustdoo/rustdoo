@@ -14,6 +14,6 @@
         <field name="name">Produtos</field>
         <field name="parent_id" ref="menu_sale_root"/>
         <field name="sequence">20</field>
-        <field name="action">sale.action_products</field>
+        <field name="action">product.action_products</field>
     </record>
 </odoo>

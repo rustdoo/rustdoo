@@ -208,6 +208,23 @@ async fn an_addon_serves_only_its_own_static_directory() {
 }
 
 #[tokio::test]
+async fn a_changed_file_is_served_instead_of_the_cached_bundle() {
+    let fixture = Fixture::new("stale");
+    // one router, so the same asset cache answers both requests
+    let app = app(&fixture);
+    let (_, _, first) = get(app.clone(), "/web/assets/web.assets_backend.js").await;
+    assert!(first.contains("const a = 1;"));
+
+    // a deploy replaces a file without restarting the server
+    fixture.write("demo/static/src/a.js", "const a = 99;");
+    let (_, _, second) = get(app, "/web/assets/web.assets_backend.js").await;
+    assert!(
+        second.contains("const a = 99;") && !second.contains("const a = 1;"),
+        "yesterday's client is still being served: {second}"
+    );
+}
+
+#[tokio::test]
 async fn web_serves_the_client_when_an_addon_ships_one() {
     let fixture = Fixture::new("shell");
     let (status, headers, body) = get(app(&fixture), "/web").await;

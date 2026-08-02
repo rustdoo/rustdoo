@@ -1,5 +1,5 @@
 [package]
-name = "rusdoo-sale"
+name = "rusdoo-account"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,6 @@ serde_json.workspace = true
 rusdoo-core = { path = "../rusdoo-core" }
 rusdoo-orm = { path = "../rusdoo-orm" }
 rusdoo-product = { path = "../rusdoo-product" }
-rusdoo-account = { path = "../rusdoo-account" }
 
 [dev-dependencies]
 tokio.workspace = true

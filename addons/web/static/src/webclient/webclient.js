@@ -232,6 +232,36 @@
             view.refresh();
         }
 
+        /**
+         * Abrir o que uma ação aponta. Uma ação com `res_id` abre aquele
+         * registro; sem ele, a lista do modelo.
+         */
+        async openAction(action) {
+            try {
+                const wanted = ["list", "form"];
+                const payload = await api.callKw(action.res_model, "get_views", [], {
+                    views: wanted.map((kind) => [false, kind]),
+                });
+                this.action = {
+                    action: {
+                        res_model: action.res_model,
+                        name: action.name || action.res_model,
+                        domain: action.domain || [],
+                    },
+                    fields: payload.models[action.res_model].fields,
+                    views: payload.views,
+                    types: wanted,
+                };
+                if (action.res_id) {
+                    await this.showForm(action.res_id);
+                } else {
+                    this.showList();
+                }
+            } catch (error) {
+                this.notify(error);
+            }
+        }
+
         async showForm(resId) {
             const { action, fields, views } = this.action;
             if (!views.form) {
@@ -246,6 +276,7 @@
                 title: action.name || action.res_model,
                 onBack: () => this.showList(),
                 onSaved: () => this.notifySaved(),
+                onAction: (action) => this.openAction(action),
                 onError: (error) => this.notify(error),
             });
             try {
@@ -254,6 +285,8 @@
                 this.notify(error);
                 return;
             }
+            // o formulário aberto fica alcançável (depuração e testes)
+            this.form = view;
             fill(this.content, view.render());
         }
 

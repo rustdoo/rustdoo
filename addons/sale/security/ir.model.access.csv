@@ -1,7 +1,7 @@
 id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_product_user,produto usuário,product.product,group_sale_user,1,0,0,0
-access_product_manager,produto gerente,product.product,group_sale_manager,1,1,1,1
 access_sale_order_user,pedido usuário,sale.order,group_sale_user,1,1,1,0
 access_sale_order_manager,pedido gerente,sale.order,group_sale_manager,1,1,1,1
 access_sale_order_line_user,linha usuário,sale.order.line,group_sale_user,1,1,1,1
 access_sale_order_line_manager,linha gerente,sale.order.line,group_sale_manager,1,1,1,1
+access_account_move_sale,fatura vendas,account.move,group_sale_user,1,1,1,0
+access_account_move_line_sale,linha de fatura vendas,account.move.line,group_sale_user,1,1,1,1

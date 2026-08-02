@@ -7,6 +7,8 @@
 
 use rusdoo_core::RusdooError;
 use rusdoo_orm::access::Operation;
+use rusdoo_orm::crud::SearchOptions;
+use rusdoo_orm::domain::parse_domain;
 use rusdoo_orm::fields::{Field, FieldType};
 use rusdoo_orm::methods::{MethodCtx, MethodFuture, MethodRegistry};
 use rusdoo_orm::model::{Model, ModelMeta};
@@ -14,9 +16,7 @@ use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
 
 /// Money and quantities: two decimals, like Odoo's default precision.
-const PRICE: FieldType = FieldType::Float {
-    digits: Some((16, 2)),
-};
+const PRICE: FieldType = rusdoo_product::PRICE;
 
 fn char(name: &str) -> Field {
     Field::new(name, FieldType::Char { size: None })
@@ -90,7 +90,145 @@ pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
     methods.register("sale.order", "action_confirm", Operation::Write, action_confirm)?;
     methods.register("sale.order", "action_cancel", Operation::Write, action_cancel)?;
     methods.register("sale.order", "action_draft", Operation::Write, action_draft)?;
+    methods.register(
+        "sale.order",
+        "action_create_invoice",
+        Operation::Write,
+        action_create_invoice,
+    )?;
     Ok(())
+}
+
+/// `action_create_invoice` — bill a confirmed order.
+///
+/// The invoice is a copy of what was agreed, not a link to it: an order
+/// edited afterwards must not silently rewrite a document somebody
+/// already sent. Only confirmed orders are billed, and only once — the
+/// second click says so instead of quietly issuing a duplicate.
+fn action_create_invoice<'a>(
+    ctx: MethodCtx<'a>,
+    _args: &'a [Value],
+    _kwargs: &'a Map<String, Value>,
+) -> MethodFuture<'a> {
+    Box::pin(async move {
+        let [order_id] = ctx.ids[..] else {
+            return Err(RusdooError::Validation(
+                "fature um pedido de cada vez".into(),
+            ));
+        };
+        let orders = ctx
+            .registry
+            .read(
+                ctx.pool,
+                "sale.order",
+                &[order_id],
+                &["name", "state", "partner_id", "company_id"],
+            )
+            .await?;
+        let order = orders
+            .first()
+            .ok_or_else(|| RusdooError::Validation(format!("pedido {order_id} não existe")))?;
+        let name = order.get("name").and_then(Value::as_str).unwrap_or("");
+        let state = order.get("state").and_then(Value::as_str).unwrap_or("draft");
+        if state != "sale" {
+            return Err(RusdooError::Validation(format!(
+                "o pedido {name} não está confirmado: confirme antes de faturar"
+            )));
+        }
+        // already billed? the origin field is what ties them together
+        let existing = ctx
+            .registry
+            .search(
+                ctx.pool,
+                "account.move",
+                &parse_domain(&json!([["invoice_origin", "=", name]]))?,
+                &SearchOptions::default(),
+            )
+            .await?;
+        if let Some(invoice) = existing.first() {
+            return Err(RusdooError::Validation(format!(
+                "o pedido {name} já foi faturado (fatura {invoice})"
+            )));
+        }
+
+        let lines = ctx
+            .registry
+            .read(ctx.pool, "sale.order", &[order_id], &["order_line"])
+            .await?;
+        let line_ids: Vec<i64> = lines
+            .first()
+            .and_then(|row| row.get("order_line"))
+            .and_then(Value::as_array)
+            .map(|ids| ids.iter().filter_map(Value::as_i64).collect())
+            .unwrap_or_default();
+        if line_ids.is_empty() {
+            return Err(RusdooError::Validation(format!(
+                "o pedido {name} não tem linhas: não há o que faturar"
+            )));
+        }
+        let sold = ctx
+            .registry
+            .read(
+                ctx.pool,
+                "sale.order.line",
+                &line_ids,
+                &["product_id", "name", "product_uom_qty", "price_unit"],
+            )
+            .await?;
+        let invoice_lines: Vec<Value> = sold
+            .iter()
+            .map(|line| {
+                json!([0, 0, {
+                    "product_id": line.get("product_id").and_then(first_id),
+                    "name": line.get("name").cloned().unwrap_or(Value::Null),
+                    "quantity": line.get("product_uom_qty").cloned().unwrap_or(json!(0)),
+                    "price_unit": line.get("price_unit").cloned().unwrap_or(json!(0)),
+                }])
+            })
+            .collect();
+
+        let invoice = ctx
+            .registry
+            .create_as(
+                ctx.pool,
+                ctx.uid,
+                "account.move",
+                vec![
+                    ("name", json!(format!("Rascunho de {name}"))),
+                    ("move_type", json!("out_invoice")),
+                    (
+                        "partner_id",
+                        json!(order.get("partner_id").and_then(first_id)),
+                    ),
+                    (
+                        "company_id",
+                        json!(order.get("company_id").and_then(first_id)),
+                    ),
+                    ("invoice_origin", json!(name)),
+                    ("line_ids", Value::Array(invoice_lines)),
+                ],
+            )
+            .await?;
+
+        // what the client should do next, in the shape Odoo answers with
+        Ok(json!({
+            "type": "ir.actions.act_window",
+            "name": "Fatura",
+            "res_model": "account.move",
+            "res_id": invoice,
+            "views": [[false, "form"]],
+            "target": "current",
+        }))
+    })
+}
+
+/// The id out of a many2one value, which reads as `[id, name]`.
+fn first_id(value: &Value) -> Option<i64> {
+    match value {
+        Value::Array(items) => items.first().and_then(Value::as_i64),
+        Value::Number(number) => number.as_i64(),
+        _ => None,
+    }
 }
 
 /// Move `ids` from one state to another, refusing the moves that make no
@@ -152,31 +290,7 @@ fn action_draft<'a>(
 }
 
 fn models() -> Vec<Model> {
-    vec![product(), order(), order_line()]
-}
-
-/// `product.product` — what is being sold.
-fn product() -> Model {
-    Model::new(
-        meta("product.product", "product_product"),
-        vec![
-            char("name").required(),
-            // the internal reference a warehouse actually says out loud
-            char("default_code"),
-            Field::new("list_price", PRICE).default_value(json!(0.0)),
-            Field::new("standard_price", PRICE).default_value(json!(0.0)),
-            Field::new(
-                "type",
-                FieldType::Selection(vec![
-                    ("consu".into(), "Produto".into()),
-                    ("service".into(), "Serviço".into()),
-                ]),
-            )
-            .default_value(json!("consu")),
-            Field::new("description", FieldType::Text),
-            Field::new("active", FieldType::Boolean).default_value(json!(true)),
-        ],
-    )
+    vec![order(), order_line()]
 }
 
 /// `sale.order` — the order itself.
@@ -257,8 +371,9 @@ mod tests {
     #[test]
     fn the_models_register_on_top_of_base() {
         let mut reg = rusdoo_base::registry().unwrap();
+        rusdoo_product::extend(&mut reg).unwrap();
         extend(&mut reg).unwrap();
-        for name in ["product.product", "sale.order", "sale.order.line"] {
+        for name in ["sale.order", "sale.order.line"] {
             assert!(reg.get(name).is_some(), "{name} must be registered");
         }
         // the total is materialized: a list of orders reads a column

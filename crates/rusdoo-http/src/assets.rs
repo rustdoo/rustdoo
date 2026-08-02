@@ -44,6 +44,9 @@ struct Rendered {
     body: Vec<u8>,
     content_type: &'static str,
     etag: String,
+    /// the newest mtime among the files it was built from — what tells a
+    /// later request that the bundle on disk has moved on
+    built_from: Option<std::time::SystemTime>,
 }
 
 impl AssetHub {
@@ -69,9 +72,6 @@ impl AssetHub {
     /// Concatenate a bundle, or answer `None` when the name matches no
     /// bundle (or no file of that type inside one).
     fn render_bundle(&self, name: &str) -> Option<Arc<Rendered>> {
-        if let Some(hit) = self.cache.read().expect("asset cache lock").get(name) {
-            return Some(Arc::clone(hit));
-        }
         let (bundle, extension) = name.rsplit_once('.')?;
         let (content_type, extensions) = match extension {
             "js" => ("text/javascript; charset=utf-8", &["js", "mjs"][..]),
@@ -85,6 +85,15 @@ impl AssetHub {
             .collect();
         if files.is_empty() {
             return None;
+        }
+        // a cached bundle is only good while the files it was built from
+        // are the ones on disk: a deploy that replaces them without
+        // restarting the server must not keep serving yesterday's client
+        let newest = newest_mtime(&files);
+        if let Some(hit) = self.cache.read().expect("asset cache lock").get(name) {
+            if hit.built_from == newest {
+                return Some(Arc::clone(hit));
+            }
         }
         let mut body = Vec::new();
         for file in files {
@@ -109,6 +118,7 @@ impl AssetHub {
             etag: etag_of(&body),
             content_type,
             body,
+            built_from: newest,
         });
         self.cache
             .write()
@@ -185,6 +195,7 @@ async fn serve_static(
         etag: etag_of(&body),
         content_type: content_type_of(&path),
         body,
+        built_from: None,
     };
     answer(Some(Arc::new(rendered)), &headers, REVALIDATE_CACHE)
 }
@@ -221,6 +232,16 @@ fn answer(rendered: Option<Arc<Rendered>>, headers: &HeaderMap, cache: &str) -> 
         rendered.body.clone(),
     )
         .into_response()
+}
+
+/// The newest modification time among a bundle's files. `None` when the
+/// filesystem cannot say — in which case the cache is kept, because
+/// rebuilding on every request would be worse than a stale byte.
+fn newest_mtime(files: &[&rusdoo_modules::assets::AssetFile]) -> Option<std::time::SystemTime> {
+    files
+        .iter()
+        .filter_map(|file| std::fs::metadata(&file.disk).ok()?.modified().ok())
+        .max()
 }
 
 fn not_found() -> Response {

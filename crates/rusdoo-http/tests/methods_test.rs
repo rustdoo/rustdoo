@@ -35,6 +35,7 @@ fn pool(url: &str, schema: &'static str) -> sqlx::PgPool {
 async fn fixture(url: &str, schema: &'static str) -> (OrmService, sqlx::PgPool) {
     let pool = pool(url, schema);
     let mut registry = rusdoo_base::registry().unwrap();
+    rusdoo_product::extend(&mut registry).unwrap();
     rusdoo_sale::extend(&mut registry).unwrap();
     for table in [
         "sale_order_line",

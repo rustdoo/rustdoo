@@ -30,6 +30,9 @@
             this.title = config.title || this.model;
             this.onBack = config.onBack || function () {};
             this.onSaved = config.onSaved || function () {};
+            // um método pode devolver uma ação ("abra esta fatura"); quem
+            // sabe navegar é o cliente, não o formulário
+            this.onAction = config.onAction || function () {};
             this.onError = config.onError || function () {};
 
             this.archRoot = parseArch(config.arch);
@@ -225,7 +228,14 @@
                                 if (!this.resId) {
                                     await this.save();
                                 }
-                                await callKw(this.model, name, [[this.resId]], {});
+                                const answer = await callKw(this.model, name, [[this.resId]], {});
+                                // o servidor pode responder com uma ação
+                                // em vez de um booleano: nesse caso a
+                                // navegação é a resposta
+                                if (answer && answer.type === "ir.actions.act_window") {
+                                    this.onAction(answer);
+                                    return;
+                                }
                                 // o método mudou o registro no servidor:
                                 // o que está na tela é o que ele deixou
                                 await this.load();

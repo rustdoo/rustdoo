@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_account_root" model="ir.ui.menu">
+        <field name="name">Faturamento</field>
+        <field name="sequence">30</field>
+    </record>
+    <record id="menu_moves" model="ir.ui.menu">
+        <field name="name">Faturas</field>
+        <field name="parent_id" ref="menu_account_root"/>
+        <field name="sequence">10</field>
+        <field name="action">account.action_moves</field>
+    </record>
+</odoo>

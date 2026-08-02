@@ -868,6 +868,8 @@ impl OrmService {
                 pool: &self.pool,
                 uid,
                 model,
+                // a leading id list is the recordset; anything else (a
+                // values dict, for an overridden `create`) is an argument
                 ids: parse_ids(args.first()).unwrap_or_default(),
             };
             // the ids a method is called on are records like any other:
@@ -876,8 +878,10 @@ impl OrmService {
                 self.check_records(uid, model, entry.operation, &ctx.ids)
                     .await?;
             }
-            let rest = args.get(1..).unwrap_or(&[]);
-            return (entry.func)(ctx, rest, kwargs).await.map_err(RpcError::from);
+            // the method gets the arguments as they were sent; `ids` is
+            // the recordset it was called on, which is Odoo's `self` and
+            // not one of them
+            return (entry.func)(ctx, args, kwargs).await.map_err(RpcError::from);
         }
         match method {
             "search" => {

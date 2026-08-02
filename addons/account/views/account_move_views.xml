@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_move_list" model="ir.ui.view">
+        <field name="name">account.move.list</field>
+        <field name="model">account.move</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Número"/><field name="partner_id" string="Cliente"/><field name="invoice_date" string="Data"/><field name="invoice_origin" string="Origem"/><field name="state" string="Situação"/><field name="amount_total" string="Total"/></list></field>
+    </record>
+
+    <record id="view_move_form" model="ir.ui.view">
+        <field name="name">account.move.form</field>
+        <field name="model">account.move</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_post" type="object" string="Lançar" class="btn-primary"/><button name="action_cancel" type="object" string="Cancelar"/><button name="action_draft" type="object" string="Voltar a rascunho"/><group><field name="name" string="Número"/><field name="partner_id" string="Cliente"/><field name="invoice_date" string="Data da fatura"/><field name="invoice_date_due" string="Vencimento"/></group><group><field name="move_type" string="Tipo"/><field name="state" string="Situação"/><field name="invoice_origin" string="Origem"/><field name="amount_total" string="Total"/></group><field name="line_ids" string="Linhas da fatura"><list><field name="product_id" string="Produto"/><field name="name" string="Descrição"/><field name="quantity" string="Quantidade"/><field name="price_unit" string="Preço unitário"/><field name="price_subtotal" string="Subtotal"/></list></field><group><field name="narration" string="Observações"/></group><chatter/></form></field>
+    </record>
+
+    <record id="action_moves" model="ir.actions.act_window">
+        <field name="name">Faturas</field>
+        <field name="res_model">account.move</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

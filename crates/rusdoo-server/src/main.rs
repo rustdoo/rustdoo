@@ -101,6 +101,8 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
     vec![
         ("base", rusdoo_base::extend as ModelProvider),
         ("mail", rusdoo_mail::extend as ModelProvider),
+        ("product", rusdoo_product::extend as ModelProvider),
+        ("account", rusdoo_account::extend as ModelProvider),
         ("sale", rusdoo_sale::extend as ModelProvider),
     ]
 }
@@ -155,6 +157,9 @@ fn code_methods(
 ) -> anyhow::Result<rusdoo_orm::methods::MethodRegistry> {
     let mut methods = rusdoo_orm::methods::MethodRegistry::new();
     let installed = installed_code_modules(addons_path)?;
+    if installed.contains(&"account") {
+        rusdoo_account::extend_methods(&mut methods)?;
+    }
     if installed.contains(&"sale") {
         rusdoo_sale::extend_methods(&mut methods)?;
     }
@@ -164,6 +169,9 @@ fn code_methods(
         let mut threads = vec!["res.partner"];
         if installed.contains(&"sale") {
             threads.push("sale.order");
+        }
+        if installed.contains(&"account") {
+            threads.push("account.move");
         }
         rusdoo_mail::extend_methods(&mut methods, &threads)?;
     }

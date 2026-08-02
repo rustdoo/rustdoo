@@ -48,6 +48,8 @@ async fn schema_pool(url: &str) -> sqlx::PgPool {
 fn registry() -> Registry {
     let mut registry = rusdoo_base::registry().expect("base models");
     rusdoo_mail::extend(&mut registry).expect("mail models");
+    rusdoo_product::extend(&mut registry).expect("product models");
+    rusdoo_account::extend(&mut registry).expect("account models");
     rusdoo_sale::extend(&mut registry).expect("sale models");
     registry
 }
@@ -71,13 +73,16 @@ async fn the_addons_tree_installs_and_adds_up_live() {
         .iter()
         .map(|(name, _)| name.as_str())
         .collect();
-    for module in ["base", "web", "mail", "sale"] {
+    for module in ["base", "web", "mail", "product", "account", "sale"] {
         assert!(installed.contains(&module), "installed: {installed:?}");
     }
-    assert!(
-        installed.iter().position(|m| *m == "base") < installed.iter().position(|m| *m == "sale"),
-        "base loads before what depends on it: {installed:?}"
-    );
+    for earlier in ["base", "product", "account"] {
+        assert!(
+            installed.iter().position(|m| m == &earlier)
+                < installed.iter().position(|m| *m == "sale"),
+            "{earlier} loads before what depends on it: {installed:?}"
+        );
+    }
 
     // the client bundle is there, in load order, with the boot last
     let backend: Vec<&str> = report
