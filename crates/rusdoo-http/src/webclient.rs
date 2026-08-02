@@ -18,6 +18,9 @@ const PROTOCOL_VERSION: &str = "19.0";
 
 /// Odoo's own defaults for the two limits the client reads out of
 /// `ir.config_parameter`, which is not ported yet.
+/// The language a user without one falls back to, like Odoo's default.
+const DEFAULT_LANG: &str = "en_US";
+
 const MAX_FILE_UPLOAD_SIZE: i64 = 128 * 1024 * 1024;
 const ACTIVE_IDS_LIMIT: i64 = 20_000;
 
@@ -40,6 +43,7 @@ impl OrmService {
             });
         };
         let is_superuser = session.uid == SUPERUSER_ID;
+        let (lang, tz) = self.user_locale(session.uid).await;
         json!({
             "uid": session.uid,
             // res.groups membership beyond the superuser bypass is not
@@ -48,10 +52,10 @@ impl OrmService {
             "is_admin": is_superuser,
             "is_public": false,
             "is_internal_user": true,
-            // the context every call inherits. lang/tz live on res.users in
-            // Odoo; until those fields exist, the server default is what
-            // every record was written with
-            "user_context": {"lang": "en_US", "tz": false, "uid": session.uid},
+            // the context every call inherits, read off the user like
+            // Odoo's context_get. A model without the fields falls back to
+            // the server default rather than claiming a language nobody set
+            "user_context": {"lang": lang, "tz": tz, "uid": session.uid},
             "db": self.database_name(),
             "server_version": PROTOCOL_VERSION,
             "server_version_info": version_info(),
@@ -61,6 +65,43 @@ impl OrmService {
             "max_file_upload_size": MAX_FILE_UPLOAD_SIZE,
             "active_ids_limit": ACTIVE_IDS_LIMIT,
         })
+    }
+
+    /// The user's language and timezone, as the client's context carries
+    /// them. Unset (or unmodelled) means the server default for the
+    /// language and no timezone — `false`, like Odoo, rather than a
+    /// timezone the user never chose.
+    async fn user_locale(&self, uid: i64) -> (String, Value) {
+        let has = |name: &str| {
+            self.registry
+                .get("res.users")
+                .and_then(|m| m.field(name))
+                .is_some()
+        };
+        let wanted: Vec<&str> = ["lang", "tz"].into_iter().filter(|f| has(f)).collect();
+        if wanted.is_empty() {
+            return (DEFAULT_LANG.to_string(), Value::Bool(false));
+        }
+        let row = self
+            .registry
+            .read(&self.pool, "res.users", &[uid], &wanted)
+            .await
+            .ok()
+            .and_then(|rows| rows.into_iter().next());
+        let lang = row
+            .as_ref()
+            .and_then(|r| r.get("lang"))
+            .and_then(Value::as_str)
+            .filter(|lang| !lang.is_empty())
+            .unwrap_or(DEFAULT_LANG)
+            .to_string();
+        let tz = row
+            .as_ref()
+            .and_then(|r| r.get("tz"))
+            .and_then(Value::as_str)
+            .filter(|tz| !tz.is_empty())
+            .map_or(Value::Bool(false), Value::from);
+        (lang, tz)
     }
 
     /// The database the pool is connected to, for the `db` the client

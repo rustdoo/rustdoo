@@ -2579,6 +2579,8 @@ async fn webclient_boot_endpoints_live() {
             vec![
                 Field::new("login", FieldType::Char { size: None }).required(),
                 Field::new("password", FieldType::Char { size: None }).private(),
+                Field::new("lang", FieldType::Char { size: None }),
+                Field::new("tz", FieldType::Char { size: None }),
             ],
         ),
     ] {
@@ -2735,6 +2737,30 @@ async fn webclient_boot_endpoints_live() {
         "uid 1 is the superuser"
     );
     assert_eq!(resp["result"]["user_context"]["uid"], json!(1));
+    // no language was set on the user: the server default, and no
+    // timezone at all rather than one nobody chose
+    assert_eq!(resp["result"]["user_context"]["lang"], json!("en_US"));
+    assert_eq!(resp["result"]["user_context"]["tz"], json!(false));
+
+    // ...and once the user has them, the context carries what they set
+    sqlx::query(r#"UPDATE "res_users" SET "lang" = $1, "tz" = $2 WHERE "id" = 1"#)
+        .bind("pt_BR")
+        .bind("America/Sao_Paulo")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, resp, _) = rpc_full(
+        router(secure.clone()),
+        "/web/session/get_session_info",
+        json!({"jsonrpc": "2.0", "id": 4, "method": "call", "params": {}}),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(resp["result"]["user_context"]["lang"], json!("pt_BR"));
+    assert_eq!(
+        resp["result"]["user_context"]["tz"],
+        json!("America/Sao_Paulo")
+    );
 
     // ...and the menus need that session
     let response = router(secure)
@@ -2773,6 +2799,8 @@ fn boot_registry() -> Registry {
             vec![
                 Field::new("login", FieldType::Char { size: None }).required(),
                 Field::new("password", FieldType::Char { size: None }).private(),
+                Field::new("lang", FieldType::Char { size: None }),
+                Field::new("tz", FieldType::Char { size: None }),
             ],
         ),
     ] {

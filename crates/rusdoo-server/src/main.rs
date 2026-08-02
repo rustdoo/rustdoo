@@ -136,7 +136,10 @@ fn base_registry() -> anyhow::Result<Registry> {
         vec![
             Field::new("login", FieldType::Char { size: None }).required(),
             Field::new("password", FieldType::Char { size: None }).private(),
-            Field::new("active", FieldType::Boolean),
+            Field::new("active", FieldType::Boolean).default_value(json!(true)),
+            // the context every call of this user inherits
+            Field::new("lang", FieldType::Char { size: None }).default_value(json!("en_US")),
+            Field::new("tz", FieldType::Char { size: None }),
         ],
     ))?;
     reg.register(Model::new(
