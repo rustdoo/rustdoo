@@ -1303,6 +1303,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-sale"
+version = "0.1.0"
+dependencies = [
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-server"
 version = "0.1.0"
 dependencies = [
@@ -1313,6 +1324,7 @@ dependencies = [
  "rusdoo-modules",
  "rusdoo-orm",
  "rusdoo-qweb",
+ "rusdoo-sale",
  "serde_json",
  "sqlx",
  "tokio",

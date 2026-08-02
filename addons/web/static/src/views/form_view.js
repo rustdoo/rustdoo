@@ -8,26 +8,18 @@
 (function (rusdoo) {
     "use strict";
 
-    const { el, fill, fieldLabel, formatValue, parseInput, debounce, parseArch } = rusdoo.utils;
+    const { el, fill, fieldLabel, parseArch } = rusdoo.utils;
     const { callKw } = rusdoo.rpc;
 
-    /** Sugestões buscadas por vez num campo many2one. */
-    const SUGGESTION_LIMIT = 8;
-
-    /**
-     * Um campo relacional guarda o id; o resto guarda o valor cru. Vazio
-     * é sempre `false`, a convenção do Odoo: sem isso um campo nulo
-     * apareceria na tela com a palavra "null" escrita dentro.
-     */
-    function valueOf(record, name, meta) {
-        const raw = record[name];
-        if (raw === undefined || raw === null) {
-            return false;
+    /** Um `<field>` que está dentro de outro é coluna de linha x2many,
+     *  não campo do formulário. */
+    function isTopLevel(node) {
+        for (let parent = node.parentNode; parent; parent = parent.parentNode) {
+            if (parent.tagName === "field") {
+                return false;
+            }
         }
-        if (meta && meta.type === "many2one") {
-            return raw && typeof raw === "object" ? raw.id : raw || false;
-        }
-        return raw;
+        return true;
     }
 
     class FormView {
@@ -42,23 +34,63 @@
 
             this.archRoot = parseArch(config.arch);
             this.record = {};
-            this.inputs = new Map();
+            this.widgets = new Map();
+            this.x2many = new Map();
+            // campo x2many -> fields_get do comodelo, pedido uma vez: a
+            // view principal só traz os metadados do próprio modelo
+            this.lineFields = new Map();
             this.dirty = new Set();
             this.root = el("div", { class: "o_form_view" });
         }
 
-        /** Os campos do arch que o modelo realmente tem. */
-        fieldNames() {
+        /** Os `<field>` do formulário (sem as colunas das linhas). */
+        fieldNodes() {
             return Array.from(this.archRoot.getElementsByTagName("field"))
-                .map((node) => node.getAttribute("name"))
-                .filter((name) => name && this.fields[name]);
+                .filter(isTopLevel)
+                .filter((node) => {
+                    const name = node.getAttribute("name");
+                    return name && this.fields[name];
+                });
+        }
+
+        /** A specification de leitura: relacionais pedem o que a view mostra. */
+        specification() {
+            const spec = {};
+            for (const node of this.fieldNodes()) {
+                const name = node.getAttribute("name");
+                const meta = this.fields[name];
+                if (meta.type === "one2many" || meta.type === "many2many") {
+                    spec[name] = rusdoo.x2manySpec(node, this.lineFields.get(name));
+                } else if (meta.type === "many2one") {
+                    spec[name] = { fields: { display_name: {} } };
+                } else {
+                    spec[name] = {};
+                }
+            }
+            return spec;
+        }
+
+        /** Os metadados dos comodelos das linhas, antes da primeira leitura:
+         *  a specification depende deles. */
+        async loadLineFields() {
+            for (const node of this.fieldNodes()) {
+                const name = node.getAttribute("name");
+                const meta = this.fields[name];
+                if (meta.type !== "one2many" && meta.type !== "many2many") {
+                    continue;
+                }
+                if (!this.lineFields.has(name)) {
+                    this.lineFields.set(name, await callKw(meta.relation, "fields_get", [], {}));
+                }
+            }
         }
 
         async load() {
-            const names = this.fieldNames();
+            await this.loadLineFields();
+            const names = this.fieldNodes().map((node) => node.getAttribute("name"));
             if (this.resId) {
                 const records = await callKw(this.model, "web_read", [[this.resId]], {
-                    specification: rusdoo.specFor(names, this.fields),
+                    specification: this.specification(),
                 });
                 if (!records.length) {
                     throw new Error("registro " + this.resId + " não encontrado");
@@ -73,169 +105,70 @@
             this.dirty.clear();
         }
 
-        /** O input de um campo, ou o texto quando ele é somente leitura. */
+        /** O editor de um campo: widget simples, ou a tabela de linhas. */
         renderField(name, archNode) {
             const meta = this.fields[name];
-            const value = valueOf(this.record, name, meta);
-            const readonly = meta.readonly || archNode.getAttribute("readonly") === "1";
-            if (readonly) {
-                return el("div", { class: "o_field o_readonly" }, formatValue(this.record[name], meta));
+            if (meta.type === "one2many" || meta.type === "many2many") {
+                return this.renderLines(name, meta, archNode);
             }
-            const onChange = () => this.dirty.add(name);
-            let input;
-            switch (meta.type) {
-                case "boolean":
-                    input = el("input", { type: "checkbox", checked: Boolean(value), onchange: onChange });
-                    break;
-                case "text":
-                case "html":
-                    input = el("textarea", { rows: "4", onchange: onChange }, null);
-                    input.value = value === false ? "" : String(value);
-                    break;
-                case "selection":
-                    input = el(
-                        "select",
-                        { onchange: onChange },
-                        [el("option", { value: "" }, "")].concat(
-                            (meta.selection || []).map((pair) =>
-                                el("option", { value: pair[0], selected: pair[0] === value }, pair[1])
-                            )
-                        )
-                    );
-                    break;
-                case "many2one":
-                    input = this.renderMany2one(name, meta, onChange);
-                    break;
-                case "date":
-                    input = el("input", { type: "date", value: value || "", onchange: onChange });
-                    break;
-                case "datetime":
-                    input = el("input", {
-                        type: "datetime-local",
-                        value: value ? String(value).replace(" ", "T").slice(0, 16) : "",
-                        onchange: onChange,
-                    });
-                    break;
-                case "integer":
-                case "float":
-                case "monetary":
-                    input = el("input", {
-                        type: "number",
-                        step: meta.type === "integer" ? "1" : "any",
-                        value: value === false ? "" : String(value),
-                        onchange: onChange,
-                    });
-                    break;
-                case "one2many":
-                case "many2many":
-                    // as linhas embutidas ainda não são editáveis aqui: o
-                    // valor é mostrado, não fabricado
-                    return el("div", { class: "o_field o_readonly" }, formatValue(this.record[name], meta));
-                default:
-                    input = el("input", {
-                        type: "text",
-                        value: value === false ? "" : String(value),
-                        onchange: onChange,
-                    });
-            }
-            input.classList.add("o_input");
-            if (meta.required) {
-                input.setAttribute("required", "required");
-            }
-            this.inputs.set(name, input);
-            // um many2one traz junto a lista de sugestões que o alimenta
-            return el("div", { class: "o_field" }, [input, input.suggestions || null]);
-        }
-
-        /**
-         * Many2one: um input com sugestões vindas de `name_search`. O que
-         * é salvo é sempre um id escolhido da lista — um texto que não
-         * casa com nenhum registro vira erro no salvamento.
-         */
-        renderMany2one(name, meta, onChange) {
-            const current = this.record[name];
-            const listId = "o_m2o_" + this.model.replace(/\./g, "_") + "_" + name;
-            const datalist = el("datalist", { id: listId });
-            const input = el("input", {
-                type: "text",
-                list: listId,
-                autocomplete: "off",
-                value: current && current.display_name ? current.display_name : "",
-                onchange: onChange,
-                oninput: debounce(async (event) => {
-                    try {
-                        const pairs = await callKw(meta.relation, "name_search", [], {
-                            name: event.target.value,
-                            limit: SUGGESTION_LIMIT,
-                        });
-                        fill(
-                            datalist,
-                            pairs.map((pair) => el("option", { value: pair[1], "data-id": pair[0] }))
-                        );
-                    } catch (error) {
-                        this.onError(error);
-                    }
-                }, 250),
+            const widget = rusdoo.fieldWidget.build(meta, this.record, name, {
+                readonly: archNode.getAttribute("readonly") === "1",
+                key: this.resId || "new",
+                onChange: () => this.dirty.add(name),
+                onError: this.onError,
             });
-            input.dataset.selectedId = current && current.id ? String(current.id) : "";
-            input.dataset.selectedLabel = input.value;
-            input.dataset.relation = meta.relation;
-            // a lista viaja com o input: quem o renderiza a insere ao lado
-            input.suggestions = datalist;
-            return input;
+            this.widgets.set(name, widget);
+            return el("div", { class: "o_field" }, widget.node);
         }
 
-        /** O valor a gravar de um campo, ou `undefined` se não mudou. */
-        async valueToSave(name) {
-            const meta = this.fields[name];
-            const input = this.inputs.get(name);
-            if (!input || !this.dirty.has(name)) {
-                return undefined;
-            }
-            if (meta.type === "boolean") {
-                return input.checked;
-            }
-            if (meta.type === "many2one") {
-                const typed = input.value.trim();
-                if (!typed) {
-                    return false;
-                }
-                if (typed === input.dataset.selectedLabel && input.dataset.selectedId) {
-                    return Number(input.dataset.selectedId);
-                }
-                // resolve o texto digitado num id de verdade
-                const pairs = await callKw(meta.relation, "name_search", [], {
-                    name: typed,
-                    limit: SUGGESTION_LIMIT,
-                });
-                const exact = pairs.find((pair) => pair[1] === typed);
-                if (!exact) {
-                    throw new Error(
-                        "campo " + fieldLabel(name, meta) + ": escolha um registro da lista"
-                    );
-                }
-                return exact[0];
-            }
-            return parseInput(input.value, meta);
+        renderLines(name, meta, archNode) {
+            const lines = new rusdoo.X2ManyField({
+                name: name,
+                meta: meta,
+                archNode: archNode,
+                comodelFields: this.lineFields.get(name),
+                records: Array.isArray(this.record[name]) ? this.record[name] : [],
+                onError: this.onError,
+            });
+            this.x2many.set(name, lines);
+            lines.render();
+            return el("div", { class: "o_field o_field_lines" }, lines.root);
         }
 
-        async save() {
+        /** Os valores a gravar: os campos tocados e as linhas alteradas. */
+        async valuesToSave() {
             const values = {};
-            for (const name of this.inputs.keys()) {
-                const value = await this.valueToSave(name);
+            for (const [name, widget] of this.widgets) {
+                if (!this.dirty.has(name)) {
+                    continue;
+                }
+                const value = await widget.read();
                 if (value !== undefined) {
                     values[name] = value;
                 }
             }
-            const names = this.fieldNames();
+            for (const [name, lines] of this.x2many) {
+                const commands = await lines.read();
+                if (commands) {
+                    values[name] = commands;
+                }
+            }
+            return values;
+        }
+
+        async save() {
+            const values = await this.valuesToSave();
             const ids = this.resId ? [this.resId] : [];
             const saved = await callKw(this.model, "web_save", [ids, values], {
-                specification: rusdoo.specFor(names, this.fields),
+                specification: this.specification(),
             });
             const record = Array.isArray(saved) ? saved[0] : saved;
             this.record = record || this.record;
             this.resId = this.record.id || this.resId;
             this.dirty.clear();
+            // relê para trazer computados, linhas criadas e ids novos
+            await this.load();
+            this.render();
             this.onSaved(this.resId);
         }
 
@@ -261,10 +194,17 @@
         renderControlPanel() {
             return el("div", { class: "o_control_panel" }, [
                 el("h2", { class: "o_breadcrumb" }, [
-                    el("a", { href: "#", onclick: (event) => {
-                        event.preventDefault();
-                        this.onBack();
-                    } }, this.title),
+                    el(
+                        "a",
+                        {
+                            href: "#",
+                            onclick: (event) => {
+                                event.preventDefault();
+                                this.onBack();
+                            },
+                        },
+                        this.title
+                    ),
                     " / ",
                     this.resId ? "#" + this.resId : "Novo",
                 ]),
@@ -302,7 +242,8 @@
             const containers = groups.length ? groups : [this.archRoot];
             const rendered = containers.map((container) => {
                 const rows = Array.from(container.getElementsByTagName("field"))
-                    .filter((node) => node.getAttribute("name") && this.fields[node.getAttribute("name")])
+                    .filter(isTopLevel)
+                    .filter((node) => this.fields[node.getAttribute("name")])
                     .map((node) => {
                         const name = node.getAttribute("name");
                         const meta = this.fields[name];
@@ -317,11 +258,27 @@
                     });
                 return el("div", { class: "o_group" }, rows);
             });
-            return el("div", { class: "o_form_sheet" }, rendered);
+            // campos fora de qualquer <group> (as linhas de um pedido, em
+            // geral) ocupam a largura toda, abaixo dos grupos
+            const loose = this.fieldNodes().filter(
+                (node) => !node.closest || !node.closest("group")
+            );
+            const wide = groups.length
+                ? loose.map((node) => {
+                      const name = node.getAttribute("name");
+                      const meta = this.fields[name];
+                      return el("div", { class: "o_form_wide" }, [
+                          el("h3", {}, fieldLabel(name, meta, node.getAttribute("string"))),
+                          this.renderField(name, node),
+                      ]);
+                  })
+                : [];
+            return el("div", { class: "o_form_sheet" }, rendered.concat(wide));
         }
 
         render() {
-            this.inputs.clear();
+            this.widgets.clear();
+            this.x2many.clear();
             fill(this.root, [this.renderControlPanel(), this.renderSheet()]);
             return this.root;
         }

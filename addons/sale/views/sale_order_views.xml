@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_order_list" model="ir.ui.view">
+        <field name="name">sale.order.list</field>
+        <field name="model">sale.order</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Número"/><field name="partner_id" string="Cliente"/><field name="date_order" string="Data"/><field name="state" string="Situação"/><field name="amount_total" string="Total"/></list></field>
+    </record>
+
+    <record id="view_order_form" model="ir.ui.view">
+        <field name="name">sale.order.form</field>
+        <field name="model">sale.order</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Número"/><field name="partner_id" string="Cliente"/><field name="date_order" string="Data"/></group><group><field name="state" string="Situação"/><field name="company_id" string="Empresa"/><field name="amount_total" string="Total"/></group><field name="order_line" string="Linhas do pedido"><list><field name="product_id" string="Produto"/><field name="name" string="Descrição"/><field name="product_uom_qty" string="Quantidade"/><field name="price_unit" string="Preço unitário"/><field name="price_subtotal" string="Subtotal"/></list></field><group><field name="note" string="Observações"/></group></form></field>
+    </record>
+
+    <record id="action_orders" model="ir.actions.act_window">
+        <field name="name">Pedidos de venda</field>
+        <field name="res_model">sale.order</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

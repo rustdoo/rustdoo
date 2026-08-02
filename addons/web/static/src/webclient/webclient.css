@@ -360,3 +360,41 @@ input[type="checkbox"].o_input {
     border: 1px solid var(--o-ok);
     color: var(--o-ok);
 }
+
+/* linhas x2many dentro do formulário ------------------------------------ */
+
+.o_form_wide {
+    flex: 1 1 100%;
+}
+
+.o_form_wide h3 {
+    margin: 4px 0 8px;
+    font-size: 15px;
+    color: var(--o-muted);
+}
+
+.o_x2many_table {
+    margin-bottom: 8px;
+}
+
+.o_x2many_table td {
+    padding: 4px 8px;
+    white-space: normal;
+}
+
+.o_x2many_table .o_input {
+    min-width: 90px;
+}
+
+.o_x2many_trash {
+    width: 40px;
+    text-align: center;
+}
+
+.o_x2many_add {
+    margin-bottom: 4px;
+}
+
+.o_m2o {
+    display: block;
+}

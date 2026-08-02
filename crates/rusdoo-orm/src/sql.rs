@@ -142,6 +142,19 @@ fn is_unset(value: &Value) -> bool {
     value.is_null() || *value == Value::Bool(false)
 }
 
+/// The cast a column needs to come back as a JSON-friendly value.
+///
+/// `numeric` has no native decoder here, and Odoo itself hands money to
+/// Python as a float — so a fixed-precision column is read as float8
+/// rather than dragging in a decimal type the wire format has no room
+/// for.
+pub(crate) fn read_cast_for(ty: &FieldType) -> &'static str {
+    match ty {
+        FieldType::Float { digits: Some(_) } | FieldType::Monetary => "::float8",
+        _ => "",
+    }
+}
+
 /// The cast a bound value needs to be comparable with a column of this
 /// type. Dates and datetimes arrive as strings, so their parameter is
 /// text and PostgreSQL finds no `date >= text` operator; casting the
@@ -151,6 +164,12 @@ pub(crate) fn value_cast_for(ty: Option<&FieldType>) -> &'static str {
     match ty {
         Some(FieldType::Date) => "::date",
         Some(FieldType::Datetime) => "::timestamp",
+        // a `numeric` column would have the driver's 8-byte float read as
+        // a numeric — the bytes are not the same shape, and PostgreSQL
+        // rejects the result as an overflow. Typing the parameter float8
+        // and letting the assignment cast do the conversion is what makes
+        // a price with decimals storable at all.
+        Some(FieldType::Float { digits: Some(_) } | FieldType::Monetary) => "::float8",
         _ => "",
     }
 }

@@ -316,7 +316,8 @@ fn decode_field(row: &PgRow, name: &str, field: &Field) -> Result<Value, RusdooE
             .try_get::<Option<i32>, _>(name)
             .map_err(db_err)?
             .map(|v| Value::from(i64::from(v))),
-        FieldType::Float { digits: None } => row
+        // fixed-precision columns are selected as float8 (see read_cast_for)
+        FieldType::Float { .. } | FieldType::Monetary => row
             .try_get::<Option<f64>, _>(name)
             .map_err(db_err)?
             .map(Value::from),

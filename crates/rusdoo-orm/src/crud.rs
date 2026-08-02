@@ -2,7 +2,7 @@
 //! `search`, `read`, `create`, `write`, `unlink`.
 
 use crate::domain::{Domain, Operator, Term};
-use crate::fields::Field;
+use crate::fields::{Field, FieldType};
 use crate::model::Model;
 use crate::registry::{Registry, MAX_DELEGATION_DEPTH};
 use crate::sql::{bind, quote_ident, render, Ctx};
@@ -115,7 +115,16 @@ impl Model {
         let mut columns = vec![r#""id""#.to_string()];
         for name in fields {
             self.stored_field(name)?;
-            columns.push(quote_ident(name)?);
+            let quoted = quote_ident(name)?;
+            let cast = self
+                .field(name)
+                .map(|f| crate::sql::read_cast_for(&f.ty))
+                .unwrap_or("");
+            columns.push(if cast.is_empty() {
+                quoted
+            } else {
+                format!("({quoted}){cast} AS {quoted}")
+            });
         }
         let mut params = Vec::new();
         let id_list = bind_ids(ids, &mut params)?;
@@ -150,7 +159,7 @@ impl Model {
         for (name, value) in values {
             self.writable_field(name)?;
             columns.push(quote_ident(name)?);
-            let placeholder = bind_or_null(&mut params, value);
+            let placeholder = bind_or_null(&mut params, self.typed_value(name, value));
             placeholders.push(format!("{placeholder}{}", self.column_cast(name)));
         }
         // audit columns Odoo stamps on every create (LOG_ACCESS)
@@ -187,7 +196,7 @@ impl Model {
         let mut assignments = Vec::new();
         for (name, value) in values {
             self.writable_field(name)?;
-            let placeholder = bind_or_null(&mut params, value);
+            let placeholder = bind_or_null(&mut params, self.typed_value(name, value));
             assignments.push(format!(
                 "{} = {placeholder}{}",
                 quote_ident(name)?,
@@ -323,6 +332,33 @@ impl Model {
     /// datetimes travel as strings (the JSON-RPC wire format), so their
     /// parameter is text: PostgreSQL has no implicit text -> date, and
     /// the insert would fail on the column type.
+    /// The value as its column's type, not as JSON happened to spell it.
+    ///
+    /// Two rows of the same INSERT share one prepared statement, whose
+    /// parameter types are fixed by the first row: `1250` bound as an
+    /// integer and `890.5` bound as a float in the next row would be read
+    /// through the wrong decoder — the bytes of a float read as an
+    /// integer are a number in the billions, which a `numeric(16,2)`
+    /// column rejects as an overflow. Typing the value by its column is
+    /// what keeps every row of a batch binding the same way.
+    fn typed_value(&self, name: &str, value: Value) -> Value {
+        let Some(field) = self.field(name) else {
+            return value;
+        };
+        let Value::Number(number) = &value else {
+            return value;
+        };
+        match field.ty {
+            FieldType::Float { .. } | FieldType::Monetary => number
+                .as_f64()
+                .map_or(value.clone(), Value::from),
+            FieldType::Integer | FieldType::Many2one { .. } => number
+                .as_i64()
+                .map_or(value.clone(), Value::from),
+            _ => value,
+        }
+    }
+
     pub(crate) fn column_cast(&self, name: &str) -> &'static str {
         crate::sql::value_cast_for(self.field(name).map(|f| &f.ty))
     }
@@ -436,7 +472,14 @@ impl Registry {
                     "unknown field on {model_name}: {name:?}"
                 )));
             };
-            columns.push(col);
+            // a fixed-precision column is read as float8, under its own
+            // name so the decoder still finds it
+            let cast = crate::sql::read_cast_for(&field.ty);
+            columns.push(if cast.is_empty() {
+                col
+            } else {
+                format!("({col}){cast} AS {}", quote_ident(name)?)
+            });
             resolved.push(ResolvedColumn {
                 name: (*name).to_string(),
                 field,

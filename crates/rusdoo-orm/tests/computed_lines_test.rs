@@ -315,3 +315,62 @@ async fn a_dependency_on_a_non_relational_field_is_an_error_live() {
         "unexpected error: {error}"
     );
 }
+
+#[tokio::test]
+async fn a_batch_mixing_integer_and_decimal_prices_stores_both_live() {
+    let Some((_reg, pool)) = fixture("money").await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    // fixed-precision columns: the rows of one create share a prepared
+    // statement, so `1250` in the first line and `890.5` in the second
+    // must bind the same way or the second is read through the wrong
+    // decoder and overflows the column
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "rusdoo.test.cl.price".into(),
+            table: "rusdoo_test_cl_price".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("name", FieldType::Char { size: None }),
+            Field::new(
+                "price",
+                FieldType::Float {
+                    digits: Some((16, 2)),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_cl_price""#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    reg.get("rusdoo.test.cl.price")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+
+    let mut ids = Vec::new();
+    for (name, price) in [("inteiro", json!(1250)), ("decimal", json!(890.5))] {
+        ids.push(
+            reg.create(
+                &pool,
+                "rusdoo.test.cl.price",
+                vec![("name", json!(name)), ("price", price)],
+            )
+            .await
+            .unwrap(),
+        );
+    }
+    let rows = reg
+        .read(&pool, "rusdoo.test.cl.price", &ids, &["name", "price"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["price"], json!(1250.0));
+    assert_eq!(rows[1]["price"], json!(890.5));
+}

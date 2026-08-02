@@ -11,6 +11,8 @@
         'web.assets_backend': [
             'web/static/src/core/utils.js',
             'web/static/src/core/rpc.js',
+            'web/static/src/core/field_widget.js',
+            'web/static/src/views/x2many_field.js',
             'web/static/src/views/list_view.js',
             'web/static/src/views/form_view.js',
             'web/static/src/webclient/webclient.js',

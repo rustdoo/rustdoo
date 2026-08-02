@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_product_list" model="ir.ui.view">
+        <field name="name">product.product.list</field>
+        <field name="model">product.product</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="default_code" string="Referência"/><field name="name" string="Produto"/><field name="type" string="Tipo"/><field name="list_price" string="Preço"/></list></field>
+    </record>
+
+    <record id="view_product_form" model="ir.ui.view">
+        <field name="name">product.product.form</field>
+        <field name="model">product.product</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Produto"/><field name="default_code" string="Referência"/><field name="type" string="Tipo"/><field name="active" string="Ativo"/></group><group><field name="list_price" string="Preço de venda"/><field name="standard_price" string="Custo"/><field name="description" string="Descrição"/></group></form></field>
+    </record>
+
+    <record id="action_products" model="ir.actions.act_window">
+        <field name="name">Produtos</field>
+        <field name="res_model">product.product</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

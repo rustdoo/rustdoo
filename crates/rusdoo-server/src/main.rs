@@ -13,12 +13,16 @@ async fn main() -> anyhow::Result<()> {
         .or_else(|_| std::env::var("DATABASE_URL"))
         .map_err(|_| anyhow::anyhow!("set RUSDOO_DATABASE_URL or DATABASE_URL"))?;
 
-    let mut registry = rusdoo_base::registry()?;
     let pool = rusdoo_orm::db::connect(&db_url).await?;
     let mut assets = rusdoo_http::assets::AssetHub::empty();
 
     let addons = std::env::var("RUSDOO_ADDONS_PATH").unwrap_or_else(|_| "addons".into());
     let addons_path = std::path::Path::new(&addons);
+
+    // A module is code plus data: the models of the addons present on
+    // disk are registered here, in dependency order, before their data
+    // files are allowed to speak about them.
+    let mut registry = code_registry(addons_path)?;
 
     // What the addons ship to the browser is read off the filesystem, so
     // it is resolved on every boot — a server restarted without --init
@@ -83,6 +87,55 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("rusdoo listening on {addr} (/web, /jsonrpc, /web/dataset/call_kw)");
     rusdoo_http::serve(&addr, service).await?;
     Ok(())
+}
+
+/// What a compiled-in module does to the registry.
+type ModelProvider = fn(&mut Registry) -> Result<(), rusdoo_core::RusdooError>;
+
+/// The models a compiled-in module contributes. A module whose addon is
+/// not on disk registers nothing: its tables have no reason to exist.
+fn code_modules() -> Vec<(&'static str, ModelProvider)> {
+    vec![
+        ("base", rusdoo_base::extend as ModelProvider),
+        ("sale", rusdoo_sale::extend as ModelProvider),
+    ]
+}
+
+/// Build the registry out of the code modules whose addon is installed.
+/// Without an addons directory only `base` is registered — enough for a
+/// server to answer, and honest about what it has.
+fn code_registry(addons_path: &std::path::Path) -> anyhow::Result<Registry> {
+    let mut registry = Registry::new();
+    let providers = code_modules();
+    let mut wanted: Vec<&str> = vec!["base"];
+    if addons_path.is_dir() {
+        let manifests = rusdoo_modules::loader::discover_addons(&[addons_path])?;
+        let order = rusdoo_modules::graph::dependency_order(&manifests)?;
+        wanted = order
+            .iter()
+            .filter(|name| providers.iter().any(|(module, _)| module == name))
+            .map(|name| {
+                providers
+                    .iter()
+                    .find(|(module, _)| module == name)
+                    .expect("just filtered")
+                    .0
+            })
+            .collect();
+        if !wanted.contains(&"base") {
+            wanted.insert(0, "base");
+        }
+    }
+    for name in wanted {
+        let extend = providers
+            .iter()
+            .find(|(module, _)| *module == name)
+            .expect("named a known module")
+            .1;
+        extend(&mut registry)?;
+        tracing::debug!("registered the models of module {name}");
+    }
+    Ok(registry)
 }
 
 /// First boot: create the admin user (login admin / password admin),

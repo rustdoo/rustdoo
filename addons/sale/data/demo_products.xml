@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="product_desk" model="product.product">
+            <field name="name">Mesa de escritório</field>
+            <field name="default_code">MOB-001</field>
+            <field name="list_price">1250.00</field>
+            <field name="standard_price">700.00</field>
+        </record>
+        <record id="product_chair" model="product.product">
+            <field name="name">Cadeira ergonômica</field>
+            <field name="default_code">MOB-002</field>
+            <field name="list_price">890.50</field>
+            <field name="standard_price">520.00</field>
+        </record>
+        <record id="product_setup" model="product.product">
+            <field name="name">Montagem e instalação</field>
+            <field name="default_code">SRV-001</field>
+            <field name="type">service</field>
+            <field name="list_price">300.00</field>
+        </record>
+    </data>
+</odoo>

@@ -17,6 +17,7 @@ tracing-subscriber.workspace = true
 rusdoo-core = { path = "../rusdoo-core" }
 rusdoo-orm = { path = "../rusdoo-orm" }
 rusdoo-base = { path = "../rusdoo-base" }
+rusdoo-sale = { path = "../rusdoo-sale" }
 rusdoo-http = { path = "../rusdoo-http" }
 rusdoo-qweb = { path = "../rusdoo-qweb" }
 rusdoo-modules = { path = "../rusdoo-modules" }

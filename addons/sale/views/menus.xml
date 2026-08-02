@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_sale_root" model="ir.ui.menu">
+        <field name="name">Vendas</field>
+        <field name="sequence">20</field>
+    </record>
+    <record id="menu_orders" model="ir.ui.menu">
+        <field name="name">Pedidos</field>
+        <field name="parent_id" ref="menu_sale_root"/>
+        <field name="sequence">10</field>
+        <field name="action">sale.action_orders</field>
+    </record>
+    <record id="menu_products" model="ir.ui.menu">
+        <field name="name">Produtos</field>
+        <field name="parent_id" ref="menu_sale_root"/>
+        <field name="sequence">20</field>
+        <field name="action">sale.action_products</field>
+    </record>
+</odoo>
