@@ -114,7 +114,11 @@ pub async fn load_records(
         let mut pairs: Vec<(&str, Value)> = Vec::new();
         for (name, field_value) in &record.fields {
             let value = match field_value {
-                FieldValue::Text(text) => Value::String(text.clone()),
+                // the element text is a string in the file whatever the
+                // column is; `convert.py` coerces it by the field's type
+                FieldValue::Text(text) => {
+                    coerce_text(registry, &record.model, name, text)?
+                }
                 FieldValue::Eval(value) => value.clone(),
                 FieldValue::Expr(expr) => {
                     // ref('x') resolves against the ids staged/published so far
@@ -205,6 +209,53 @@ pub async fn load_records(
         xml_ids.insert(key, entry.0, entry.1);
     }
     Ok(stats)
+}
+
+/// The text of a `<field>` element as the column wants it, port of the
+/// type coercion in `odoo/tools/convert.py::_eval_xml`.
+///
+/// A number written as text is a number, and text that cannot be one is
+/// an error: binding `"10"` to an integer column fails in the database,
+/// far from the line of XML that wrote it.
+fn coerce_text(
+    registry: &Registry,
+    model: &str,
+    field: &str,
+    text: &str,
+) -> Result<Value, RusdooError> {
+    let Some(ty) = registry.get(model).and_then(|m| m.field(field)).map(|f| &f.ty) else {
+        // an unknown field is not this function's error to report: the
+        // create below names it with the context it has
+        return Ok(Value::String(text.to_string()));
+    };
+    let malformed = |what: &str| {
+        RusdooError::Validation(format!(
+            "{model}.{field}: {text:?} is not {what}"
+        ))
+    };
+    Ok(match ty {
+        FieldType::Integer => Value::from(
+            text.trim()
+                .parse::<i64>()
+                .map_err(|_| malformed("an integer"))?,
+        ),
+        FieldType::Float { .. } | FieldType::Monetary => Value::from(
+            text.trim()
+                .parse::<f64>()
+                .map_err(|_| malformed("a number"))?,
+        ),
+        FieldType::Boolean => match text.trim() {
+            "1" | "True" | "true" => Value::Bool(true),
+            "0" | "False" | "false" | "" => Value::Bool(false),
+            _ => return Err(malformed("a boolean")),
+        },
+        FieldType::Many2one { .. } => Value::from(
+            text.trim()
+                .parse::<i64>()
+                .map_err(|_| malformed("a record id (use ref= for an external id)"))?,
+        ),
+        _ => Value::String(text.to_string()),
+    })
 }
 
 /// Per-module load statistics of one boot.
