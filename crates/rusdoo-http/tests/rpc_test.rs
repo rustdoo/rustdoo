@@ -2985,7 +2985,6 @@ async fn get_views_returns_arch_and_fields_live() {
     // ...but only for the model and type it really is
     for (args, why) in [
         (json!([[[form, "list"]]]), "a form view asked for as a list"),
-        (json!([[[false, "kanban"]]]), "no view of that type"),
         (json!([[[999999, "list"]]]), "an id that does not exist"),
         (json!([[]]), "no views requested"),
         (json!([[["nope"]]]), "a malformed pair"),
@@ -3002,6 +3001,23 @@ async fn get_views_returns_arch_and_fields_live() {
         .await;
         assert!(resp.get("error").is_some(), "{why} must be refused: {resp}");
     }
+
+    // a *default* view of a type the model has none of is omitted rather
+    // than refused: the client asks for every kind it can draw, and the
+    // two that exist should still reach it
+    let (_, resp) = rpc(
+        router(service.clone()),
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 3, "method": "call",
+            "params": {"model": "res.partner", "method": "get_views",
+                       "args": [[[false, "kanban"], [form, "form"]]], "kwargs": {}}
+        }),
+    )
+    .await;
+    let views = &resp["result"]["views"];
+    assert!(views.get("form").is_some(), "the form still comes back: {resp}");
+    assert!(views.get("kanban").is_none(), "no kanban to answer with: {resp}");
 
     // a view of another model is never served for this one
     let other = reg_view_for_other_model(&service).await;
