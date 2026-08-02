@@ -6,7 +6,9 @@
 //! shape every other business module repeats.
 
 use rusdoo_core::RusdooError;
+use rusdoo_orm::access::Operation;
 use rusdoo_orm::fields::{Field, FieldType};
+use rusdoo_orm::methods::{MethodCtx, MethodFuture, MethodRegistry};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
@@ -81,6 +83,72 @@ pub fn extend(reg: &mut Registry) -> Result<(), RusdooError> {
         reg.register(model)?;
     }
     Ok(())
+}
+
+/// The buttons of a sales order, as methods a client may call.
+pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
+    methods.register("sale.order", "action_confirm", Operation::Write, action_confirm)?;
+    methods.register("sale.order", "action_cancel", Operation::Write, action_cancel)?;
+    methods.register("sale.order", "action_draft", Operation::Write, action_draft)?;
+    Ok(())
+}
+
+/// Move `ids` from one state to another, refusing the moves that make no
+/// sense — a confirmed order is not confirmed twice, and a cancelled one
+/// is reopened as a quotation, not as a sale.
+async fn set_state(ctx: &MethodCtx<'_>, from: &[&str], to: &str) -> Result<Value, RusdooError> {
+    if ctx.ids.is_empty() {
+        return Err(RusdooError::Validation(
+            "a ação precisa de pelo menos um pedido".into(),
+        ));
+    }
+    let rows = ctx
+        .registry
+        .read(ctx.pool, "sale.order", &ctx.ids, &["name", "state"])
+        .await?;
+    for row in &rows {
+        let state = row.get("state").and_then(Value::as_str).unwrap_or("draft");
+        if !from.contains(&state) {
+            let name = row.get("name").and_then(Value::as_str).unwrap_or("");
+            return Err(RusdooError::Validation(format!(
+                "o pedido {name} está em {state:?} e não pode ir para {to:?}"
+            )));
+        }
+    }
+    ctx.registry
+        .write_as(
+            ctx.pool,
+            ctx.uid,
+            "sale.order",
+            &ctx.ids,
+            vec![("state", json!(to))],
+        )
+        .await?;
+    Ok(json!(true))
+}
+
+fn action_confirm<'a>(
+    ctx: MethodCtx<'a>,
+    _args: &'a [Value],
+    _kwargs: &'a Map<String, Value>,
+) -> MethodFuture<'a> {
+    Box::pin(async move { set_state(&ctx, &["draft"], "sale").await })
+}
+
+fn action_cancel<'a>(
+    ctx: MethodCtx<'a>,
+    _args: &'a [Value],
+    _kwargs: &'a Map<String, Value>,
+) -> MethodFuture<'a> {
+    Box::pin(async move { set_state(&ctx, &["draft", "sale"], "cancel").await })
+}
+
+fn action_draft<'a>(
+    ctx: MethodCtx<'a>,
+    _args: &'a [Value],
+    _kwargs: &'a Map<String, Value>,
+) -> MethodFuture<'a> {
+    Box::pin(async move { set_state(&ctx, &["cancel"], "draft").await })
 }
 
 fn models() -> Vec<Model> {

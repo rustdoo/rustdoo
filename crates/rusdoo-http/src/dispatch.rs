@@ -72,6 +72,7 @@ pub struct OrmService {
     pub(crate) access: Arc<rusdoo_orm::access::AccessControl>,
     pub(crate) rules: Arc<rusdoo_orm::rules::RecordRules>,
     pub(crate) assets: Arc<crate::assets::AssetHub>,
+    pub(crate) methods: Arc<rusdoo_orm::methods::MethodRegistry>,
 }
 
 impl OrmService {
@@ -87,6 +88,7 @@ impl OrmService {
             access: Arc::new(rusdoo_orm::access::AccessControl::new()),
             rules: Arc::new(rusdoo_orm::rules::RecordRules::new()),
             assets: crate::assets::AssetHub::empty(),
+            methods: Arc::new(rusdoo_orm::methods::MethodRegistry::new()),
         }
     }
 
@@ -100,6 +102,19 @@ impl OrmService {
     /// `static/` directories).
     pub fn with_assets(mut self, assets: Arc<crate::assets::AssetHub>) -> Self {
         self.assets = assets;
+        self
+    }
+
+    /// The access a registered model method requires, or `None` when no
+    /// module attached that method. The dispatch checks it before
+    /// running the method; a client can ask the same question.
+    pub fn method_operation(&self, model: &str, method: &str) -> Option<Operation> {
+        self.methods.get(model, method).map(|entry| entry.operation)
+    }
+
+    /// Install the model methods the compiled-in modules attach.
+    pub fn with_methods(mut self, methods: rusdoo_orm::methods::MethodRegistry) -> Self {
+        self.methods = Arc::new(methods);
         self
     }
 
@@ -124,7 +139,8 @@ impl OrmService {
         if SELF_CHECKED_METHODS.contains(&method) {
             return Ok(());
         }
-        let Some(op) = rusdoo_orm::access::Operation::for_method(method) else {
+        let declared = self.methods.get(model, method).map(|m| m.operation);
+        let Some(op) = declared.or_else(|| rusdoo_orm::access::Operation::for_method(method)) else {
             if session.is_superuser {
                 return Ok(());
             }
@@ -842,6 +858,27 @@ impl OrmService {
         args: &[Value],
         kwargs: &Map<String, Value>,
     ) -> Result<Value, RpcError> {
+        // a module's own method wins over the built-in CRUD names: that
+        // is what makes `action_confirm` or `message_post` reachable at
+        // all, and the ACL for it was checked with the operation the
+        // method itself declared
+        if let Some(entry) = self.methods.get(model, method) {
+            let ctx = rusdoo_orm::methods::MethodCtx {
+                registry: &self.registry,
+                pool: &self.pool,
+                uid,
+                model,
+                ids: parse_ids(args.first()).unwrap_or_default(),
+            };
+            // the ids a method is called on are records like any other:
+            // the record rules that scope a write scope this one too
+            if !ctx.ids.is_empty() {
+                self.check_records(uid, model, entry.operation, &ctx.ids)
+                    .await?;
+            }
+            let rest = args.get(1..).unwrap_or(&[]);
+            return (entry.func)(ctx, rest, kwargs).await.map_err(RpcError::from);
+        }
         match method {
             "search" => {
                 let domain = self.arg_domain(args.first().or_else(|| kwargs.get("domain")))?;

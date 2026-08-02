@@ -23,6 +23,8 @@ async fn main() -> anyhow::Result<()> {
     // disk are registered here, in dependency order, before their data
     // files are allowed to speak about them.
     let mut registry = code_registry(addons_path)?;
+    // the methods those same modules attach to their models
+    let methods = code_methods(addons_path)?;
 
     // What the addons ship to the browser is read off the filesystem, so
     // it is resolved on every boot — a server restarted without --init
@@ -77,7 +79,8 @@ async fn main() -> anyhow::Result<()> {
     let mut service = OrmService::new(Arc::new(registry), pool)
         .with_access(access)
         .with_rules(rules)
-        .with_assets(assets);
+        .with_assets(assets)
+        .with_methods(methods);
     if std::env::var("RUSDOO_INSECURE_COOKIES").is_ok() {
         service = service.allow_insecure_cookies();
     }
@@ -107,26 +110,7 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
 fn code_registry(addons_path: &std::path::Path) -> anyhow::Result<Registry> {
     let mut registry = Registry::new();
     let providers = code_modules();
-    let mut wanted: Vec<&str> = vec!["base"];
-    if addons_path.is_dir() {
-        let manifests = rusdoo_modules::loader::discover_addons(&[addons_path])?;
-        let order = rusdoo_modules::graph::dependency_order(&manifests)?;
-        wanted = order
-            .iter()
-            .filter(|name| providers.iter().any(|(module, _)| module == name))
-            .map(|name| {
-                providers
-                    .iter()
-                    .find(|(module, _)| module == name)
-                    .expect("just filtered")
-                    .0
-            })
-            .collect();
-        if !wanted.contains(&"base") {
-            wanted.insert(0, "base");
-        }
-    }
-    for name in wanted {
+    for name in installed_code_modules(addons_path)? {
         let extend = providers
             .iter()
             .find(|(module, _)| *module == name)
@@ -136,6 +120,43 @@ fn code_registry(addons_path: &std::path::Path) -> anyhow::Result<Registry> {
         tracing::debug!("registered the models of module {name}");
     }
     Ok(registry)
+}
+
+/// The compiled-in modules whose addon is on disk, in dependency order.
+/// `base` is always among them: a server without it has no user to log
+/// in as.
+fn installed_code_modules(addons_path: &std::path::Path) -> anyhow::Result<Vec<&'static str>> {
+    let providers = code_modules();
+    if !addons_path.is_dir() {
+        return Ok(vec!["base"]);
+    }
+    let manifests = rusdoo_modules::loader::discover_addons(&[addons_path])?;
+    let order = rusdoo_modules::graph::dependency_order(&manifests)?;
+    let mut wanted: Vec<&'static str> = order
+        .iter()
+        .filter_map(|name| {
+            providers
+                .iter()
+                .find(|(module, _)| module == name)
+                .map(|(module, _)| *module)
+        })
+        .collect();
+    if !wanted.contains(&"base") {
+        wanted.insert(0, "base");
+    }
+    Ok(wanted)
+}
+
+/// The model methods of the installed code modules — the business
+/// actions a client calls by name (`action_confirm`, …).
+fn code_methods(
+    addons_path: &std::path::Path,
+) -> anyhow::Result<rusdoo_orm::methods::MethodRegistry> {
+    let mut methods = rusdoo_orm::methods::MethodRegistry::new();
+    if installed_code_modules(addons_path)?.contains(&"sale") {
+        rusdoo_sale::extend_methods(&mut methods)?;
+    }
+    Ok(methods)
 }
 
 /// First boot: create the admin user (login admin / password admin),

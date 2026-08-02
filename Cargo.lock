@@ -1250,6 +1250,7 @@ dependencies = [
  "rusdoo-modules",
  "rusdoo-orm",
  "rusdoo-qweb",
+ "rusdoo-sale",
  "serde",
  "serde_json",
  "sqlx",

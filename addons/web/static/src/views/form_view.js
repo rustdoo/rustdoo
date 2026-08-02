@@ -191,6 +191,38 @@
             };
         }
 
+        /**
+         * Os `<button type="object">` do arch: um método do modelo que o
+         * servidor executa sobre este registro. Um registro ainda não
+         * salvo não tem sobre o que agir, então o botão salva antes.
+         */
+        renderButtons() {
+            return Array.from(this.archRoot.getElementsByTagName("button"))
+                .filter((node) => node.getAttribute("name"))
+                .map((node) => {
+                    const name = node.getAttribute("name");
+                    const label = node.getAttribute("string") || name;
+                    const kind = node.getAttribute("class") || "btn-ghost";
+                    return el(
+                        "button",
+                        {
+                            class: "btn " + kind,
+                            onclick: this.run(async () => {
+                                if (!this.resId) {
+                                    await this.save();
+                                }
+                                await callKw(this.model, name, [[this.resId]], {});
+                                // o método mudou o registro no servidor:
+                                // o que está na tela é o que ele deixou
+                                await this.load();
+                                this.render();
+                            }),
+                        },
+                        label
+                    );
+                });
+        }
+
         renderControlPanel() {
             return el("div", { class: "o_control_panel" }, [
                 el("h2", { class: "o_breadcrumb" }, [
@@ -209,6 +241,7 @@
                     this.resId ? "#" + this.resId : "Novo",
                 ]),
                 el("div", { class: "o_cp_actions" }, [
+                    ...this.renderButtons(),
                     el(
                         "button",
                         { class: "btn btn-primary", onclick: this.run(() => this.save()) },
