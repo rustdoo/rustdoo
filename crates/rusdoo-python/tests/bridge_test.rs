@@ -415,3 +415,156 @@ result = {
             .unwrap();
     }
 }
+
+/// The whole point of the bridge: a button on a form runs an addon's
+/// Python, and the row it wrote is there when Rust looks.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_python_method_is_reachable_from_call_kw_live() {
+    let Some(pool) = rusdoo_testing::pool_in("rusdoo_py_dispatch") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut registry = Registry::new();
+    let mut methods = rusdoo_orm::methods::MethodRegistry::new();
+    rusdoo_python::load_python_module(
+        &mut registry,
+        &mut methods,
+        "workshop",
+        r#"
+from odoo import models, fields
+
+
+class Repair(models.Model):
+    _name = "workshop.repair"
+    _order = "id"
+
+    name = fields.Char(required=True)
+    state = fields.Selection(
+        [("draft", "Draft"), ("done", "Done"), ("cancel", "Cancelled")],
+        default="draft",
+    )
+    hours = fields.Float()
+    note = fields.Text()
+
+    def action_done(self, note=None):
+        """Close the repairs, refusing the ones already closed."""
+        for repair in self:
+            if repair.state == "done":
+                raise ValueError("%s is already done" % repair.name)
+        self.write({"state": "done", "note": note or "closed"})
+        return {"closed": len(self), "by": self.env.uid}
+
+    def total_hours(self):
+        return sum(r.hours for r in self)
+
+    def _private_helper(self):
+        return "should not be reachable"
+"#,
+    )
+    .expect("the addon loads");
+    registry.init_tables(&pool).await.expect("the table is made");
+
+    let registry = std::sync::Arc::new(registry);
+    for (name, hours) in [("Brakes", 2.5), ("Clutch", 4.0)] {
+        registry
+            .create_as(
+                &pool,
+                1,
+                "workshop.repair",
+                vec![("name", json!(name)), ("hours", json!(hours))],
+            )
+            .await
+            .unwrap();
+    }
+
+    // the private one is not registered: `call_kw` cannot reach it, the
+    // same as in Odoo
+    assert!(
+        methods.get("workshop.repair", "_private_helper").is_none(),
+        "an underscore method stays private"
+    );
+    let entry = methods
+        .get("workshop.repair", "action_done")
+        .expect("the public method is registered");
+
+    // called exactly as the dispatch calls it: the recordset, then the
+    // method's own arguments
+    let ctx = rusdoo_orm::methods::MethodCtx::new(
+        std::sync::Arc::clone(&registry),
+        &pool,
+        7,
+        "workshop.repair",
+        vec![1, 2],
+    );
+    let answer = entry
+        .call(ctx, &[], &serde_json::Map::new())
+        .await
+        .expect("the Python method runs");
+    assert_eq!(answer["closed"], json!(2), "{answer}");
+    assert_eq!(answer["by"], json!(7), "it ran as the acting user: {answer}");
+
+    // and it really wrote: Rust reads what Python left behind
+    let rows = registry
+        .read(&pool, "workshop.repair", &[1, 2], &["state", "note"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["state"], json!("done"));
+    assert_eq!(rows[0]["note"], json!("closed"));
+
+    // an argument reaches the method
+    let third = registry
+        .create_as(&pool, 1, "workshop.repair", vec![("name", json!("Tyres"))])
+        .await
+        .unwrap();
+    let ctx = rusdoo_orm::methods::MethodCtx::new(
+        std::sync::Arc::clone(&registry),
+        &pool,
+        1,
+        "workshop.repair",
+        vec![third],
+    )
+    .with_rest(vec![json!("towed in")]);
+    entry
+        .call(ctx, &[], &serde_json::Map::new())
+        .await
+        .expect("with an argument");
+    let rows = registry
+        .read(&pool, "workshop.repair", &[third], &["note"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["note"], json!("towed in"));
+
+    // a refusal from Python is an error the caller reads, not a panic
+    let ctx = rusdoo_orm::methods::MethodCtx::new(
+        std::sync::Arc::clone(&registry),
+        &pool,
+        1,
+        "workshop.repair",
+        vec![1],
+    );
+    let error = entry
+        .call(ctx, &[], &serde_json::Map::new())
+        .await
+        .expect_err("closing a closed repair is refused");
+    assert!(
+        error.to_string().contains("already done"),
+        "the Python message survives: {error}"
+    );
+
+    // and a method that only reads answers a plain value
+    let total = methods.get("workshop.repair", "total_hours").unwrap();
+    let ctx = rusdoo_orm::methods::MethodCtx::new(
+        std::sync::Arc::clone(&registry),
+        &pool,
+        1,
+        "workshop.repair",
+        vec![1, 2],
+    );
+    let answer = total.call(ctx, &[], &serde_json::Map::new()).await.unwrap();
+    assert_eq!(answer, json!(6.5), "2.5 + 4.0 read out of the database");
+
+    sqlx::query("DROP TABLE IF EXISTS workshop_repair")
+        .execute(&pool)
+        .await
+        .unwrap();
+}

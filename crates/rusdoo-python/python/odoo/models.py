@@ -15,6 +15,15 @@ import _rusdoo
 from . import fields as fields_module
 
 
+#: model name -> the class that defines it.
+#:
+#: A recordset needs it to find the methods an addon wrote, and the Rust
+#: dispatcher needs it for the same reason. Keeping it on the Python side
+#: means the class is never handed across as an object — Rust asks for a
+#: model and a method by name, which is all `call_kw` ever knows anyway.
+MODEL_CLASSES = {}
+
+
 class MetaModel(type):
     """Registers a model with the Rust side as soon as it is defined."""
 
@@ -39,9 +48,28 @@ class MetaModel(type):
         # because that is where they come from — `TransientModel` sets
         # `_transient` on itself, and Odoo lets a subclass inherit an
         # `_order` it did not restate.
+        # the methods an addon wrote, for the dispatcher to reach. A
+        # leading underscore means private in Odoo, and `call_kw` refuses
+        # those there too — the convention is the access rule.
+        methods = sorted(
+            attr
+            for attr, value in namespace.items()
+            if callable(value) and not attr.startswith("_")
+        )
+        # a class extending a model already registered adds to it rather
+        # than replacing it, the same way `_inherit` adds fields
+        previous = MODEL_CLASSES.get(model_name)
+        if previous is not None and previous is not cls:
+            for attr, value in namespace.items():
+                if not attr.startswith("__"):
+                    setattr(previous, attr, value)
+            cls = previous
+        else:
+            MODEL_CLASSES[model_name] = cls
         _rusdoo.declare_model(
             {
                 "name": model_name,
+                "methods": methods,
                 # Odoo's own rule: the table is the model with its dots
                 # turned into underscores, unless the model says otherwise
                 "table": getattr(cls, "_table", None) or model_name.replace(".", "_"),
@@ -155,6 +183,12 @@ class RecordSet:
         # property on the model class always wins over a field
         if name.startswith("_"):
             raise AttributeError(name)
+        # a method the addon wrote, bound to these records: this is what
+        # makes `self.action_confirm()` inside a model mean what it means
+        # in Odoo
+        declared = getattr(MODEL_CLASSES.get(self._name), name, None)
+        if callable(declared):
+            return declared.__get__(self, type(self))
         if name not in _rusdoo.fields_of(self._name):
             raise AttributeError(
                 "%s has no field %r" % (self._name, name)
@@ -266,3 +300,23 @@ def _flatten_relational(model_name, field, values, env):
         elif isinstance(value, int):
             ids.append(value)
     return RecordSet(comodel, ids, env)
+
+
+def dispatch(model_name, method_name, ids, args, kwargs):
+    """Call `model_name.method_name` on `ids`, as `call_kw` would.
+
+    The entry point the Rust side uses. It builds the recordset the
+    method expects as `self`, so an addon's method sees exactly what it
+    sees in Odoo — `self.ids`, `self.env`, `self.name` — and never learns
+    that its caller was not Python.
+    """
+    from .api import Environment
+
+    cls = MODEL_CLASSES.get(model_name)
+    if cls is None:
+        raise AttributeError("no Python model named %r" % model_name)
+    method = getattr(cls, method_name, None)
+    if method is None or not callable(method):
+        raise AttributeError("%s has no method %r" % (model_name, method_name))
+    records = RecordSet(model_name, ids, Environment())
+    return method(records, *(args or []), **(kwargs or {}))

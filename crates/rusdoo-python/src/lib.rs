@@ -26,6 +26,7 @@
 //! "#)?;
 //! ```
 
+pub mod dispatch;
 pub mod env;
 
 use env::{current, wait};
@@ -214,7 +215,7 @@ fn value_pairs(values: &Value) -> PyResult<Vec<(String, Value)>> {
 }
 
 /// JSON back into Python — what a read hands the recordset.
-fn depythonize(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
+pub(crate) fn depythonize(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
     Ok(match value {
         Value::Null => py.None(),
         Value::Bool(flag) => flag.into_pyobject(py)?.to_owned().into_any().unbind(),
@@ -267,7 +268,7 @@ fn _rusdoo(module: &Bound<'_, PyModule>) -> PyResult<()> {
 /// addon that puts something else in a field declaration is doing
 /// something this bridge does not understand, and saying so beats
 /// storing its `repr`.
-fn pythonize(value: &Bound<'_, PyAny>) -> PyResult<Value> {
+pub(crate) fn pythonize(value: &Bound<'_, PyAny>) -> PyResult<Value> {
     if value.is_none() {
         return Ok(Value::Null);
     }
@@ -313,15 +314,58 @@ pub fn load_python_models(
     module_name: &str,
     source: &str,
 ) -> Result<Vec<String>, RusdooError> {
+    let (loaded, _) = load_python_module_inner(registry, module_name, source)?;
+    Ok(loaded)
+}
+
+/// Load an addon's Python: its models into `registry`, its methods into
+/// `methods`.
+///
+/// The two together, because they come from the same class body and
+/// splitting them would mean running the module twice — and a module
+/// with a side effect would run it twice too.
+pub fn load_python_module(
+    registry: &mut Registry,
+    methods: &mut rusdoo_orm::methods::MethodRegistry,
+    module_name: &str,
+    source: &str,
+) -> Result<Vec<String>, RusdooError> {
+    let (loaded, declared) = load_python_module_inner(registry, module_name, source)?;
+    crate::dispatch::register_methods(methods, &declared)?;
+    Ok(loaded)
+}
+
+type DeclaredMethods = Vec<(String, Vec<String>)>;
+
+fn load_python_module_inner(
+    registry: &mut Registry,
+    module_name: &str,
+    source: &str,
+) -> Result<(Vec<String>, DeclaredMethods), RusdooError> {
     let specs = run_and_collect(module_name, source)?;
     let mut loaded = Vec::new();
+    let mut declared: DeclaredMethods = Vec::new();
     for spec in specs {
         let model = model_from_spec(&spec)?;
         let name = model.meta.name.clone();
+        let names: Vec<String> = spec
+            .get("methods")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !names.is_empty() {
+            declared.push((name.clone(), names));
+        }
         registry.register(model)?;
         loaded.push(name);
     }
-    Ok(loaded)
+    Ok((loaded, declared))
 }
 
 /// Run `code` with an environment reachable from it — what a Python
@@ -428,7 +472,7 @@ fn run_and_collect(module_name: &str, source: &str) -> Result<Vec<Value>, Rusdoo
 /// though `odoo/__init__.py` imports `odoo.models` in turn. Python
 /// handles that circle for a package on disk by putting the empty module
 /// in place first; there is no disk here, so it is done by hand.
-fn install_shim(py: Python<'_>) -> Result<(), RusdooError> {
+pub(crate) fn install_shim(py: Python<'_>) -> Result<(), RusdooError> {
     let sys = py.import("sys").map_err(|e| python_error(py, e))?;
     let modules = sys
         .getattr("modules")
@@ -498,7 +542,7 @@ fn install_shim(py: Python<'_>) -> Result<(), RusdooError> {
 /// somewhere inside its own file, and a message that said only
 /// "ImportError" would send whoever installed it looking at the wrong
 /// thing.
-fn python_error(py: Python<'_>, error: PyErr) -> RusdooError {
+pub(crate) fn python_error(py: Python<'_>, error: PyErr) -> RusdooError {
     let mut message = error.to_string();
     if let Some(traceback) = error.traceback(py) {
         if let Ok(text) = traceback.format() {
