@@ -19,6 +19,7 @@ rusdoo-python = { path = "../rusdoo-python" }
 quick-xml.workspace = true
 csv.workspace = true
 sqlx.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
 rusdoo-testing = { path = "../rusdoo-testing" }

@@ -5,6 +5,7 @@ pub mod assets;
 pub mod data;
 pub mod eval;
 pub mod graph;
+pub mod js_module;
 pub mod installer;
 pub mod po;
 pub mod loader;

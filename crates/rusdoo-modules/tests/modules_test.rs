@@ -337,3 +337,84 @@ fn measure_real_odoo_asset_coverage() {
         "expected the real addons to declare assets, got {with_assets}"
     );
 }
+
+/// Every ES6 module the real Odoo tree ships, put through the
+/// transpiler.
+///
+/// The unit tests say it matches Odoo on the cases Odoo wrote tests for.
+/// This says it survives the corpus those tests are a sample of — which
+/// is the thing that actually decides whether an addon's JavaScript
+/// loads, because a single file that fails to transpile is a syntax
+/// error in a bundle and takes down every file after it.
+///
+/// A smoke test and not a proof: it checks that the transform completes
+/// and that no bare `import`/`export` statement survived into the
+/// output. Whether the result *behaves* is what the browser decides.
+#[test]
+fn measure_real_odoo_js_transpile_coverage() {
+    let root = Path::new("../../odoo/addons");
+    if !root.exists() {
+        eprintln!("skipped: reference clone not present");
+        return;
+    }
+    let (mut transpiled, mut failed, mut leftovers) = (0usize, Vec::new(), Vec::new());
+    let mut stack: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("js") {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(relative) = path.strip_prefix(root) else {
+                continue;
+            };
+            let url = format!("/{}", relative.display());
+            if !rusdoo_modules::js_module::is_odoo_module(&url, &content) {
+                continue;
+            }
+            match rusdoo_modules::js_module::transpile(&url, &content) {
+                Ok(out) => {
+                    transpiled += 1;
+                    // a statement the client's loader has no idea what to
+                    // do with is the same as a failure, one step later
+                    if out.lines().any(|line| {
+                        let line = line.trim_start();
+                        (line.starts_with("import ") && !line.contains('('))
+                            || line.starts_with("export ")
+                    }) {
+                        leftovers.push(url.clone());
+                    }
+                }
+                Err(error) => failed.push(format!("{url}: {error}")),
+            }
+        }
+    }
+    eprintln!("transpiled {transpiled} real Odoo module(s)");
+    assert!(
+        transpiled > 3000,
+        "the corpus should be thousands of files, found {transpiled} — \
+         is the clone complete?"
+    );
+    assert!(
+        failed.is_empty(),
+        "{} file(s) did not transpile, first few: {:?}",
+        failed.len(),
+        &failed[..failed.len().min(5)]
+    );
+    assert!(
+        leftovers.is_empty(),
+        "{} file(s) still carry ES6 the loader cannot read, first few: {:?}",
+        leftovers.len(),
+        &leftovers[..leftovers.len().min(5)]
+    );
+}
