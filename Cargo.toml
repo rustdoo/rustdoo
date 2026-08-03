@@ -21,6 +21,7 @@ members = [
     "crates/rusdoo-http",
     "crates/rusdoo-qweb",
     "crates/rusdoo-modules",
+    "crates/rusdoo-python",
     "crates/rusdoo-server",
 ]
 

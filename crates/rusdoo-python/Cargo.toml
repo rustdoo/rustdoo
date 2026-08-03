@@ -1,0 +1,21 @@
+[package]
+name = "rusdoo-python"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+tracing.workspace = true
+rusdoo-core = { path = "../rusdoo-core" }
+rusdoo-orm = { path = "../rusdoo-orm" }
+# CPython embutido: `auto-initialize` deixa o interpretador subir na
+# primeira vez que alguém pega a GIL, que é o que um servidor quer —
+# ninguém deve ter de lembrar de inicializar o Python antes de instalar
+# um addon.
+pyo3 = { version = "0.27", features = ["auto-initialize"] }
+
+[dev-dependencies]
+sqlx.workspace = true
+tokio.workspace = true
+rusdoo-testing = { path = "../rusdoo-testing" }
