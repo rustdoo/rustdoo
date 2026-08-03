@@ -477,6 +477,18 @@ fn order() -> Model {
     )
 }
 
+/// A line nobody can fulfil: zero of something is not a sale, and a
+/// negative price is a refund written in the wrong place.
+fn line_is_sellable(record: &Map<String, Value>) -> Result<(), String> {
+    if number(record, "product_uom_qty") <= 0.0 {
+        return Err("a quantidade de uma linha precisa ser maior que zero".into());
+    }
+    if number(record, "price_unit") < 0.0 {
+        return Err("o preço unitário não pode ser negativo".into());
+    }
+    Ok(())
+}
+
 /// `sale.order.line` — one thing sold, at one price.
 fn order_line() -> Model {
     Model::new(
@@ -492,6 +504,11 @@ fn order_line() -> Model {
                 .computed(&["product_uom_qty", "price_unit"], price_subtotal)
                 .store(),
         ],
+    )
+    .constrained(
+        "linha vendável",
+        &["product_uom_qty", "price_unit"],
+        line_is_sellable,
     )
 }
 

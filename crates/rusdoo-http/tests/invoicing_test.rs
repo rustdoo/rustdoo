@@ -322,3 +322,44 @@ async fn an_invoice_without_lines_is_not_posted_live() {
         .unwrap_or_default()
         .contains("não tem linhas"));
 }
+
+#[tokio::test]
+async fn a_line_that_sells_nothing_is_refused_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let service = fixture(&url, "rusdoo_invoicing_constraint_test").await;
+    let partner = call(
+        router(service.clone()),
+        json!({"model": "res.partner", "method": "create",
+               "args": [{"name": "Cliente"}], "kwargs": {}}),
+    )
+    .await["result"]
+        .as_i64()
+        .unwrap();
+
+    // the rule travels with the record, so it also refuses a line
+    // created through its order's x2many commands
+    for line in [
+        json!({"product_uom_qty": 0, "price_unit": 100}),
+        json!({"product_uom_qty": 1, "price_unit": -5}),
+    ] {
+        let answer = call(
+            router(service.clone()),
+            json!({"model": "sale.order", "method": "create",
+                   "args": [{"partner_id": partner, "order_line": [[0, 0, line]]}],
+                   "kwargs": {}}),
+        )
+        .await;
+        assert!(answer.get("result").is_none(), "{answer}");
+    }
+    // and nothing was left behind by the refused creates
+    let orders = call(
+        router(service),
+        json!({"model": "sale.order", "method": "search_read", "args": [[]],
+               "kwargs": {"fields": ["name"]}}),
+    )
+    .await;
+    assert_eq!(orders["result"], json!([]), "{orders}");
+}

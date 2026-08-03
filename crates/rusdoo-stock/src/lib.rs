@@ -136,6 +136,18 @@ fn picking() -> Model {
     )
 }
 
+/// Nothing moves backwards: a negative quantity is a move in the other
+/// direction, and that is a different document.
+fn quantities_are_positive(record: &Map<String, Value>) -> Result<(), String> {
+    if number(record, "product_uom_qty") <= 0.0 {
+        return Err("a quantidade de um movimento precisa ser maior que zero".into());
+    }
+    if number(record, "quantity_done") < 0.0 {
+        return Err("a quantidade feita não pode ser negativa".into());
+    }
+    Ok(())
+}
+
 /// `stock.move` — one product, one quantity, one direction.
 fn mv() -> Model {
     Model::new(
@@ -149,6 +161,11 @@ fn mv() -> Model {
             Field::new("quantity_done", PRICE).default_value(json!(0.0)),
             Field::new("sequence", FieldType::Integer).default_value(json!(10)),
         ],
+    )
+    .constrained(
+        "quantidades positivas",
+        &["product_uom_qty", "quantity_done"],
+        quantities_are_positive,
     )
 }
 

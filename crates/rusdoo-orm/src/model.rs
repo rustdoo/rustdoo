@@ -14,15 +14,62 @@ pub struct ModelMeta {
     pub inherits: Vec<(String, String)>,
 }
 
+/// A rule a record must satisfy, port of `@api.constrains`.
+///
+/// It watches fields and answers with what is wrong, not with a bool: a
+/// record refused without a reason is a screen the user cannot fix.
+#[derive(Clone)]
+pub struct Constraint {
+    /// what it is called, for the log and for a message with no text
+    pub name: String,
+    /// the fields whose change makes it worth checking again
+    pub fields: Vec<String>,
+    /// `Ok` when the record is fine, `Err(reason)` when it is not
+    pub check: fn(&serde_json::Map<String, serde_json::Value>) -> Result<(), String>,
+}
+
+impl std::fmt::Debug for Constraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Constraint")
+            .field("name", &self.name)
+            .field("fields", &self.fields)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Model {
     pub meta: ModelMeta,
     fields: Vec<Field>,
+    constraints: Vec<Constraint>,
 }
 
 impl Model {
     pub fn new(meta: ModelMeta, fields: Vec<Field>) -> Self {
-        Model { meta, fields }
+        Model {
+            meta,
+            fields,
+            constraints: Vec::new(),
+        }
+    }
+
+    /// Attach a rule every record of this model must satisfy.
+    pub fn constrained(
+        mut self,
+        name: &str,
+        fields: &[&str],
+        check: fn(&serde_json::Map<String, serde_json::Value>) -> Result<(), String>,
+    ) -> Self {
+        self.constraints.push(Constraint {
+            name: name.to_string(),
+            fields: fields.iter().map(|f| (*f).to_string()).collect(),
+            check,
+        });
+        self
+    }
+
+    pub fn constraints(&self) -> &[Constraint] {
+        &self.constraints
     }
 
     pub fn field(&self, name: &str) -> Option<&Field> {
@@ -33,7 +80,14 @@ impl Model {
         &self.fields
     }
 
-    pub(crate) fn into_parts(self) -> (ModelMeta, Vec<Field>) {
-        (self.meta, self.fields)
+    pub(crate) fn into_parts(self) -> (ModelMeta, Vec<Field>, Vec<Constraint>) {
+        (self.meta, self.fields, self.constraints)
+    }
+
+    /// Rebuild with the constraints kept — the registry folds fields
+    /// from the `_inherit` chain and must not drop the rules on the way.
+    pub(crate) fn with_constraints(mut self, constraints: Vec<Constraint>) -> Self {
+        self.constraints = constraints;
+        self
     }
 }

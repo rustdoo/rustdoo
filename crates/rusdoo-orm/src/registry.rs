@@ -34,7 +34,7 @@ impl Registry {
     /// starts the new model from a copy of the parents' fields
     /// (prototype inheritance).
     pub fn register(&mut self, model: Model) -> Result<(), RusdooError> {
-        let (meta, mut own_fields) = model.into_parts();
+        let (meta, mut own_fields, own_constraints) = model.into_parts();
 
         if meta.inherit.is_empty() {
             if self.models.contains_key(&meta.name) {
@@ -45,8 +45,10 @@ impl Registry {
             }
             self.validate_inherits(&meta.inherits, &own_fields)?;
             ensure_log_access(&mut own_fields);
-            self.models
-                .insert(meta.name.clone(), Model::new(meta, own_fields));
+            self.models.insert(
+                meta.name.clone(),
+                Model::new(meta, own_fields).with_constraints(own_constraints),
+            );
             return Ok(());
         }
 
@@ -60,12 +62,17 @@ impl Registry {
 
         // parents folded in reverse so the FIRST-listed parent wins field
         // conflicts (Odoo MRO); own fields, applied last, win over all
+        // a model that extends another keeps the rules it inherited: an
+        // `_inherit` adds fields and behaviour, it does not licence the
+        // parent's records to break the parent's constraints
+        let mut constraints: Vec<crate::model::Constraint> = Vec::new();
         let mut fields: Vec<Field> = Vec::new();
         for parent in meta.inherit.iter().rev() {
             let parent_model = self.models.get(parent).ok_or_else(|| {
                 RusdooError::Validation(format!("_inherit parent not registered: {parent}"))
             })?;
             merge_fields(&mut fields, parent_model.fields().iter().cloned());
+            constraints.extend(parent_model.constraints().iter().cloned());
         }
         merge_fields(&mut fields, own_fields);
 
@@ -89,8 +96,11 @@ impl Registry {
             inherit: meta.inherit,
             inherits,
         };
-        self.models
-            .insert(meta.name, Model::new(merged_meta, fields));
+        constraints.extend(own_constraints);
+        self.models.insert(
+            meta.name,
+            Model::new(merged_meta, fields).with_constraints(constraints),
+        );
         Ok(())
     }
 }

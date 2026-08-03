@@ -106,6 +106,21 @@ pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
     Ok(())
 }
 
+/// A due date before the invoice date would make a document born
+/// overdue — the dates travel as `YYYY-MM-DD`, which compares as text.
+fn due_after_issue(record: &Map<String, Value>) -> Result<(), String> {
+    let issued = record.get("invoice_date").and_then(Value::as_str);
+    let due = record.get("invoice_date_due").and_then(Value::as_str);
+    if let (Some(issued), Some(due)) = (issued, due) {
+        if due < issued {
+            return Err(format!(
+                "o vencimento ({due}) é anterior à data da fatura ({issued})"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// `account.move` — an invoice (or a bill, or a plain entry).
 fn mv() -> Model {
     Model::new(
@@ -151,6 +166,11 @@ fn mv() -> Model {
             char("invoice_origin"),
             Field::new("narration", FieldType::Text),
         ],
+    )
+    .constrained(
+        "vencimento após a emissão",
+        &["invoice_date", "invoice_date_due"],
+        due_after_issue,
     )
 }
 

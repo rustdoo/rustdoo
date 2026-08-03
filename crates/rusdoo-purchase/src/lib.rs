@@ -161,6 +161,18 @@ fn order() -> Model {
     )
 }
 
+/// Buying zero of something is not an order, and a negative price is a
+/// credit note written in the wrong place.
+fn line_is_buyable(record: &Map<String, Value>) -> Result<(), String> {
+    if number(record, "product_qty") <= 0.0 {
+        return Err("a quantidade de uma linha precisa ser maior que zero".into());
+    }
+    if number(record, "price_unit") < 0.0 {
+        return Err("o preço unitário não pode ser negativo".into());
+    }
+    Ok(())
+}
+
 /// `purchase.order.line` — one thing bought, at one price.
 fn order_line() -> Model {
     Model::new(
@@ -176,6 +188,11 @@ fn order_line() -> Model {
                 .computed(&["product_qty", "price_unit"], price_subtotal)
                 .store(),
         ],
+    )
+    .constrained(
+        "linha comprável",
+        &["product_qty", "price_unit"],
+        line_is_buyable,
     )
 }
 

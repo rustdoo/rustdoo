@@ -458,6 +458,8 @@ impl Registry {
                 self.apply_x2many_all(&mut *tx, uid, &x2many, id).await?;
                 self.recompute_stored(&mut *tx, model_name, &[id], None)
                     .await?;
+                self.check_constraints(&mut *tx, model_name, &[id], None)
+                    .await?;
                 return Ok(id);
             }
             let mut local: Vec<(&str, Value)> = Vec::new();
@@ -508,6 +510,8 @@ impl Registry {
             let id = model.create_conn(&mut *tx, uid, local).await?;
             self.apply_x2many_all(&mut *tx, uid, &x2many, id).await?;
             self.recompute_stored(&mut *tx, model_name, &[id], None)
+                .await?;
+            self.check_constraints(&mut *tx, model_name, &[id], None)
                 .await?;
             Ok(id)
         })
@@ -713,6 +717,50 @@ impl Registry {
             }
             Ok(records)
         })
+    }
+
+    /// Hold `ids` to the model's constraints, inside the caller's
+    /// transaction — a record the rules refuse is rolled back before
+    /// anyone else can see it, which is the only way a check about a
+    /// record that does not exist yet can mean anything.
+    ///
+    /// `changed` lists the fields a write touched; `None` means a
+    /// create, where every constraint runs.
+    pub(crate) async fn check_constraints(
+        &self,
+        conn: &mut PgConnection,
+        model_name: &str,
+        ids: &[i64],
+        changed: Option<&[&str]>,
+    ) -> Result<(), RusdooError> {
+        let model = self
+            .get(model_name)
+            .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
+        if ids.is_empty() || model.constraints().is_empty() {
+            return Ok(());
+        }
+        for constraint in model.constraints() {
+            let touched = match changed {
+                None => true,
+                Some(changed) => constraint.fields.iter().any(|watched| {
+                    let head = watched
+                        .split_once('.')
+                        .map_or(watched.as_str(), |(head, _)| head);
+                    changed.contains(&head)
+                }),
+            };
+            if !touched {
+                continue;
+            }
+            let watched: Vec<&str> = constraint.fields.iter().map(String::as_str).collect();
+            let rows = self.read_conn(&mut *conn, model_name, ids, &watched).await?;
+            for row in rows {
+                if let Err(reason) = (constraint.check)(&row) {
+                    return Err(RusdooError::Validation(reason));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Bring the stored computes of `ids` up to date, inside the caller's
@@ -1275,6 +1323,8 @@ impl Registry {
                     .await?;
             }
         }
+        self.check_constraints(&mut *tx, model_name, ids, Some(&changed))
+            .await?;
         self.recompute_stored(&mut *tx, model_name, ids, Some(&changed))
             .await?;
         Ok(())
