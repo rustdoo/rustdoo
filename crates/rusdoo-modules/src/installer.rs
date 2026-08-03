@@ -283,10 +283,10 @@ pub struct InstallReport {
 fn load_translations(
     manifest: &Manifest,
     into: &mut rusdoo_orm::translations::Translations,
-) -> Result<(), RusdooError> {
+) -> Result<Vec<(String, Vec<crate::po::Entry>)>, RusdooError> {
     let dir = manifest.path.join("i18n");
     let Ok(entries) = std::fs::read_dir(&dir) else {
-        return Ok(());
+        return Ok(Vec::new());
     };
     let mut files: Vec<std::path::PathBuf> = entries
         .flatten()
@@ -295,6 +295,7 @@ fn load_translations(
         .collect();
     // a stable order: a boot's log must not depend on the filesystem
     files.sort();
+    let mut by_lang = Vec::new();
     for path in files {
         let Some(lang) = path.file_stem().and_then(|stem| stem.to_str()) else {
             continue;
@@ -302,15 +303,89 @@ fn load_translations(
         let source = std::fs::read_to_string(&path).map_err(|error| {
             RusdooError::Validation(format!("cannot read {}: {error}", path.display()))
         })?;
-        let catalogue = crate::po::catalogue(&source);
+        // parsed once and used twice: the catalogue is the program's own
+        // text, and the entries carry the references that say which of
+        // them are values sitting in a column
+        let entries = crate::po::parse_po(&source);
         tracing::info!(
             "{}: {} translation(s) in {lang}",
             manifest.name,
-            catalogue.len()
+            entries.len()
         );
-        into.extend(lang, catalogue);
+        into.extend(
+            lang,
+            entries
+                .iter()
+                .map(|entry| (entry.msgid.clone(), entry.msgstr.clone())),
+        );
+        by_lang.push((lang.to_string(), entries));
     }
-    Ok(())
+    Ok(by_lang)
+}
+
+/// Write the translations a `.po` carries onto the records it names.
+///
+/// After the module's data files, never before: an entry points at an
+/// external id, and the id only exists once the record it names has been
+/// created.
+///
+/// Everything that does not line up is skipped rather than refused. A
+/// `.po` outlives the data file it was written against — an entry naming
+/// a record somebody deleted, a field somebody made non-translatable, a
+/// model that moved to another addon — and none of those is a reason to
+/// refuse the module. What they are is a stale line in a file generated
+/// by a translation tool, and the install has nothing useful to say
+/// about it.
+async fn apply_record_translations(
+    pool: &PgPool,
+    registry: &Registry,
+    module: &str,
+    by_lang: &[(String, Vec<crate::po::Entry>)],
+    xml_ids: &XmlIds,
+) -> Result<usize, RusdooError> {
+    let mut applied = 0;
+    for (lang, entries) in by_lang {
+        // the source language is already in the column: the record was
+        // created with it, and writing it back would say nothing
+        if lang == rusdoo_orm::context::DEFAULT_LANG {
+            continue;
+        }
+        for entry in entries {
+            let Some((model_name, field, xml_id)) = entry.record_value() else {
+                continue;
+            };
+            let Some(model) = registry.get(&model_name) else {
+                continue;
+            };
+            // a column that holds one value is not a place to put a
+            // second one: `translate=True` is what says a field has room
+            // for a language
+            if !model.field(&field).is_some_and(|declared| declared.translate) {
+                continue;
+            }
+            let Some((found_model, id)) = xml_ids.get(&qualify(module, &xml_id)) else {
+                continue;
+            };
+            // the reference and the external id must agree about what
+            // model this is, or the entry is describing a record that no
+            // longer exists under that name
+            if found_model != &model_name {
+                continue;
+            }
+            registry
+                .write_as_lang(
+                    pool,
+                    rusdoo_core::SUPERUSER_ID,
+                    &model_name,
+                    &[*id],
+                    vec![(field.as_str(), Value::from(entry.msgstr.clone()))],
+                    lang,
+                )
+                .await?;
+            applied += 1;
+        }
+    }
+    Ok(applied)
 }
 
 /// The files of a module's `models/` package, in the order its
@@ -466,7 +541,7 @@ pub async fn install_modules(
         let mut totals = LoadStats::default();
         // the module's own translations, before its data: a rule or a
         // view that names a language would find it already loaded
-        load_translations(manifest, &mut report.translations)?;
+        let catalogues = load_translations(manifest, &mut report.translations)?;
         // the grants and rules this module declares, kept apart from the
         // ones already loaded so they can replace exactly its own rows
         let mut module_access = AccessControl::new();
@@ -513,6 +588,13 @@ pub async fn install_modules(
             totals.created += stats.created;
             totals.updated += stats.updated;
             totals.skipped += stats.skipped;
+        }
+        // the module's own translations onto its own records, now that
+        // its data files have run and its external ids exist
+        let translated =
+            apply_record_translations(pool, registry, name, &catalogues, xml_ids).await?;
+        if translated > 0 {
+            tracing::info!("module {name}: {translated} record value(s) translated");
         }
         // the ACL and the rules are rows like any other data: written
         // now, they are what the next boot reads, with no re-install

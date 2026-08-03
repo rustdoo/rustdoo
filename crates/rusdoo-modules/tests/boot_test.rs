@@ -506,3 +506,80 @@ async fn installs_an_addon_whose_models_are_python() {
         "the method ran and wrote"
     );
 }
+
+/// A `.po` puts its translations *on the records*, not only in the
+/// catalogue of labels.
+///
+/// Half of what an addon ships in `i18n/` is not program text but
+/// values: the names of countries, of payment methods, of menus, of
+/// actions. Those live in columns, and a translation that only reached
+/// the label catalogue would leave every one of them in English while
+/// the frame around them was translated — which is exactly the mixed
+/// screen issue #6 opens with.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_po_translates_the_records_a_module_shipped() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = schema_pool(&url, rusdoo_testing::schema_for("rusdoo_boot_i18n")).await;
+    let mut registry = Registry::new();
+    let mut methods = rusdoo_orm::methods::MethodRegistry::new();
+    let mut xml_ids = XmlIds::new();
+    let addons = Path::new("tests/fixtures/addons_i18n");
+
+    rusdoo_modules::installer::register_python_models(&[addons], &mut registry, &mut methods)
+        .expect("the addon's Python declares its models");
+    let report = install_modules(&pool, &mut registry, &[addons], &mut xml_ids)
+        .await
+        .expect("the addon installs");
+    assert_eq!(
+        report.translations.len_for("pt_BR"),
+        5,
+        "the catalogue still holds every entry of the file"
+    );
+
+    let br = xml_ids
+        .get("demo_i18n.country_br")
+        .map(|(_, id)| *id)
+        .expect("the record loaded");
+    let de = xml_ids
+        .get("demo_i18n.country_de")
+        .map(|(_, id)| *id)
+        .expect("the record loaded");
+
+    // the same two records, read by two users in two languages
+    let english = registry
+        .read_lang(&pool, "demo.country", &[br, de], &["name", "code"], "en_US")
+        .await
+        .unwrap();
+    assert_eq!(english[0]["name"], json!("Brazil"));
+    assert_eq!(english[1]["name"], json!("Germany"));
+
+    let portuguese = registry
+        .read_lang(&pool, "demo.country", &[br, de], &["name", "code"], "pt_BR")
+        .await
+        .unwrap();
+    assert_eq!(portuguese[0]["name"], json!("Brasil"));
+    assert_eq!(portuguese[1]["name"], json!("Alemanha"));
+
+    // the translation did not overwrite the source it was translated
+    // from: both languages are on the record at once
+    assert_eq!(
+        english[0]["name"], json!("Brazil"),
+        "the English name survived the Portuguese one landing"
+    );
+
+    // a field that is not translatable is left alone, whatever the file
+    // says about it — the column holds one value and a `.po` is not
+    // allowed to make it hold another
+    assert_eq!(portuguese[0]["code"], json!("BR"));
+
+    // and an entry naming a record that does not exist is skipped
+    // rather than failing the install: a `.po` outlives the data file it
+    // was written against, and a stale line is not a broken module
+    assert!(
+        xml_ids.get("demo_i18n.country_nonexistent").is_none(),
+        "the fixture's stale entry really names nothing"
+    );
+}

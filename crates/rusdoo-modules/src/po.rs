@@ -13,8 +13,7 @@
 //!
 //! An entry with an empty `msgstr` is not a translation: it is a text
 //! nobody has translated yet, and keeping it would make the screen show
-//! blank
-//! onde deveria mostrar o original.
+//! blank where it should show the original.
 
 use std::collections::HashMap;
 
@@ -24,14 +23,14 @@ use std::collections::HashMap;
 pub struct Entry {
     pub msgid: String,
     pub msgstr: String,
-    /// as linhas `#:` — `model:ir.model.fields,field_description:...`,
+    /// the `#:` lines — `model:ir.model.fields,field_description:...`,
     /// `code:addons/...`, `model_terms:ir.ui.view,arch_db:...`
     pub references: Vec<String>,
 }
 
 impl Entry {
     /// If this entry translates a field's label, the pair
-    /// `(modelo, campo)` que ela nomeia.
+    /// `(model, field)` it names.
     ///
     /// The reference is `module.field_<table>__<field>`, with the table
     /// in snake_case — which is the model's name with its dots turned
@@ -39,13 +38,43 @@ impl Entry {
     pub fn field_label(&self) -> Option<(String, String)> {
         // every reference is examined, not only the first: a real Odoo
         // entry has several, and the label "Name" turns up with four
-        // linhas `#:` das quais qualquer uma pode ser a de campo
+        // `#:` lines, any of which may be the field one
         self.references.iter().find_map(|reference| {
             let rest = reference.strip_prefix("model:ir.model.fields,field_description:")?;
             let (_module, ident) = rest.split_once('.')?;
             let table = ident.strip_prefix("field_")?;
             let (table, field) = table.rsplit_once("__")?;
             Some((table.replace('_', "."), field.to_string()))
+        })
+    }
+
+    /// If this entry translates a value *stored on a record*, the
+    /// `(model, field, external id)` it names.
+    ///
+    /// Half of what an addon ships in `i18n/` is not program text but
+    /// data: the names of countries, of payment methods, of menus, of
+    /// actions. The reference for one is
+    /// `model:<model>,<field>:<module>.<id>`, which says everything
+    /// needed to find the row and the column.
+    ///
+    /// `ir.model.fields` is excluded and is the one exception worth
+    /// stating: a field there is not a row in this port — fields are
+    /// declared in code — so its entries are labels, and
+    /// [`Entry::field_label`] is what reads those.
+    pub fn record_value(&self) -> Option<(String, String, String)> {
+        self.references.iter().find_map(|reference| {
+            let rest = reference.strip_prefix("model:")?;
+            let (model, rest) = rest.split_once(',')?;
+            if model == "ir.model.fields" || model == "ir.model" {
+                return None;
+            }
+            let (field, xml_id) = rest.split_once(':')?;
+            // `model_terms:` references have their own shape and their
+            // own mechanism (terms inside a view's arch); this is not it
+            if field.is_empty() || xml_id.is_empty() {
+                return None;
+            }
+            Some((model.to_string(), field.to_string(), xml_id.to_string()))
         })
     }
 }
@@ -63,7 +92,7 @@ pub fn parse_po(source: &str) -> Vec<Entry> {
     let mut references: Vec<String> = Vec::new();
     let mut msgid: Option<String> = None;
     let mut msgstr: Option<String> = None;
-    // em qual campo as linhas soltas `"..."` continuam
+    // which field the loose `"..."` lines continue
     let mut current: Option<Field> = None;
 
     for line in source.lines() {
@@ -81,7 +110,7 @@ pub fn parse_po(source: &str) -> Vec<Entry> {
             continue;
         }
         if let Some(rest) = line.strip_prefix("msgid ") {
-            // um novo msgid sem linha em branco antes fecha o anterior
+            // a new msgid with no blank line before it closes the last
             if msgstr.is_some() {
                 flush(&mut entries, &mut msgid, &mut msgstr, &mut references);
             }
@@ -103,7 +132,7 @@ pub fn parse_po(source: &str) -> Vec<Entry> {
             }
             continue;
         }
-        // msgctxt, msgid_plural, msgstr[n]: fora do subconjunto
+        // msgctxt, msgid_plural, msgstr[n]: outside the subset
         current = None;
     }
     flush(&mut entries, &mut msgid, &mut msgstr, &mut references);
@@ -167,8 +196,7 @@ fn unquote(raw: &str) -> String {
             Some('\\') => out.push('\\'),
             // an escape we do not know comes back as it went in,
             // instead of disappearing: losing a character of a
-            // translation is worse than
-            // mostrar uma barra invertida
+            // translation is worse than showing a backslash
             Some(other) => {
                 out.push('\\');
                 out.push(other);

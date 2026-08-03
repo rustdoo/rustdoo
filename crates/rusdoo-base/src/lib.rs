@@ -97,7 +97,7 @@ fn power_on<'a>(
                 .map_err(|error| RusdooError::Database(error.to_string()))?;
             swept += done.rows_affected();
         }
-        tracing::info!("autovacuum: {swept} registro(s) transientes removidos");
+        tracing::info!("autovacuum: {swept} transient record(s) swept");
         Ok(json!(swept))
     })
 }

@@ -1,0 +1,33 @@
+# Translation of Demo i18n.
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server\n"
+"Language: pt_BR\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+#. module: demo_i18n
+#: model:demo.country,name:demo_i18n.country_br
+msgid "Brazil"
+msgstr "Brasil"
+
+#. module: demo_i18n
+#: model:demo.country,name:demo_i18n.country_de
+msgid "Germany"
+msgstr "Alemanha"
+
+#. module: demo_i18n
+#: model:ir.model.fields,field_description:demo_i18n.field_demo_country__name
+msgid "Name"
+msgstr "Nome"
+
+#. module: demo_i18n
+#: model:demo.country,code:demo_i18n.country_br
+msgid "BR"
+msgstr "BR-nao-deve-entrar"
+
+#. module: demo_i18n
+#: model:demo.country,name:demo_i18n.country_nonexistent
+msgid "Atlantis"
+msgstr "Atlântida"

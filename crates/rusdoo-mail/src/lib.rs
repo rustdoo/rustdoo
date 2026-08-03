@@ -123,7 +123,7 @@ fn message_post<'a>(
     Box::pin(async move {
         let [res_id] = ctx.ids[..] else {
             return Err(RusdooError::Validation(
-                "message_post fala sobre um registro de cada vez".into(),
+                "message_post speaks about one record at a time".into(),
             ));
         };
         let body = kwargs

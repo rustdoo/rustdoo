@@ -242,8 +242,8 @@ impl Model {
                 // required in the model, and the rows that predate it
                 // are the ones the database cannot vouch for
                 tracing::warn!(
-                    "{}: a coluna {column:?} é obrigatória, mas há linhas sem valor — \
-                     a restrição NOT NULL não foi aplicada",
+                    "{}: column {column:?} is required, but rows exist without a value — \
+                     the NOT NULL constraint was not applied",
                     self.meta.name
                 );
             }
@@ -345,8 +345,8 @@ impl Model {
             let sql = crate::ddl::add_constraint_sql(self, constraint)?;
             if let Err(error) = sqlx::query(&sql).execute(pool).await {
                 tracing::warn!(
-                    "{}: a restrição {:?} não pôde ser aplicada ({error}) — \
-                     os dados que já existem a violam",
+                    "{}: constraint {:?} could not be applied ({error}) — \
+                     the rows already there violate it",
                     self.meta.name,
                     constraint.name
                 );

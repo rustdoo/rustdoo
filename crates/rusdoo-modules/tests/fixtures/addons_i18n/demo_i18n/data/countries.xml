@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="country_br" model="demo.country">
+        <field name="name">Brazil</field>
+        <field name="code">BR</field>
+    </record>
+    <record id="country_de" model="demo.country">
+        <field name="name">Germany</field>
+        <field name="code">DE</field>
+    </record>
+</odoo>
