@@ -1,73 +1,18 @@
 //! The scheduler: what it claims, what it runs, and what it refuses to
 //! sweep.
+//!
+//! On `TransactionCase`: the case brings its own schema with the modules
+//! installed, and drops it at the end.
 
 use rusdoo_http::dispatch::OrmService;
-use rusdoo_orm::methods::MethodRegistry;
+use rusdoo_testing::TransactionCase;
 use serde_json::json;
-use std::sync::Arc;
 
-fn pool(url: &str, schema: &'static str) -> sqlx::PgPool {
-    sqlx::postgres::PgPoolOptions::new()
-        .max_connections(4)
-        .after_connect(move |conn, _meta| {
-            Box::pin(async move {
-                sqlx::Executor::execute(
-                    &mut *conn,
-                    &format!("CREATE SCHEMA IF NOT EXISTS {schema}; SET search_path TO {schema}")
-                        as &str,
-                )
-                .await?;
-                Ok(())
-            })
-        })
-        .connect_lazy(url)
-        .unwrap()
-}
+/// What a scheduled job needs to have something to sweep.
+const MODULES: [&str; 6] = ["base", "mail", "product", "account", "stock", "sale"];
 
-async fn fixture(url: &str, schema: &'static str) -> (OrmService, sqlx::PgPool) {
-    let pool = pool(url, schema);
-    let mut registry = rusdoo_base::registry().unwrap();
-    rusdoo_mail::extend(&mut registry).unwrap();
-    rusdoo_product::extend(&mut registry).unwrap();
-    rusdoo_account::extend(&mut registry).unwrap();
-    rusdoo_stock::extend(&mut registry).unwrap();
-    rusdoo_sale::extend(&mut registry).unwrap();
-    for table in [
-        "ir_cron",
-        "ir_autovacuum",
-        "sale_order_cancel",
-        "sale_order_line",
-        "sale_order",
-        "res_partner",
-        "res_company",
-        "res_country",
-        "ir_sequence",
-    ] {
-        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{table}" CASCADE"#))
-            .execute(&pool)
-            .await
-            .unwrap();
-    }
-    for model in [
-        "ir.sequence",
-        "ir.cron",
-        "ir.autovacuum",
-        "res.country",
-        "res.company",
-        "res.partner",
-        "sale.order",
-        "sale.order.line",
-        "sale.order.cancel",
-    ] {
-        registry.get(model).unwrap().init_table(&pool).await.unwrap();
-    }
-    let mut methods = MethodRegistry::new();
-    rusdoo_base::extend_methods(&mut methods).unwrap();
-    rusdoo_sale::extend_methods(&mut methods).unwrap();
-    (
-        OrmService::insecure(Arc::new(registry), pool.clone()).with_methods(methods),
-        pool,
-    )
+fn service(case: &TransactionCase) -> OrmService {
+    OrmService::insecure(case.registry(), case.pool()).with_methods(case.methods())
 }
 
 /// A job due right now.
@@ -89,11 +34,10 @@ async fn a_due_job(pool: &sqlx::PgPool, name: &str, model: &str, code: &str) -> 
 
 #[tokio::test]
 async fn a_due_job_runs_once_and_is_pushed_forward_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
-        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+    let Some(case) = TransactionCase::open("cron", &MODULES).await else {
         return;
     };
-    let (service, pool) = fixture(&url, "rusdoo_cron_test").await;
+    let (service, pool) = (service(&case), case.pool());
     let job = a_due_job(&pool, "vacuum", "ir.autovacuum", "power_on").await;
 
     assert_eq!(rusdoo_http::cron::run_due(&service).await, 1);
@@ -114,23 +58,16 @@ async fn a_due_job_runs_once_and_is_pushed_forward_live() {
         .await
         .unwrap();
     assert!(next > now, "the next run is in the future: {next} vs {now}");
+    case.close().await;
 }
 
 #[tokio::test]
 async fn the_vacuum_sweeps_old_dialogs_and_spares_everything_else_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
-        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+    let Some(case) = TransactionCase::open("cron_vacuum", &MODULES).await else {
         return;
     };
-    let (service, pool) = fixture(&url, "rusdoo_cron_vacuum_test").await;
-    let registry = {
-        let mut registry = rusdoo_base::registry().unwrap();
-        rusdoo_product::extend(&mut registry).unwrap();
-        rusdoo_account::extend(&mut registry).unwrap();
-        rusdoo_stock::extend(&mut registry).unwrap();
-        rusdoo_sale::extend(&mut registry).unwrap();
-        registry
-    };
+    let (service, pool) = (service(&case), case.pool());
+    let registry = case.models();
     let partner = registry
         .create(&pool, "res.partner", vec![("name", json!("Ana"))])
         .await
@@ -192,30 +129,30 @@ async fn the_vacuum_sweeps_old_dialogs_and_spares_everything_else_live() {
         .await
         .unwrap();
     assert_eq!(orders, 1);
+    case.close().await;
 }
 
 #[tokio::test]
 async fn a_job_naming_code_that_does_not_exist_is_skipped_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
-        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+    let Some(case) = TransactionCase::open("cron_missing", &MODULES).await else {
         return;
     };
-    let (service, pool) = fixture(&url, "rusdoo_cron_missing_test").await;
+    let (service, pool) = (service(&case), case.pool());
     a_due_job(&pool, "fantasma", "sale.order", "nao_existe").await;
     a_due_job(&pool, "vacuum", "ir.autovacuum", "power_on").await;
 
     // the good job still runs: a row naming code that is not there is a
     // configuration problem, not a reason to stop the scheduler
     assert_eq!(rusdoo_http::cron::run_due(&service).await, 1);
+    case.close().await;
 }
 
 #[tokio::test]
 async fn an_inactive_or_future_job_is_left_alone_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
-        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+    let Some(case) = TransactionCase::open("cron_idle", &MODULES).await else {
         return;
     };
-    let (service, pool) = fixture(&url, "rusdoo_cron_idle_test").await;
+    let (service, pool) = (service(&case), case.pool());
     sqlx::query(
         r#"INSERT INTO "ir_cron" ("name", "model", "code", "interval_number", "interval_type",
                                   "nextcall", "active")
@@ -228,4 +165,5 @@ async fn an_inactive_or_future_job_is_left_alone_live() {
     .await
     .unwrap();
     assert_eq!(rusdoo_http::cron::run_due(&service).await, 0);
+    case.close().await;
 }

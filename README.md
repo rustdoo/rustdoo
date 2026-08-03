@@ -31,6 +31,7 @@ Cada crate espelha um subsistema do núcleo Python (`odoo/odoo/`):
 | `rusdoo-stock` | `odoo/addons/stock/models/` | Entregas e recebimentos |
 | `rusdoo-purchase` | `odoo/addons/purchase/models/` | Pedidos de compra |
 | `rusdoo-sale` | `odoo/addons/sale/models/` | Pedidos de venda, faturamento e entrega |
+| `rusdoo-testing` | `odoo/tests/common.py` | `TransactionCase`: um teste isolado que não deixa resíduo |
 | `rusdoo-server` | `odoo-bin` | Binário `rusdoo` (CLI + bootstrap) |
 
 Um addon segue a mesma divisão do Odoo: **código** num crate, **dados**
@@ -140,6 +141,19 @@ RUSDOO_TEST_DATABASE_URL="postgres:///rusdoo_test" cargo test --workspace
 
 Testes que criam tabelas de sistema (`ir_model_data`, …) rodam cada um em
 seu próprio schema, então a suíte é segura em paralelo.
+
+O jeito curto de escrever um teste novo é o `TransactionCase`, port de
+`odoo.tests.common`: ele abre um schema só seu com os módulos que você
+pediu (tabelas criadas, sequências carregadas) e o derruba no fim.
+
+```rust
+let Some(case) = TransactionCase::open("meu_caso", &["base", "sale"]).await else {
+    return; // sem banco de teste configurado
+};
+let service = OrmService::insecure(case.registry(), case.pool()).with_methods(case.methods());
+// ...
+case.close().await;
+```
 
 ## Licença
 
