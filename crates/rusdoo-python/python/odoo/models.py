@@ -41,7 +41,10 @@ class MetaModel(type):
         declared = []
         for attr, value in namespace.items():
             if isinstance(value, fields_module.Field):
-                declared.append(value.declare(attr))
+                spec = value.declare(attr)
+                if spec.get("compute"):
+                    spec["depends"] = _depends_of(cls, namespace, model_name, spec)
+                declared.append(spec)
         # `_name` and `_inherit` are read off the class body: inheriting
         # them from a base would make every subclass re-register its
         # parent's model. `_transient` and `_order` are read off the class,
@@ -80,6 +83,36 @@ class MetaModel(type):
             }
         )
         return cls
+
+
+def _depends_of(cls, namespace, model_name, spec):
+    """What a computed field reads, from its method's `@api.depends`.
+
+    The field declaration cannot know: `fields.Float(compute="_compute_x")`
+    names a method that does not exist yet when the field is built. The
+    metaclass runs after the whole class body, so by here it does.
+
+    A compute with no `@api.depends` is refused rather than registered
+    with an empty list. The ORM reads a computed field by first reading
+    what it depends on, so a compute that declared nothing would be
+    handed an empty row and answer the same wrong value for every
+    record — the kind of wrong that looks right until a report is off.
+    """
+    method_name = spec["compute"]
+    method = namespace.get(method_name) or getattr(cls, method_name, None)
+    if not callable(method):
+        raise TypeError(
+            "%s.%s: compute=%r names no method on the model"
+            % (model_name, spec["name"], method_name)
+        )
+    depends = list(getattr(method, "_depends", ()) or ())
+    if not depends:
+        raise TypeError(
+            "%s.%s: %s has no @api.depends — a compute that declares "
+            "nothing is read against an empty record"
+            % (model_name, spec["name"], method_name)
+        )
+    return depends
 
 
 def _as_list(value):
@@ -300,6 +333,154 @@ def _flatten_relational(model_name, field, values, env):
         elif isinstance(value, int):
             ids.append(value)
     return RecordSet(comodel, ids, env)
+
+
+class ComputeRecord:
+    """`self` inside a compute: one record, and only what it declared.
+
+    A compute runs in the middle of the read that asked for it — the ORM
+    has a connection open and a batch of rows half-built — so it cannot
+    go back to the database for a field it feels like reading. It does
+    not need to: `@api.depends` already told the ORM everything the
+    method reads, and the ORM read exactly that before calling.
+
+    So the record answers from that row and nothing else. A field the
+    method reads without declaring is an error naming the field, which
+    is the whole difference between an addon somebody fixes in a minute
+    and a total that is quietly wrong.
+
+    Assignment does not write. `record.amount = 10` inside a compute is
+    how Odoo spells "this is the value", not a write to the database —
+    for a non-stored field there is no column to write to, and for a
+    stored one the ORM writes it itself once the compute answers.
+    """
+
+    __slots__ = ("_model", "_row", "_pending")
+
+    def __init__(self, model_name, row):
+        object.__setattr__(self, "_model", model_name)
+        object.__setattr__(self, "_row", row)
+        object.__setattr__(self, "_pending", {})
+
+    # a compute is written `for record in self:`, and here `self` is the
+    # one record the ORM is computing
+    def __iter__(self):
+        yield self
+
+    def __len__(self):
+        return 1
+
+    def __bool__(self):
+        return True
+
+    def __repr__(self):
+        return "%s(%s)" % (self._model, self._row.get("id"))
+
+    @property
+    def id(self):
+        return self._row.get("id")
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        declared = getattr(MODEL_CLASSES.get(self._model), name, None)
+        if callable(declared):
+            return declared.__get__(self, type(self))
+        if name in self._pending:
+            # a compute that assigns one field and then reads it back to
+            # derive another reads what it just said, not what the column
+            # still holds
+            return self._pending[name]
+        if name in self._row:
+            return self._row[name]
+        prefix = name + "."
+        if any(key.startswith(prefix) for key in self._row):
+            return DependHop(self._model, name, self._row)
+        raise AttributeError(
+            "%s.%s is not readable in this compute: add %r to its "
+            "@api.depends" % (self._model, name, name)
+        )
+
+    def __setattr__(self, name, value):
+        if name.startswith("_"):
+            object.__setattr__(self, name, value)
+            return
+        self._pending[name] = value
+
+
+class DependHop:
+    """What a relational field answers inside a compute.
+
+    `@api.depends('line_ids.subtotal')` made the ORM read the subtotals
+    of the lines before the compute ran, keyed by the parent. So
+    `record.line_ids.mapped('subtotal')` is answered from that — the
+    records themselves never come across, because the compute has no
+    connection to fetch them with.
+    """
+
+    __slots__ = ("_model", "_field", "_row")
+
+    def __init__(self, model_name, field, row):
+        self._model = model_name
+        self._field = field
+        self._row = row
+
+    def _gathered(self, path):
+        key = "%s.%s" % (self._field, path)
+        if key not in self._row:
+            raise AttributeError(
+                "%s.%s is not readable in this compute: add %r to its "
+                "@api.depends" % (self._model, key, key)
+            )
+        values = self._row[key]
+        return list(values) if isinstance(values, list) else [values]
+
+    def mapped(self, path):
+        return self._gathered(path)
+
+    def __len__(self):
+        """How many records the relation holds.
+
+        Read off whichever dependency was gathered: they all have one
+        value per record, so any of them counts the records.
+        """
+        prefix = self._field + "."
+        for key, values in self._row.items():
+            if key.startswith(prefix) and isinstance(values, list):
+                return len(values)
+        return 0
+
+    def __bool__(self):
+        return len(self) > 0
+
+    def __repr__(self):
+        return "%s.%s(%d)" % (self._model, self._field, len(self))
+
+
+def dispatch_compute(model_name, method_name, field_name, row):
+    """Run a computed field's method over one record, and hand back the
+    value it assigned.
+
+    The Rust side calls this the same way it calls a native compute: the
+    row of everything `@api.depends` named goes in, one value comes out.
+    """
+    cls = MODEL_CLASSES.get(model_name)
+    if cls is None:
+        raise AttributeError("no Python model named %r" % model_name)
+    method = getattr(cls, method_name, None)
+    if not callable(method):
+        raise AttributeError("%s has no compute %r" % (model_name, method_name))
+    record = ComputeRecord(model_name, row)
+    method(record)
+    pending = object.__getattribute__(record, "_pending")
+    if field_name not in pending:
+        # Odoo raises here too: a compute that returns without assigning
+        # leaves the field with no value at all, and answering `False`
+        # would hide the bug behind a plausible number
+        raise ValueError(
+            "%s.%s left %s unassigned" % (model_name, method_name, field_name)
+        )
+    return pending[field_name]
 
 
 def dispatch(model_name, method_name, ids, args, kwargs):

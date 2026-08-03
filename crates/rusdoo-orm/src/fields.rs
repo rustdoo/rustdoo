@@ -38,21 +38,54 @@ pub enum FieldType {
     Monetary,
 }
 
-/// What a computed field is: the fields it reads, and the function that
-/// turns them into its value.
+/// A compute whose behaviour needs state of its own.
 ///
-/// The function is plain Rust (`odoo/orm/fields.py`'s `compute`, whose
-/// bodies are Python methods). Keeping it compiled rather than
-/// interpreted is deliberate: the compiler checks it, it evaluates
-/// nothing that came from data, and it costs a call instead of a walk
-/// over an expression tree.
+/// A Rust module's compute is a bare `fn`: everything it reads arrives
+/// in the row. A bridged one is not — a Python compute has to know
+/// *which* model, field and method it is, and a function pointer cannot
+/// carry that. Same door as [`crate::methods::DynMethod`], for the same
+/// reason.
+pub trait DynCompute: Send + Sync {
+    fn call(&self, row: &serde_json::Map<String, Value>) -> Result<Value, rusdoo_core::RusdooError>;
+}
+
+/// How a computed field's value is produced.
+#[derive(Clone)]
+pub enum ComputeFn {
+    /// compiled into the server: the compiler checks it, it evaluates
+    /// nothing that came from data, and it costs a call instead of a
+    /// walk over an expression tree
+    Native(fn(&serde_json::Map<String, Value>) -> Value),
+    /// written somewhere the compiler cannot see — an addon's Python
+    Dynamic(std::sync::Arc<dyn DynCompute>),
+}
+
+impl ComputeFn {
+    /// The field's value for one record, from the row its dependencies
+    /// were read into.
+    pub fn call(
+        &self,
+        row: &serde_json::Map<String, Value>,
+    ) -> Result<Value, rusdoo_core::RusdooError> {
+        match self {
+            // a native compute cannot fail: it is total over the row, and
+            // a Rust module that wanted to refuse a value would have
+            // declared a constraint instead
+            ComputeFn::Native(func) => Ok(func(row)),
+            ComputeFn::Dynamic(func) => func.call(row),
+        }
+    }
+}
+
+/// What a computed field is: the fields it reads, and the function that
+/// turns them into its value (`odoo/orm/fields.py`'s `compute`).
 #[derive(Clone)]
 pub struct Compute {
     /// fields the function reads (`@api.depends`). They are read for the
     /// record before it runs, and they are what a stored compute would
     /// have to watch to know when to run again.
     pub depends: Vec<String>,
-    pub func: fn(&serde_json::Map<String, Value>) -> Value,
+    pub func: ComputeFn,
 }
 
 impl std::fmt::Debug for Compute {
@@ -217,11 +250,18 @@ impl Field {
         depends: &[&str],
         func: fn(&serde_json::Map<String, Value>) -> Value,
     ) -> Self {
+        self.computed_with(
+            depends.iter().map(|d| (*d).to_string()).collect(),
+            ComputeFn::Native(func),
+        )
+    }
+
+    /// [`Field::computed`] for a compute the compiler cannot see — the
+    /// one an addon wrote in Python. The declaration is the same; only
+    /// where the body lives differs.
+    pub fn computed_with(self, depends: Vec<String>, func: ComputeFn) -> Self {
         Field {
-            compute: Some(Compute {
-                depends: depends.iter().map(|d| (*d).to_string()).collect(),
-                func,
-            }),
+            compute: Some(Compute { depends, func }),
             stored: false,
             readonly: true,
             ..self

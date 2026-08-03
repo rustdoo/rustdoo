@@ -1553,13 +1553,17 @@ impl Registry {
                     );
                 }
             }
-            Ok(rows
-                .into_iter()
-                .filter_map(|row| {
-                    let id = row.get("id")?.as_i64()?;
-                    Some((id, (compute.func)(&row)))
-                })
-                .collect())
+            let mut computed = HashMap::new();
+            for row in rows {
+                let Some(id) = row.get("id").and_then(Value::as_i64) else {
+                    continue;
+                };
+                // `?` and not a skip: a compute that refuses is a compute
+                // that could not answer, and a read that quietly dropped
+                // the record would answer the caller with a hole
+                computed.insert(id, compute.func.call(&row)?);
+            }
+            Ok(computed)
         })
     }
 

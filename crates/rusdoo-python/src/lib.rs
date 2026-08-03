@@ -5,16 +5,17 @@
 //! being rewritten, even if at first its Python runs as Python. A Rust
 //! ERP that only runs code written for it is not a port of Odoo.
 //!
-//! What works today is the first half of that: a `models.py` written
-//! against the ordinary `odoo` API declares its models, and they land in
-//! the Rust [`Registry`] as if a Rust module had declared them. From
-//! there the whole server serves them — tables, ACL, views, RPC.
+//! A `models.py` written against the ordinary `odoo` API declares its
+//! models, and they land in the Rust [`Registry`] as if a Rust module
+//! had declared them. From there the whole server serves them — tables,
+//! ACL, views, RPC. Its methods are reachable from `call_kw` through a
+//! recordset that reads and writes the same records, and a field
+//! declared with `compute=` is computed by the Python that declared it.
 //!
-//! What does *not* work yet, and is the next half: behaviour. A method
-//! on a Python model is not callable from `call_kw`, `@api.depends` does
-//! not compute anything, and there is no recordset to write `self.name`
-//! against. The bridge is one-way for now — declarations cross, calls do
-//! not.
+//! What crosses is always a *name*, never a Python object: Rust asks for
+//! `("sale.order", "action_confirm")` or `("sale.order", "amount_total")`
+//! and the Python side finds the class. That is all `call_kw` ever knows
+//! either, so the bridge does not need to know more.
 //!
 //! ```ignore
 //! let mut registry = Registry::new();
@@ -26,6 +27,7 @@
 //! "#)?;
 //! ```
 
+pub mod compute;
 pub mod dispatch;
 pub mod env;
 
@@ -33,7 +35,7 @@ use env::{current, wait};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use rusdoo_core::RusdooError;
-use rusdoo_orm::fields::{Field, FieldType};
+use rusdoo_orm::fields::{ComputeFn, Field, FieldType};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
 use serde_json::Value;
@@ -722,6 +724,31 @@ fn field_from_spec(model: &str, spec: &Value) -> Result<Field, RusdooError> {
     if let Some(default) = spec.get("default") {
         if !default.is_null() {
             field = field.default_value(default.clone());
+        }
+    }
+    if let Some(method) = spec.get("compute").and_then(Value::as_str) {
+        let depends: Vec<String> = spec
+            .get("depends")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        field = field.computed_with(
+            depends,
+            ComputeFn::Dynamic(std::sync::Arc::new(crate::compute::PyCompute::new(
+                model, &name, method,
+            ))),
+        );
+        // `store=True`: the value gets a column, so it can be searched,
+        // ordered and grouped by like any other. Without it the field is
+        // computed on every read and lives nowhere.
+        if spec.get("store") == Some(&Value::Bool(true)) {
+            field = field.store();
         }
     }
     Ok(field)

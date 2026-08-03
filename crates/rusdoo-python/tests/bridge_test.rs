@@ -568,3 +568,162 @@ class Repair(models.Model):
         .await
         .unwrap();
 }
+
+/// `@api.depends`: a field an addon computes in Python, read back
+/// through the Rust ORM as if a Rust module had declared it.
+///
+/// Both shapes are here because they fail differently. A non-stored
+/// compute runs inside the read that asked for it, so it must not touch
+/// the database; a stored one runs after a write and lands in a column,
+/// so it must be there for a `search` that orders by it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_python_computed_field_computes_live() {
+    let Some(pool) = rusdoo_testing::pool_in("rusdoo_py_compute") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut registry = Registry::new();
+    load_python_models(
+        &mut registry,
+        "shop",
+        r#"
+from odoo import models, fields, api
+
+
+class Order(models.Model):
+    _name = "shop.order"
+    _order = "id"
+
+    name = fields.Char(required=True)
+    line_ids = fields.One2many("shop.order.line", "order_id")
+    amount_total = fields.Float(compute="_compute_amount", store=True)
+    label = fields.Char(compute="_compute_label")
+
+    @api.depends("line_ids.subtotal")
+    def _compute_amount(self):
+        for order in self:
+            order.amount_total = sum(order.line_ids.mapped("subtotal"))
+
+    @api.depends("name", "amount_total")
+    def _compute_label(self):
+        for order in self:
+            order.label = "%s: %.2f" % (order.name, order.amount_total)
+
+
+class OrderLine(models.Model):
+    _name = "shop.order.line"
+    _order = "id"
+
+    order_id = fields.Many2one("shop.order", required=True)
+    subtotal = fields.Float()
+"#,
+    )
+    .expect("the addon loads");
+
+    // the declaration crossed: one stored, one not, each with the fields
+    // its `@api.depends` named
+    let order = registry.get("shop.order").expect("the model is there");
+    let total = order.field("amount_total").expect("amount_total");
+    let compute = total.compute.as_ref().expect("amount_total is computed");
+    assert_eq!(compute.depends, vec!["line_ids.subtotal".to_string()]);
+    assert!(total.stored, "store=True crossed");
+    let label = order.field("label").expect("label");
+    assert!(!label.stored, "a compute with no store= has no column");
+    assert_eq!(
+        label.compute.as_ref().expect("label is computed").depends,
+        vec!["name".to_string(), "amount_total".to_string()]
+    );
+
+    registry.init_tables(&pool).await.expect("the tables are made");
+    // with its lines, the way a form saves an order: the x2many commands
+    // come down with the parent, so the stored total is computed inside
+    // the same transaction that wrote them
+    let order_id = registry
+        .create_as(
+            &pool,
+            1,
+            "shop.order",
+            vec![
+                ("name", json!("SO001")),
+                (
+                    "line_ids",
+                    json!([[0, 0, { "subtotal": 12.5 }], [0, 0, { "subtotal": 30.0 }]]),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+
+    let rows = registry
+        .read(&pool, "shop.order", &[order_id], &["amount_total", "label"])
+        .await
+        .unwrap();
+    assert_eq!(
+        rows[0]["amount_total"],
+        json!(42.5),
+        "the Python compute summed the lines: {:?}",
+        rows[0]
+    );
+    assert_eq!(
+        rows[0]["label"],
+        json!("SO001: 42.50"),
+        "a compute reading another compute: {:?}",
+        rows[0]
+    );
+
+    // stored means a column, which means the database can order by it
+    let found = registry
+        .search(
+            &pool,
+            "shop.order",
+            &parse_domain(&json!([["amount_total", ">", 40.0]])).unwrap(),
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(found, vec![order_id], "the stored compute is a real column");
+
+    // a compute that reads what it did not declare says so, instead of
+    // answering with a null nobody would trace back
+    let mut undeclared = Registry::new();
+    load_python_models(
+        &mut undeclared,
+        "sloppy",
+        r#"
+from odoo import models, fields, api
+
+
+class Sloppy(models.Model):
+    _name = "sloppy.thing"
+    name = fields.Char()
+    other = fields.Char()
+    shout = fields.Char(compute="_compute_shout")
+
+    @api.depends("name")
+    def _compute_shout(self):
+        for thing in self:
+            thing.shout = thing.other
+"#,
+    )
+    .expect("the addon loads");
+    undeclared.init_tables(&pool).await.unwrap();
+    let id = undeclared
+        .create_as(&pool, 1, "sloppy.thing", vec![("name", json!("x"))])
+        .await
+        .unwrap();
+    let error = undeclared
+        .read(&pool, "sloppy.thing", &[id], &["shout"])
+        .await
+        .expect_err("reading an undeclared dependency is refused");
+    assert!(
+        error.to_string().contains("api.depends"),
+        "the message names the fix: {error}"
+    );
+
+    for table in ["shop_order_line", "shop_order", "sloppy_thing"] {
+        sqlx::query(&format!("DROP TABLE IF EXISTS {table} CASCADE"))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+}

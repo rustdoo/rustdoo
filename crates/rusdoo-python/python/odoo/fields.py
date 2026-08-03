@@ -29,6 +29,12 @@ class Field:
         self.comodel_name = options.pop("comodel_name", None)
         self.size = options.pop("size", None)
         self.selection = options.pop("selection", None)
+        # the name of the method that produces the value, and whether it
+        # gets a column of its own. Odoo also accepts a callable here; a
+        # name is what the bridge can carry, because what crosses to Rust
+        # is a name and never a Python object.
+        self.compute = options.pop("compute", None)
+        self.store = bool(options.pop("store", False))
         # kept so a later version can honour them without the addon
         # having to change; see the module docstring on why they are not
         # an error
@@ -50,6 +56,17 @@ class Field:
             spec["size"] = self.size
         if self.selection:
             spec["selection"] = [list(pair) for pair in self.selection]
+        if self.compute:
+            if callable(self.compute):
+                raise TypeError(
+                    "%s: compute= must be the method's name, not the method "
+                    "itself — what crosses to the ORM is a name" % name
+                )
+            spec["compute"] = self.compute
+            spec["store"] = self.store
+            # the metaclass fills this in from the method's `@api.depends`,
+            # which it can reach and a field declaration cannot
+            spec["depends"] = []
         # a callable default is a function the ORM would have to run;
         # only constants cross for now, and a callable is dropped rather
         # than mis-stored as the function's repr
