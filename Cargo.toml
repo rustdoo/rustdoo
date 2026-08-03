@@ -49,3 +49,5 @@ csv = "1"
 argon2 = "0.5"
 # os padrões de regra de código de barras do Odoo são regex de verdade
 regex = "1"
+# campos Binary viajam em base64 pelo JSON-RPC, como no Odoo
+base64 = "0.22"

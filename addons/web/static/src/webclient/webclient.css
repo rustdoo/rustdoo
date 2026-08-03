@@ -681,3 +681,38 @@ input[type="checkbox"].o_input {
 .o_dialog .o_breadcrumb {
     display: none;
 }
+
+/* Campos binários: a prévia da imagem e o seletor de arquivo. */
+.o_field_image {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 7.5rem;
+    height: 7.5rem;
+    border: 1px solid var(--rusdoo-border, #d8dadd);
+    border-radius: 6px;
+    background: var(--rusdoo-surface, #fff);
+    overflow: hidden;
+}
+.o_field_image_preview {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+.o_field_image_empty {
+    color: var(--rusdoo-muted, #8f9296);
+    font-size: 0.8125rem;
+}
+.o_field_binary_wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    align-items: flex-start;
+}
+.o_field_binary {
+    font-size: 0.8125rem;
+}
+.o_field_binary_clear {
+    padding: 0;
+    font-size: 0.8125rem;
+}

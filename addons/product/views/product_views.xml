@@ -13,7 +13,7 @@
         <field name="model">product.product</field>
         <field name="type">form</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><form><group><field name="name" string="Produto"/><field name="default_code" string="Referência"/><field name="type" string="Tipo"/><field name="active" string="Ativo"/></group><group><field name="list_price" string="Preço de venda"/><field name="standard_price" string="Custo"/><field name="description" string="Descrição"/></group></form></field>
+        <field name="arch" type="xml"><form><group><field name="image_1920" string="Imagem"/><field name="name" string="Produto"/><field name="default_code" string="Referência"/><field name="type" string="Tipo"/><field name="active" string="Ativo"/></group><group><field name="list_price" string="Preço de venda"/><field name="standard_price" string="Custo"/><field name="description" string="Descrição"/></group></form></field>
     </record>
 
     <record id="action_products" model="ir.actions.act_window">

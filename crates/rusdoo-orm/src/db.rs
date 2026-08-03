@@ -552,6 +552,17 @@ fn decode_field(row: &PgRow, name: &str, field: &Field) -> Result<Value, RusdooE
             .map(|d| Value::from(d.format("%Y-%m-%d").to_string())),
         // jsonb round-trips as the structured value itself
         FieldType::Json => row.try_get::<Option<Value>, _>(name).map_err(db_err)?,
+        // bytes travel as base64 over JSON-RPC, like Odoo's Binary. An
+        // empty column answers null, not "": a client draws a missing
+        // image differently from a zero-byte one.
+        FieldType::Binary => row
+            .try_get::<Option<Vec<u8>>, _>(name)
+            .map_err(db_err)?
+            .filter(|bytes| !bytes.is_empty())
+            .map(|bytes| {
+                use base64::Engine;
+                Value::from(base64::engine::general_purpose::STANDARD.encode(bytes))
+            }),
         other => {
             // explicit gap, never a silently-wrong value
             return Err(RusdooError::Validation(format!(

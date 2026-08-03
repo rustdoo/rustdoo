@@ -10,6 +10,7 @@ pub mod attachment;
 pub mod cron;
 pub mod dispatch;
 mod group;
+pub mod image;
 pub mod jsonrpc;
 pub mod report;
 pub mod routes;

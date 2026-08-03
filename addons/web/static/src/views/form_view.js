@@ -81,6 +81,12 @@
                 } else {
                     spec[name] = {};
                 }
+                // a imagem é servida por URL e cacheada por uma hora; sem
+                // a data da última escrita no endereço, trocar a foto de
+                // um produto não trocaria a foto na tela
+                if (meta.type === "binary") {
+                    spec.write_date = {};
+                }
             }
             return spec;
         }
@@ -133,6 +139,7 @@
                 return this.renderLines(name, meta, archNode);
             }
             const widget = rusdoo.fieldWidget.build(meta, this.record, name, {
+                model: this.model,
                 readonly: archNode.getAttribute("readonly") === "1",
                 key: this.resId || "new",
                 onChange: () => this.dirty.add(name),

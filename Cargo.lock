@@ -1339,6 +1339,7 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "axum",
+ "base64",
  "chrono",
  "http-body-util",
  "quick-xml",
@@ -1407,6 +1408,7 @@ dependencies = [
 name = "rusdoo-orm"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
  "rusdoo-base",
  "rusdoo-core",

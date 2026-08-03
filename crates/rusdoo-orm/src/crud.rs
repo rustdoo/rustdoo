@@ -36,6 +36,42 @@ impl Default for SearchOptions {
     }
 }
 
+/// What a single `Binary` field may carry, in bytes of decoded content.
+///
+/// Odoo has no cap of its own and leans on the HTTP layer's; a hard
+/// number here is what keeps a 200 MB paste from becoming a 270 MB JSON
+/// response that the client tries to hold in a string.
+pub const MAX_BINARY_BYTES: usize = 64 * 1024 * 1024;
+
+/// Bytes on the way in: base64, well-formed, and within the cap.
+fn check_base64(name: &str, value: Value) -> Result<Value, RusdooError> {
+    use base64::Engine;
+    let text = match &value {
+        // Odoo's "no bytes" is `false`, and an empty string means the
+        // same thing — both clear the column
+        Value::Null | Value::Bool(false) => return Ok(Value::Null),
+        Value::String(text) if text.is_empty() => return Ok(Value::Null),
+        Value::String(text) => text,
+        other => {
+            return Err(RusdooError::Validation(format!(
+                "{name}: um campo binário recebe base64, não {other}"
+            )))
+        }
+    };
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(text)
+        .map_err(|error| {
+            RusdooError::Validation(format!("{name}: base64 inválido ({error})"))
+        })?;
+    if decoded.len() > MAX_BINARY_BYTES {
+        return Err(RusdooError::Validation(format!(
+            "{name}: {} bytes excedem o limite de {MAX_BINARY_BYTES}",
+            decoded.len()
+        )));
+    }
+    Ok(value)
+}
+
 impl Model {
     pub fn search_sql(
         &self,
@@ -178,8 +214,8 @@ impl Model {
         for (name, value) in values {
             self.writable_field(name)?;
             columns.push(quote_ident(name)?);
-            let placeholder = bind_or_null(&mut params, self.typed_value(name, value));
-            placeholders.push(format!("{placeholder}{}", self.column_cast(name)));
+            let placeholder = bind_or_null(&mut params, self.typed_value(name, value)?);
+            placeholders.push(self.bound_expr(name, &placeholder));
         }
         // audit columns Odoo stamps on every create (LOG_ACCESS)
         let uid_ph = bind(&mut params, Value::from(uid));
@@ -215,11 +251,11 @@ impl Model {
         let mut assignments = Vec::new();
         for (name, value) in values {
             self.writable_field(name)?;
-            let placeholder = bind_or_null(&mut params, self.typed_value(name, value));
+            let placeholder = bind_or_null(&mut params, self.typed_value(name, value)?);
             assignments.push(format!(
-                "{} = {placeholder}{}",
+                "{} = {}",
                 quote_ident(name)?,
-                self.column_cast(name)
+                self.bound_expr(name, &placeholder)
             ));
         }
         // Odoo refreshes write_uid/write_date on every write
@@ -366,26 +402,46 @@ impl Model {
     /// integer are a number in the billions, which a `numeric(16,2)`
     /// column rejects as an overflow. Typing the value by its column is
     /// what keeps every row of a batch binding the same way.
-    fn typed_value(&self, name: &str, value: Value) -> Value {
+    fn typed_value(&self, name: &str, value: Value) -> Result<Value, RusdooError> {
         let Some(field) = self.field(name) else {
-            return value;
+            return Ok(value);
         };
-        let Value::Number(number) = &value else {
-            return value;
-        };
-        match field.ty {
-            FieldType::Float { .. } | FieldType::Monetary => number
-                .as_f64()
-                .map_or(value.clone(), Value::from),
-            FieldType::Integer | FieldType::Many2one { .. } => number
-                .as_i64()
-                .map_or(value.clone(), Value::from),
-            _ => value,
+        // bytes are checked before they reach the database: `decode()`
+        // would refuse malformed base64 with a message about a SQL
+        // function, and the size cap has to be applied to what the
+        // client sent, not to what came back out of it
+        if matches!(field.ty, FieldType::Binary) {
+            return check_base64(name, value);
         }
+        let Value::Number(number) = &value else {
+            return Ok(value);
+        };
+        Ok(match field.ty {
+            FieldType::Float { .. } | FieldType::Monetary => {
+                number.as_f64().map_or(value.clone(), Value::from)
+            }
+            FieldType::Integer | FieldType::Many2one { .. } => {
+                number.as_i64().map_or(value.clone(), Value::from)
+            }
+            _ => value,
+        })
     }
 
     pub(crate) fn column_cast(&self, name: &str) -> &'static str {
         crate::sql::value_cast_for(self.field(name).map(|f| &f.ty))
+    }
+
+    /// How a bound parameter reaches its column.
+    ///
+    /// Almost always the placeholder with a cast after it. Bytes are the
+    /// exception: they arrive as base64 text and `::bytea` would store
+    /// the *text*, so PostgreSQL has to decode it — which is a wrapper,
+    /// not a suffix.
+    fn bound_expr(&self, name: &str, placeholder: &str) -> String {
+        if matches!(self.field(name).map(|f| &f.ty), Some(FieldType::Binary)) {
+            return format!("decode({placeholder}, 'base64')");
+        }
+        format!("{placeholder}{}", self.column_cast(name))
     }
 
     /// A stored, non-readonly field: the write path rejects readonly

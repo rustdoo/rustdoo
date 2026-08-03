@@ -42,10 +42,15 @@
         const onChange = settings.onChange || function () {};
         const value = rawValue(record, name, meta);
         if (settings.readonly || meta.readonly) {
+            if (meta.type === "binary") {
+                return { node: imageBox(settings, record, name), read: async () => undefined };
+            }
             const node = el("div", { class: "o_field o_readonly" }, formatValue(record ? record[name] : false, meta));
             return { node: node, read: async () => undefined };
         }
         switch (meta.type) {
+            case "binary":
+                return binary(meta, record, name, onChange, settings);
             case "boolean":
                 return checkbox(value, onChange);
             case "text":
@@ -188,6 +193,69 @@
                     );
                 }
                 return exact[0];
+            },
+        };
+    }
+
+    /**
+     * A imagem de um registro salvo, pela rota `/web/image`.
+     *
+     * Nunca pelo base64 que veio no `read`: uma lista de quarenta
+     * produtos com foto seriam quarenta blobs dentro de um JSON, um
+     * terço maiores que os bytes que carregam e reenviados a cada
+     * mudança de tela. Um `<img src>` o navegador já sabe cachear.
+     */
+    function imageBox(settings, record, name) {
+        const id = record && record.id;
+        const model = settings.model;
+        if (!id || !model) {
+            return el("div", { class: "o_field_image o_field_image_empty" }, "sem imagem");
+        }
+        const img = el("img", {
+            class: "o_field_image_preview",
+            alt: "",
+            // o carimbo desfaz o cache quando a imagem muda
+            src: "/web/image/" + model + "/" + id + "/" + name + "?v=" + (record.write_date || ""),
+        });
+        img.addEventListener("error", function () {
+            img.replaceWith(el("div", { class: "o_field_image o_field_image_empty" }, "sem imagem"));
+        });
+        return el("div", { class: "o_field_image" }, img);
+    }
+
+    /**
+     * Escolher um arquivo: o que vai para o servidor é base64, como o
+     * Odoo manda um campo Binary pelo JSON-RPC.
+     */
+    function binary(meta, record, name, onChange, settings) {
+        let pending;
+        const input = el("input", { type: "file", class: "o_input o_field_binary", accept: "image/*" });
+        const clear = el("button", { type: "button", class: "btn btn-link o_field_binary_clear" }, "Remover");
+        const box = el("div", { class: "o_field_binary_wrap" }, imageBox(settings, record, name), input, clear);
+        input.addEventListener("change", function () {
+            const file = input.files && input.files[0];
+            if (!file) {
+                return;
+            }
+            pending = new Promise(function (resolve, reject) {
+                const reader = new FileReader();
+                reader.onerror = () => reject(reader.error);
+                // o resultado é `data:<mime>;base64,<dados>` — o servidor
+                // quer só a segunda metade
+                reader.onload = () => resolve(String(reader.result).split(",")[1] || false);
+                reader.readAsDataURL(file);
+            });
+            onChange();
+        });
+        clear.addEventListener("click", function () {
+            input.value = "";
+            pending = Promise.resolve(false);
+            onChange();
+        });
+        return {
+            node: box,
+            read: async function () {
+                return pending === undefined ? undefined : pending;
             },
         };
     }

@@ -41,6 +41,7 @@ pub fn router(service: OrmService) -> Router {
         .route("/jsonrpc", post(jsonrpc_endpoint))
         .with_state(service.clone())
         .merge(assets)
+        .merge(crate::image::routes(service.clone()))
         .merge(crate::attachment::routes(service))
 }
 

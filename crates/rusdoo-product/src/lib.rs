@@ -61,6 +61,9 @@ fn product() -> Model {
             .default_value(json!("consu")),
             Field::new("description", FieldType::Text),
             Field::new("active", FieldType::Boolean).default_value(json!(true)),
+            // `image.mixin` do Odoo dá uma imagem a todo produto; aqui só
+            // a original, sem os tamanhos derivados que ele materializa
+            Field::new("image_1920", FieldType::Binary),
         ],
     )
     .constrained(
