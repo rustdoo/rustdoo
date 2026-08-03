@@ -34,6 +34,12 @@ pub struct MethodCtx<'a> {
     /// methods that override `create`, where there is no recordset and
     /// `args[0]` is the values.
     pub rest: Vec<Value>,
+    /// the caller's `self.env.context`.
+    ///
+    /// A method that could not see it would make `with_context` from the
+    /// client a no-op — the call would arrive stripped of the terms it
+    /// was made in, and nobody would see it happen.
+    pub context: crate::context::Context,
 }
 
 impl<'a> MethodCtx<'a> {
@@ -54,6 +60,7 @@ impl<'a> MethodCtx<'a> {
             model,
             ids,
             rest: Vec::new(),
+            context: crate::context::Context::new(),
         }
     }
 
@@ -61,6 +68,19 @@ impl<'a> MethodCtx<'a> {
     pub fn with_rest(mut self, rest: Vec<Value>) -> MethodCtx<'a> {
         self.rest = rest;
         self
+    }
+
+    /// The same, in the terms the caller set.
+    pub fn with_context(mut self, context: crate::context::Context) -> MethodCtx<'a> {
+        self.context = context;
+        self
+    }
+
+    /// Search options that carry this call's context — what a method
+    /// wants whenever it searches on its caller's behalf, so that
+    /// `active_test` and the language follow the call down.
+    pub fn search_options(&self) -> crate::crud::SearchOptions {
+        crate::crud::SearchOptions::from_context(self.context.clone())
     }
 }
 

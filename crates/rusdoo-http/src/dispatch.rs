@@ -921,6 +921,9 @@ impl OrmService {
                     Ok(_) => args.get(1..).unwrap_or(&[]).to_vec(),
                     Err(_) => args.to_vec(),
                 },
+                // the terms the call was made in, straight from the
+                // client's `with_context`
+                context: rusdoo_orm::context::Context::from_value(kwargs.get("context")),
             };
             // the ids a method is called on are records like any other:
             // the record rules that scope a write scope this one too
@@ -1343,7 +1346,7 @@ impl OrmService {
                 })?;
                 let fields = parse_fields(args.first().or_else(|| kwargs.get("fields_list")))?;
                 self.ensure_exposed(model, &fields)?;
-                let context = kwargs.get("context").and_then(Value::as_object);
+                let context = rusdoo_orm::context::Context::from_value(kwargs.get("context"));
                 let mut out = Map::new();
                 for name in &fields {
                     let Some(field) = m.field(name) else {
@@ -1353,10 +1356,7 @@ impl OrmService {
                             "unknown field on {model}: {name:?}"
                         )));
                     };
-                    if let Some(value) = context
-                        .and_then(|ctx| ctx.get(&format!("default_{name}")))
-                        .cloned()
-                    {
+                    if let Some(value) = context.default_for(name).cloned() {
                         out.insert(name.clone(), value);
                         continue;
                     }
@@ -1472,20 +1472,9 @@ fn group_options(
 /// (Python truthiness, so `false`, `0` and `null` all mean off). It is
 /// what the "Archived" filter of every list view flips.
 fn context_active_test(kwargs: &Map<String, Value>) -> bool {
-    let Some(flag) = kwargs
-        .get("context")
-        .and_then(Value::as_object)
-        .and_then(|context| context.get("active_test"))
-    else {
-        return true;
-    };
-    match flag {
-        Value::Null | Value::Bool(false) => false,
-        Value::Number(n) => n.as_f64() != Some(0.0),
-        Value::String(s) => !s.is_empty(),
-        _ => true,
-    }
+    rusdoo_orm::context::Context::from_value(kwargs.get("context")).active_test()
 }
+
 
 fn search_options(kwargs: &Map<String, Value>) -> Result<SearchOptions, RpcError> {
     let mut opts = SearchOptions {

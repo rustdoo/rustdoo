@@ -22,6 +22,22 @@ pub struct SearchOptions {
     /// Odoo's `active_test` context flag: archived records stay out of
     /// every search unless the caller asks for them
     pub active_test: bool,
+    /// the caller's context, for the parts of a search that depend on
+    /// *in what terms* it was asked — the language a `name_search`
+    /// matches in, a module's own flag
+    pub context: crate::context::Context,
+}
+
+impl SearchOptions {
+    /// The options a context implies: `active_test` read out of it, and
+    /// the context itself carried along for whatever else looks at it.
+    pub fn from_context(context: crate::context::Context) -> SearchOptions {
+        SearchOptions {
+            active_test: context.active_test(),
+            context,
+            ..SearchOptions::default()
+        }
+    }
 }
 
 impl Default for SearchOptions {
@@ -32,6 +48,7 @@ impl Default for SearchOptions {
             offset: None,
             // Odoo's default: `active_test` is only ever turned off
             active_test: true,
+            context: crate::context::Context::new(),
         }
     }
 }
