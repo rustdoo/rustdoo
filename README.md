@@ -31,6 +31,7 @@ Cada crate espelha um subsistema do núcleo Python (`odoo/odoo/`):
 | `rusdoo-stock` | `odoo/addons/stock/models/` | Entregas e recebimentos |
 | `rusdoo-purchase` | `odoo/addons/purchase/models/` | Pedidos de compra |
 | `rusdoo-sale` | `odoo/addons/sale/models/` | Pedidos de venda, faturamento e entrega |
+| `rusdoo-python` | `odoo/api.py`, `odoo/models.py` | Compat: roda o Python de um addon sobre o núcleo Rust |
 | `rusdoo-testing` | `odoo/tests/common.py` | `TransactionCase`: um teste isolado que não deixa resíduo |
 | `rusdoo-server` | `odoo-bin` | Binário `rusdoo` (CLI + bootstrap) |
 
@@ -92,17 +93,32 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
    Falta: edição em massa, arrastar cartões no quadro, traduções.
 7. **Fase 6 — Addons de negócio** *(atual)*: port módulo a módulo em ordem
    do grafo de dependências. Já portados: `mail` (chatter), `product`,
-   `sale` (pedidos, linhas, totais e botões de estado) e `account`
-   (faturas, com a ação "criar fatura" a partir do pedido). Em seguida:
-   `stock`, `purchase`, `project`. O web client JS original (1,33M
-   linhas) pode ser mantido como está — ele só fala JSON-RPC — ou
-   substituído pelo cliente daqui.
+   `sale`, `account`, `stock`, `purchase`, `uom`, `utm`, `analytic`,
+   `rating`, `sales_team`, `barcodes`, `data_recycle`, `onboarding` e
+   `account_debit_note`. O web client JS original (1,33M linhas) pode ser
+   mantido como está — ele só fala JSON-RPC — ou substituído pelo cliente
+   daqui.
+8. **Compat — o Python de um addon** *(em andamento, issue #10)*: um
+   addon publicado pela comunidade roda aqui sem ser reescrito, ainda que
+   por ora o Python dele rode como Python. Um `models.py` escrito contra a
+   API normal do Odoo declara seus modelos no registry Rust, e o servidor
+   os serve — tabelas, ACL, views, RPC. Funciona o recordset
+   (`search`/`create`/`write`/`unlink`/`mapped`/`filtered`, relações como
+   recordset, `self.env`, `env.ref`, `env.company`), os métodos via
+   `call_kw`, os quatro decoradores (`@api.depends`, `@api.constrains`,
+   `@api.onchange`, `@api.ondelete`), e `odoo.exceptions` — cada recusa
+   chega com a espécie que tinha. O `models/*.py` é lido do diretório do
+   addon a cada boot, na ordem do `__init__.py` dele.
+   Falta: o JS (OWL) dos addons, e a decisão sobre a GIL — um
+   interpretador é gargalo, e se isso vira um por worker ou
+   subinterpretadores é escolha para tomar com um benchmark, não antes.
 
 Um módulo de negócio segue sempre a mesma forma: **modelos e métodos**
 num crate (`rusdoo-<módulo>`), **registros** num addon (`addons/<módulo>`).
 Um método de modelo declara o acesso que precisa (`action_confirm`
 escreve, `message_post` só lê), e é isso que o despacho verifica antes de
-executá-lo.
+executá-lo. Um addon escrito em Python segue a mesma divisão, com o
+`models/` no lugar do crate.
 
 ## Build
 
