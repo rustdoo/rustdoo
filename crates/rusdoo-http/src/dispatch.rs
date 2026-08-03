@@ -72,6 +72,9 @@ pub struct OrmService {
     pub(crate) access: Arc<rusdoo_orm::access::AccessControl>,
     pub(crate) rules: Arc<rusdoo_orm::rules::RecordRules>,
     pub(crate) assets: Arc<crate::assets::AssetHub>,
+    /// the `.po` catalogues the installed modules brought — the text of
+    /// the program, as opposed to the values in the database
+    pub(crate) translations: Arc<rusdoo_orm::translations::Translations>,
     pub(crate) methods: Arc<rusdoo_orm::methods::MethodRegistry>,
     pub(crate) filestore: Arc<std::path::PathBuf>,
 }
@@ -89,6 +92,7 @@ impl OrmService {
             access: Arc::new(rusdoo_orm::access::AccessControl::new()),
             rules: Arc::new(rusdoo_orm::rules::RecordRules::new()),
             assets: crate::assets::AssetHub::empty(),
+            translations: Arc::new(rusdoo_orm::translations::Translations::new()),
             methods: Arc::new(rusdoo_orm::methods::MethodRegistry::new()),
             filestore: Arc::new(crate::attachment::default_filestore()),
         }
@@ -104,6 +108,15 @@ impl OrmService {
     /// `static/` directories).
     pub fn with_assets(mut self, assets: Arc<crate::assets::AssetHub>) -> Self {
         self.assets = assets;
+        self
+    }
+
+    /// Install the translations the modules shipped.
+    pub fn with_translations(
+        mut self,
+        translations: rusdoo_orm::translations::Translations,
+    ) -> Self {
+        self.translations = Arc::new(translations);
         self
     }
 
@@ -236,10 +249,16 @@ impl OrmService {
     /// `fields_get`'s payload: the metadata of every exposed field,
     /// optionally restricted to `only`. Private fields are never
     /// described — their metadata alone would disclose that they exist.
-    pub(crate) fn fields_metadata(
+    /// The field metadata a client draws with, labels in `lang`.
+    ///
+    /// A field's label is text of the program, not a value in the
+    /// database: it is the same for every record, comes from the
+    /// module's `.po`, and is what a column header shows.
+    pub(crate) fn fields_metadata_in(
         &self,
         model: &str,
         only: &HashSet<&str>,
+        lang: &str,
     ) -> Result<Map<String, Value>, RpcError> {
         let m = self.registry.get(model).ok_or_else(|| {
             RpcError::from(RusdooError::Validation(format!("unknown model: {model}")))
@@ -252,7 +271,10 @@ impl OrmService {
             if !only.is_empty() && !only.contains(field.name.as_str()) {
                 continue;
             }
-            out.insert(field.name.clone(), field_metadata(field));
+            out.insert(
+                field.name.clone(),
+                field_metadata(field, lang, &self.translations),
+            );
         }
         Ok(out)
     }
@@ -1074,7 +1096,12 @@ impl OrmService {
                         ))
                     }
                 };
-                Ok(Value::Object(self.fields_metadata(model, &only)?))
+                let lang = rusdoo_orm::context::Context::from_value(kwargs.get("context"));
+                Ok(Value::Object(self.fields_metadata_in(
+                    model,
+                    &only,
+                    lang.lang(),
+                )?))
             }
             // the arch of the views an action opens, with the fields the
             // client needs to render them
@@ -1082,7 +1109,8 @@ impl OrmService {
                 let specs = crate::webclient::parse_view_specs(
                     args.first().or_else(|| kwargs.get("views")),
                 )?;
-                self.get_views_payload(uid, model, &specs).await
+                let lang = rusdoo_orm::context::Context::from_value(kwargs.get("context"));
+                self.get_views_payload(uid, model, &specs, lang.lang()).await
             }
             // many2one dropdown suggestions: (id, display_name) pairs
             "name_search" => {
@@ -1634,10 +1662,18 @@ fn hash_credentials(model: &str, values: &mut Map<String, Value>) -> Result<(), 
 
 /// Field types the view context can safely read (decodable scalars).
 /// The Odoo `fields_get` metadata dict for one field.
-fn field_metadata(field: &Field) -> Value {
+fn field_metadata(
+    field: &Field,
+    lang: &str,
+    translations: &rusdoo_orm::translations::Translations,
+) -> Value {
     let mut m = Map::new();
     m.insert("type".into(), Value::from(field_type_name(&field.ty)));
-    m.insert("string".into(), Value::from(humanize(&field.name)));
+    let label = humanize(&field.name);
+    m.insert(
+        "string".into(),
+        Value::from(translations.get(lang, &label).to_string()),
+    );
     m.insert("required".into(), Value::from(field.required));
     m.insert("readonly".into(), Value::from(field.readonly));
     m.insert("store".into(), Value::from(field.stored));
@@ -1651,7 +1687,11 @@ fn field_metadata(field: &Field) -> Value {
             m.insert("relation".into(), Value::from(comodel.as_str()));
         }
         FieldType::Selection(options) => {
-            let pairs: Vec<Value> = options.iter().map(|(v, label)| json!([v, label])).collect();
+            // os rótulos de uma seleção também são texto do programa
+            let pairs: Vec<Value> = options
+                .iter()
+                .map(|(v, label)| json!([v, translations.get(lang, label)]))
+                .collect();
             m.insert("selection".into(), Value::from(pairs));
         }
         _ => {}

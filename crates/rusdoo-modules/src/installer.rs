@@ -270,6 +270,47 @@ pub struct InstallReport {
     pub bundles: Bundles,
     /// installed module -> its directory, what the static routes serve from
     pub roots: HashMap<String, std::path::PathBuf>,
+    /// the `.po` catalogues the installed modules brought
+    pub translations: rusdoo_orm::translations::Translations,
+}
+
+/// Read `i18n/<lang>.po` of a module into the catalogue.
+///
+/// A module without an `i18n` directory is the common case, not an
+/// error. A `.po` that cannot be read *is* reported: it was shipped on
+/// purpose, and a translation silently missing is a screen half in
+/// another language with nobody knowing why.
+fn load_translations(
+    manifest: &Manifest,
+    into: &mut rusdoo_orm::translations::Translations,
+) -> Result<(), RusdooError> {
+    let dir = manifest.path.join("i18n");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(());
+    };
+    let mut files: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("po"))
+        .collect();
+    // ordem estável: o log de um boot não pode depender do sistema de arquivos
+    files.sort();
+    for path in files {
+        let Some(lang) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        let source = std::fs::read_to_string(&path).map_err(|error| {
+            RusdooError::Validation(format!("cannot read {}: {error}", path.display()))
+        })?;
+        let catalogue = crate::po::catalogue(&source);
+        tracing::info!(
+            "{}: {} tradução(ões) em {lang}",
+            manifest.name,
+            catalogue.len()
+        );
+        into.extend(lang, catalogue);
+    }
+    Ok(())
 }
 
 /// The integrated boot, port of `odoo/modules/loading.py`:
@@ -308,6 +349,9 @@ pub async fn install_modules(
             continue;
         }
         let mut totals = LoadStats::default();
+        // the module's own translations, before its data: a rule or a
+        // view that names a language would find it already loaded
+        load_translations(manifest, &mut report.translations)?;
         // the grants and rules this module declares, kept apart from the
         // ones already loaded so they can replace exactly its own rows
         let mut module_access = AccessControl::new();

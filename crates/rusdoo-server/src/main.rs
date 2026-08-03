@@ -39,12 +39,14 @@ async fn main() -> anyhow::Result<()> {
         assets = rusdoo_http::assets::AssetHub::new(bundles, roots);
     }
 
+    let mut translations = rusdoo_orm::translations::Translations::new();
     if std::env::args().any(|arg| arg == "--init") {
         use rusdoo_modules::installer::{install_modules, XmlIds};
         let mut xml_ids = XmlIds::load(&pool).await?;
         if addons_path.is_dir() {
             let report =
                 install_modules(&pool, &mut registry, &[addons_path], &mut xml_ids).await?;
+            translations = report.translations.clone();
             tracing::info!(
                 "installed {} module(s), {} client bundle(s)",
                 report.modules.len(),
@@ -82,7 +84,8 @@ async fn main() -> anyhow::Result<()> {
         .with_access(access)
         .with_rules(rules)
         .with_assets(assets)
-        .with_methods(methods);
+        .with_methods(methods)
+        .with_translations(translations);
     if std::env::var("RUSDOO_INSECURE_COOKIES").is_ok() {
         service = service.allow_insecure_cookies();
     }

@@ -228,6 +228,7 @@ impl OrmService {
         uid: i64,
         model: &str,
         specs: &[(Option<i64>, String)],
+        lang: &str,
     ) -> Result<Value, RpcError> {
         if specs.is_empty() {
             return Err(RpcError::invalid_params(
@@ -253,7 +254,7 @@ impl OrmService {
                 None => tracing::debug!("{model}: sem view {kind} padrão"),
             }
         }
-        let fields = self.fields_metadata(model, &std::collections::HashSet::new())?;
+        let fields = self.fields_metadata_in(model, &std::collections::HashSet::new(), lang)?;
         Ok(json!({
             "views": views,
             "models": {model: {"fields": Value::Object(fields)}},

@@ -1,0 +1,72 @@
+# Tradução do rusdoo — módulo base.
+#
+# O texto de origem é o rótulo que o framework gera a partir do nome da
+# coluna ("create_date" -> "Create Date"), que é a mesma convenção do
+# Odoo. Traduzir aqui é o que tira o inglês do meio de uma tela em
+# português.
+msgid ""
+msgstr ""
+"Project-Id-Version: rusdoo\n"
+"Language: pt_BR\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__create_date
+msgid "Create Date"
+msgstr "Criado em"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__create_uid
+msgid "Create Uid"
+msgstr "Criado por"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__write_date
+msgid "Write Date"
+msgstr "Alterado em"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__write_uid
+msgid "Write Uid"
+msgstr "Alterado por"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__name
+msgid "Name"
+msgstr "Nome"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__active
+msgid "Active"
+msgstr "Ativo"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__email
+msgid "Email"
+msgstr "E-mail"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__phone
+msgid "Phone"
+msgstr "Telefone"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_users__login
+msgid "Login"
+msgstr "Usuário"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__company_id
+msgid "Company Id"
+msgstr "Empresa"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__country_id
+msgid "Country Id"
+msgstr "País"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_lang__code
+msgid "Code"
+msgstr "Código"

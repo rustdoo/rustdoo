@@ -6,6 +6,7 @@ pub mod data;
 pub mod eval;
 pub mod graph;
 pub mod installer;
+pub mod po;
 pub mod loader;
 pub mod manifest;
 pub mod pyliteral;

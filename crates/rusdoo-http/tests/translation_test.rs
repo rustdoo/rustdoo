@@ -296,3 +296,55 @@ async fn the_list_view_answers_in_the_callers_language_live() {
 
     case.close().await;
 }
+
+/// O rótulo de um campo é texto do programa, não valor do banco: vem do
+/// `.po` do módulo e é o mesmo para todo registro.
+#[tokio::test]
+async fn a_field_label_comes_back_in_the_callers_language_live() {
+    let Some(case) = TransactionCase::open("translation_labels", &["base", "product"]).await else {
+        return;
+    };
+    let mut catalogue = rusdoo_orm::translations::Translations::new();
+    catalogue.extend(
+        "pt_BR",
+        [
+            ("Create Date".to_string(), "Criado em".to_string()),
+            ("List Price".to_string(), "Preço de venda".to_string()),
+        ],
+    );
+    let service =
+        OrmService::insecure(case.registry(), case.pool()).with_translations(catalogue);
+
+    let answer = call(
+        &service,
+        "product.product",
+        "fields_get",
+        json!([]),
+        in_lang("pt_BR"),
+    )
+    .await;
+    assert_eq!(
+        answer["result"]["list_price"]["string"],
+        json!("Preço de venda"),
+        "{answer}"
+    );
+    assert_eq!(answer["result"]["create_date"]["string"], json!("Criado em"));
+    // um rótulo sem tradução aparece na origem, nunca em branco
+    assert_eq!(
+        answer["result"]["standard_price"]["string"],
+        json!("Standard Price")
+    );
+
+    // e em inglês continua em inglês
+    let answer = call(
+        &service,
+        "product.product",
+        "fields_get",
+        json!([]),
+        in_lang("en_US"),
+    )
+    .await;
+    assert_eq!(answer["result"]["list_price"]["string"], json!("List Price"));
+
+    case.close().await;
+}

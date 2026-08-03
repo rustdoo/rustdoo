@@ -17,4 +17,5 @@ pub mod registry;
 pub mod rules;
 pub mod sequence;
 pub mod sql;
+pub mod translations;
 pub mod unlink;
