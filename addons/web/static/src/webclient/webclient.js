@@ -289,6 +289,12 @@
          * registro; sem ele, a lista do modelo.
          */
         async openAction(action) {
+            // target "new": a dialog over what is on screen, not a
+            // screen that replaces it
+            if (action.target === "new") {
+                await this.openDialog(action);
+                return;
+            }
             try {
                 const wanted = ["list", "form"];
                 const payload = await api.callKw(action.res_model, "get_views", [], {
@@ -309,6 +315,68 @@
                 } else {
                     this.showList();
                 }
+            } catch (error) {
+                this.notify(error);
+            }
+        }
+
+        /**
+         * O diálogo de um assistente: o formulário do modelo transiente
+         * por cima da tela, e a tela recarregada quando ele fecha.
+         */
+        async openDialog(action) {
+            try {
+                const payload = await api.callKw(action.res_model, "get_views", [], {
+                    views: [[false, "form"]],
+                });
+                const views = payload.views;
+                if (!views.form) {
+                    throw new Error("o assistente não tem formulário");
+                }
+                const close = () => {
+                    if (this.dialog && this.dialog.parentNode) {
+                        this.dialog.remove();
+                    }
+                    this.dialog = null;
+                };
+                const view = new rusdoo.FormView({
+                    model: action.res_model,
+                    arch: views.form.arch,
+                    fields: payload.models[action.res_model].fields,
+                    resId: action.res_id || null,
+                    title: action.name || action.res_model,
+                    dialog: true,
+                    onBack: close,
+                    onSaved: () => {},
+                    onAction: async (next) => {
+                        close();
+                        if (next && next.type === "ir.actions.act_window_close") {
+                            // o assistente terminou: o que estava atrás
+                            // dele pode ter mudado
+                            this.switchTo(this.lastView || "list");
+                            return;
+                        }
+                        await this.openAction(next);
+                    },
+                    onError: (error) => this.notify(error),
+                });
+                await view.load();
+                const body = view.render();
+                const dialog = el("div", { class: "o_dialog_backdrop" }, [
+                    el("div", { class: "o_dialog" }, [
+                        el("div", { class: "o_dialog_head" }, [
+                            el("strong", {}, action.name || action.res_model),
+                            el(
+                                "button",
+                                { class: "btn btn-ghost", type: "button", onclick: close },
+                                "×"
+                            ),
+                        ]),
+                        body,
+                    ]),
+                ]);
+                this.dialog = dialog;
+                this.target.append(dialog);
             } catch (error) {
                 this.notify(error);
             }

@@ -10,6 +10,15 @@ use std::collections::{HashMap, HashSet};
 /// but every traversal caps its depth as defense in depth.
 pub(crate) const MAX_DELEGATION_DEPTH: usize = 8;
 
+/// Rebuilding a model must not quietly turn a dialog into stored data.
+fn keep_kind(model: Model, transient: bool) -> Model {
+    if transient {
+        model.transient()
+    } else {
+        model
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Registry {
     models: HashMap<String, Model>,
@@ -34,7 +43,7 @@ impl Registry {
     /// starts the new model from a copy of the parents' fields
     /// (prototype inheritance).
     pub fn register(&mut self, model: Model) -> Result<(), RusdooError> {
-        let (meta, mut own_fields, own_constraints) = model.into_parts();
+        let (meta, mut own_fields, own_constraints, transient) = model.into_parts();
 
         if meta.inherit.is_empty() {
             if self.models.contains_key(&meta.name) {
@@ -47,7 +56,8 @@ impl Registry {
             ensure_log_access(&mut own_fields);
             self.models.insert(
                 meta.name.clone(),
-                Model::new(meta, own_fields).with_constraints(own_constraints),
+                keep_kind(Model::new(meta, own_fields), transient)
+                    .with_constraints(own_constraints),
             );
             return Ok(());
         }
@@ -99,7 +109,8 @@ impl Registry {
         constraints.extend(own_constraints);
         self.models.insert(
             meta.name,
-            Model::new(merged_meta, fields).with_constraints(constraints),
+            keep_kind(Model::new(merged_meta, fields), transient)
+                .with_constraints(constraints),
         );
         Ok(())
     }

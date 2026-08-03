@@ -57,7 +57,8 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
    `search`/`read`/`write`/`unlink`, herança (`_inherit`/`_inherits`),
    comandos x2many (0–6), `read_group`, defaults, `active_test`,
    LOG_ACCESS, campos computed (com dependências) e related,
-   numeração por `ir.sequence`, access
+   numeração por `ir.sequence`, constraints de modelo (`@api.constrains`),
+   modelos transientes (assistentes), access
    rights (`ir.model.access`) e record rules (`ir.rule`) — ambos
    persistidos, lidos a cada boot.
    Falta: contexto/`Environment` completo, constraints SQL.
@@ -86,7 +87,7 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
    (as linhas de um pedido), botões de ação do arch, o chatter e os
    filtros e agrupamento da view de busca (com contagem e somas por
    grupo) e a view kanban (colunas por grupo, com troca list/quadro).
-   Falta: edição em massa, arrastar cartões no quadro.
+   Falta: edição em massa, arrastar cartões no quadro, traduções.
 7. **Fase 6 — Addons de negócio** *(atual)*: port módulo a módulo em ordem
    do grafo de dependências. Já portados: `mail` (chatter), `product`,
    `sale` (pedidos, linhas, totais e botões de estado) e `account`

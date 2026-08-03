@@ -42,6 +42,9 @@ pub struct Model {
     pub meta: ModelMeta,
     fields: Vec<Field>,
     constraints: Vec<Constraint>,
+    /// a `TransientModel`: its records are a dialog somebody had open,
+    /// not data the business keeps
+    transient: bool,
 }
 
 impl Model {
@@ -50,7 +53,20 @@ impl Model {
             meta,
             fields,
             constraints: Vec::new(),
+            transient: false,
         }
+    }
+
+    /// Mark the model transient (Odoo's `TransientModel`): the rows are
+    /// the state of a dialog, and old ones are swept away instead of
+    /// being kept forever.
+    pub fn transient(mut self) -> Self {
+        self.transient = true;
+        self
+    }
+
+    pub fn is_transient(&self) -> bool {
+        self.transient
     }
 
     /// Attach a rule every record of this model must satisfy.
@@ -80,8 +96,8 @@ impl Model {
         &self.fields
     }
 
-    pub(crate) fn into_parts(self) -> (ModelMeta, Vec<Field>, Vec<Constraint>) {
-        (self.meta, self.fields, self.constraints)
+    pub(crate) fn into_parts(self) -> (ModelMeta, Vec<Field>, Vec<Constraint>, bool) {
+        (self.meta, self.fields, self.constraints, self.transient)
     }
 
     /// Rebuild with the constraints kept — the registry folds fields

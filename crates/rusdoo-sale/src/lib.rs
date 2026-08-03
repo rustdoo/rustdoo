@@ -102,7 +102,150 @@ pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
         Operation::Write,
         action_create_delivery,
     )?;
+    // the dialog, and the button inside it
+    methods.register(
+        "sale.order",
+        "action_cancel_wizard",
+        Operation::Write,
+        action_cancel_wizard,
+    )?;
+    methods.register(
+        "sale.order.cancel",
+        "action_confirm_cancel",
+        Operation::Write,
+        action_confirm_cancel,
+    )?;
     Ok(())
+}
+
+/// `action_cancel_wizard` — open the dialog that asks for a reason.
+///
+/// The wizard record is created here, already pointing at the order, and
+/// the answer is the action that opens it. Odoo passes the record
+/// through the context instead; creating it is the same decision made
+/// where the order already is, and it means the dialog cannot open
+/// pointing at nothing.
+fn action_cancel_wizard<'a>(
+    ctx: MethodCtx<'a>,
+    _args: &'a [Value],
+    _kwargs: &'a Map<String, Value>,
+) -> MethodFuture<'a> {
+    Box::pin(async move {
+        let [order_id] = ctx.ids[..] else {
+            return Err(RusdooError::Validation(
+                "cancele um pedido de cada vez".into(),
+            ));
+        };
+        let rows = ctx
+            .registry
+            .read(ctx.pool, "sale.order", &[order_id], &["name", "state"])
+            .await?;
+        let order = rows
+            .first()
+            .ok_or_else(|| RusdooError::Validation(format!("pedido {order_id} não existe")))?;
+        let state = order.get("state").and_then(Value::as_str).unwrap_or("draft");
+        if state == "cancel" {
+            let name = order.get("name").and_then(Value::as_str).unwrap_or("");
+            return Err(RusdooError::Validation(format!(
+                "o pedido {name} já está cancelado"
+            )));
+        }
+        let wizard = ctx
+            .registry
+            .create_as(
+                ctx.pool,
+                ctx.uid,
+                "sale.order.cancel",
+                vec![("order_id", json!(order_id)), ("reason", json!(""))],
+            )
+            .await?;
+        Ok(json!({
+            "type": "ir.actions.act_window",
+            "name": "Cancelar pedido",
+            "res_model": "sale.order.cancel",
+            "res_id": wizard,
+            "views": [[false, "form"]],
+            // a dialog over the record, not a screen that replaces it
+            "target": "new",
+        }))
+    })
+}
+
+/// The button inside the dialog: cancel the order, and say why in its
+/// own thread — a cancellation nobody can explain is worse than none.
+fn action_confirm_cancel<'a>(
+    ctx: MethodCtx<'a>,
+    _args: &'a [Value],
+    _kwargs: &'a Map<String, Value>,
+) -> MethodFuture<'a> {
+    Box::pin(async move {
+        let [wizard_id] = ctx.ids[..] else {
+            return Err(RusdooError::Validation("o assistente sumiu".into()));
+        };
+        let rows = ctx
+            .registry
+            .read(
+                ctx.pool,
+                "sale.order.cancel",
+                &[wizard_id],
+                &["order_id", "reason"],
+            )
+            .await?;
+        let wizard = rows
+            .first()
+            .ok_or_else(|| RusdooError::Validation("o assistente sumiu".into()))?;
+        let order_id = wizard
+            .get("order_id")
+            .and_then(first_id)
+            .ok_or_else(|| RusdooError::Validation("o assistente não aponta um pedido".into()))?;
+        let reason = wizard
+            .get("reason")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|reason| !reason.is_empty())
+            .ok_or_else(|| RusdooError::Validation("diga por que está cancelando".into()))?;
+
+        let orders = ctx
+            .registry
+            .read(ctx.pool, "sale.order", &[order_id], &["name", "state"])
+            .await?;
+        let order = orders
+            .first()
+            .ok_or_else(|| RusdooError::Validation("o pedido sumiu".into()))?;
+        let state = order.get("state").and_then(Value::as_str).unwrap_or("draft");
+        if state == "cancel" {
+            return Err(RusdooError::Validation("o pedido já está cancelado".into()));
+        }
+        ctx.registry
+            .write_as(
+                ctx.pool,
+                ctx.uid,
+                "sale.order",
+                &[order_id],
+                vec![("state", json!("cancel"))],
+            )
+            .await?;
+        // the reason goes to the order's thread, where somebody looking
+        // at the order later will find it
+        if ctx.registry.get("mail.message").is_some() {
+            ctx.registry
+                .create_as(
+                    ctx.pool,
+                    ctx.uid,
+                    "mail.message",
+                    vec![
+                        ("model", json!("sale.order")),
+                        ("res_id", json!(order_id)),
+                        ("body", json!(format!("Pedido cancelado: {reason}"))),
+                        ("message_type", json!("notification")),
+                        ("author_id", json!(ctx.uid)),
+                    ],
+                )
+                .await?;
+        }
+        // the dialog is done; the screen behind it reloads
+        Ok(json!({"type": "ir.actions.act_window_close"}))
+    })
 }
 
 /// `action_create_delivery` — ship what was sold.
@@ -438,7 +581,24 @@ fn action_draft<'a>(
 }
 
 fn models() -> Vec<Model> {
-    vec![order(), order_line()]
+    vec![order(), order_line(), cancel_wizard()]
+}
+
+/// `sale.order.cancel` — the dialog that asks why.
+///
+/// A `TransientModel`: the row is the state of an open dialog, not
+/// something the business keeps. Odoo has this very wizard, and the
+/// reason it exists is that cancelling a confirmed order without saying
+/// why leaves nobody able to answer the customer.
+fn cancel_wizard() -> Model {
+    Model::new(
+        meta("sale.order.cancel", "sale_order_cancel"),
+        vec![
+            m2o("order_id", "sale.order").required(),
+            Field::new("reason", FieldType::Text).required(),
+        ],
+    )
+    .transient()
 }
 
 /// `sale.order` — the order itself.

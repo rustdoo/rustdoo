@@ -13,7 +13,7 @@
         <field name="model">sale.order</field>
         <field name="type">form</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><form><button name="action_confirm" type="object" string="Confirmar" class="btn-primary"/><button name="action_cancel" type="object" string="Cancelar"/><button name="action_draft" type="object" string="Voltar a orçamento"/><button name="action_create_invoice" type="object" string="Criar fatura"/><button name="action_create_delivery" type="object" string="Criar entrega"/><report name="sale.action_report_saleorder" string="Imprimir"/><group><field name="name" string="Número"/><field name="partner_id" string="Cliente"/><field name="date_order" string="Data"/></group><group><field name="state" string="Situação"/><field name="company_id" string="Empresa"/><field name="amount_total" string="Total"/></group><field name="order_line" string="Linhas do pedido"><list><field name="product_id" string="Produto"/><field name="name" string="Descrição"/><field name="product_uom_qty" string="Quantidade"/><field name="price_unit" string="Preço unitário"/><field name="price_subtotal" string="Subtotal"/></list></field><group><field name="note" string="Observações"/></group><chatter/></form></field>
+        <field name="arch" type="xml"><form><button name="action_confirm" type="object" string="Confirmar" class="btn-primary"/><button name="action_cancel_wizard" type="object" string="Cancelar"/><button name="action_draft" type="object" string="Voltar a orçamento"/><button name="action_create_invoice" type="object" string="Criar fatura"/><button name="action_create_delivery" type="object" string="Criar entrega"/><report name="sale.action_report_saleorder" string="Imprimir"/><group><field name="name" string="Número"/><field name="partner_id" string="Cliente"/><field name="date_order" string="Data"/></group><group><field name="state" string="Situação"/><field name="company_id" string="Empresa"/><field name="amount_total" string="Total"/></group><field name="order_line" string="Linhas do pedido"><list><field name="product_id" string="Produto"/><field name="name" string="Descrição"/><field name="product_uom_qty" string="Quantidade"/><field name="price_unit" string="Preço unitário"/><field name="price_subtotal" string="Subtotal"/></list></field><group><field name="note" string="Observações"/></group><chatter/></form></field>
     </record>
 
     <record id="action_orders" model="ir.actions.act_window">
@@ -36,5 +36,13 @@
         <field name="type">kanban</field>
         <field name="priority">10</field>
         <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="partner_id" string="Cliente"/><field name="amount_total" string="Total"/><field name="date_order" string="Data"/></kanban></field>
+    </record>
+
+    <record id="view_order_cancel_form" model="ir.ui.view">
+        <field name="name">sale.order.cancel.form</field>
+        <field name="model">sale.order.cancel</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_confirm_cancel" type="object" string="Cancelar o pedido" class="btn-danger"/><group><field name="order_id" string="Pedido" readonly="1"/><field name="reason" string="Motivo"/></group></form></field>
     </record>
 </odoo>

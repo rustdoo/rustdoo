@@ -7,3 +7,4 @@ access_account_move_sale,fatura vendas,account.move,group_sale_user,1,1,1,0
 access_account_move_line_sale,linha de fatura vendas,account.move.line,group_sale_user,1,1,1,1
 access_stock_picking_sale,entrega vendas,stock.picking,group_sale_user,1,1,1,0
 access_stock_move_sale,movimento vendas,stock.move,group_sale_user,1,1,1,1
+access_sale_order_cancel_user,assistente de cancelamento,sale.order.cancel,group_sale_user,1,1,1,1

@@ -33,6 +33,10 @@
             // um método pode devolver uma ação ("abra esta fatura"); quem
             // sabe navegar é o cliente, não o formulário
             this.onAction = config.onAction || function () {};
+            // num diálogo o formulário é o assistente inteiro: os botões
+            // dele são os do arch, e não Salvar/Excluir de um registro
+            // que o usuário nunca vai procurar depois
+            this.inDialog = Boolean(config.dialog);
             this.onError = config.onError || function () {};
 
             this.archRoot = parseArch(config.arch);
@@ -225,14 +229,24 @@
                         {
                             class: "btn " + kind,
                             onclick: this.run(async () => {
-                                if (!this.resId) {
+                                // o método lê o registro no servidor: o
+                                // que está na tela e ainda não foi salvo
+                                // não existe para ele
+                                if (!this.resId || this.dirty.size || this.x2many.size) {
                                     await this.save();
                                 }
                                 const answer = await callKw(this.model, name, [[this.resId]], {});
                                 // o servidor pode responder com uma ação
                                 // em vez de um booleano: nesse caso a
                                 // navegação é a resposta
-                                if (answer && answer.type === "ir.actions.act_window") {
+                                // uma ação (abrir outra tela) ou um "fechei":
+                                // as duas são navegação, e quem navega é
+                                // o cliente
+                                if (
+                                    answer &&
+                                    (answer.type === "ir.actions.act_window" ||
+                                        answer.type === "ir.actions.act_window_close")
+                                ) {
                                     this.onAction(answer);
                                     return;
                                 }
@@ -276,6 +290,18 @@
         }
 
         renderControlPanel() {
+            if (this.inDialog) {
+                return el("div", { class: "o_control_panel" }, [
+                    el("div", { class: "o_cp_actions" }, [
+                        ...this.renderButtons(),
+                        el(
+                            "button",
+                            { class: "btn btn-ghost", onclick: () => this.onBack() },
+                            "Fechar"
+                        ),
+                    ]),
+                ]);
+            }
             return el("div", { class: "o_control_panel" }, [
                 el("h2", { class: "o_breadcrumb" }, [
                     el(
