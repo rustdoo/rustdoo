@@ -110,8 +110,10 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
     vec![
         ("base", rusdoo_base::extend as ModelProvider),
         ("mail", rusdoo_mail::extend as ModelProvider),
+        ("rating", rusdoo_rating::extend as ModelProvider),
         ("product", rusdoo_product::extend as ModelProvider),
         ("account", rusdoo_account::extend as ModelProvider),
+        ("analytic", rusdoo_analytic::extend as ModelProvider),
         ("stock", rusdoo_stock::extend as ModelProvider),
         ("purchase", rusdoo_purchase::extend as ModelProvider),
         ("uom", rusdoo_uom::extend as ModelProvider),
@@ -179,6 +181,12 @@ fn code_methods(
     let installed = installed_code_modules(addons_path)?;
     if installed.contains(&"account") {
         rusdoo_account::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"analytic") {
+        rusdoo_analytic::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"rating") {
+        rusdoo_rating::extend_methods(&mut methods)?;
     }
     if installed.contains(&"stock") {
         rusdoo_stock::extend_methods(&mut methods)?;

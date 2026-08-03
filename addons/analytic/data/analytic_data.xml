@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The plan every Odoo database is born with. Other modules — project,
+     timesheets — reference it by this external id, so it keeps the name
+     it has upstream.
+
+     What is deliberately absent is the `analytic.project_plan` system
+     parameter Odoo sets next to it. Upstream it decides which plan owns
+     the static `account_id` column while the others grow columns of
+     their own at runtime; here every account is reached through the one
+     `account_id` there is, and a parameter no code reads is worse than
+     no parameter at all. -->
+<odoo>
+    <data noupdate="1">
+        <record id="analytic_plan_projects" model="account.analytic.plan">
+            <field name="name">Projects</field>
+            <field name="default_applicability">optional</field>
+            <field name="sequence">1</field>
+        </record>
+    </data>
+</odoo>

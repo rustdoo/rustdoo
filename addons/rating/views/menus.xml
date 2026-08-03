@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Odoo hangs this off Technical/Discuss; there is no technical menu in
+     this port yet, so the ratings get a root of their own. -->
+<odoo>
+    <record id="menu_rating_root" model="ir.ui.menu">
+        <field name="name">Ratings</field>
+        <field name="sequence">80</field>
+    </record>
+    <record id="menu_rating_answered" model="ir.ui.menu">
+        <field name="name">Customer answers</field>
+        <field name="parent_id" ref="menu_rating_root"/>
+        <field name="sequence">10</field>
+        <field name="action">rating.rating_rating_action_answered</field>
+    </record>
+    <record id="menu_rating_all" model="ir.ui.menu">
+        <field name="name">All ratings</field>
+        <field name="parent_id" ref="menu_rating_root"/>
+        <field name="sequence">20</field>
+        <field name="action">rating.rating_rating_action</field>
+    </record>
+</odoo>

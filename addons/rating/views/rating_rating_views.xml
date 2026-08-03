@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The ratings themselves. Nobody creates one from here: a rating is
+     born when a record asks a customer for it, and this screen is where
+     it is read afterwards. -->
+<odoo>
+    <record id="rating_rating_view_list" model="ir.ui.view">
+        <field name="name">rating.rating.list</field>
+        <field name="model">rating.rating</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="rated_on" string="Rated on"/><field name="res_name" string="Document"/><field name="parent_res_name" string="Parent"/><field name="partner_id" string="Customer"/><field name="rated_partner_id" string="Rated operator"/><field name="rating_text" string="Rating"/><field name="feedback" string="Comment"/></list></field>
+    </record>
+
+    <record id="rating_rating_view_form" model="ir.ui.view">
+        <field name="name">rating.rating.form</field>
+        <field name="model">rating.rating</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_open_rated_object" type="object" string="Open the rated document"/><button name="reset" type="object" string="Ask again"/><group><field name="res_name" string="Document"/><field name="res_model" string="Document model" readonly="1"/><field name="res_id" string="Document ID" readonly="1"/><field name="parent_res_name" string="Parent"/></group><group><field name="partner_id" string="Customer"/><field name="rated_partner_id" string="Rated operator"/><field name="rating" string="Rating value"/><field name="rating_text" string="Rating"/><field name="rated_on" string="Rated on"/><field name="consumed" string="Answered"/><field name="is_internal" string="Visible internally only"/></group><group><field name="feedback" string="Comment"/></group></form></field>
+    </record>
+
+    <record id="rating_rating_view_search" model="ir.ui.view">
+        <field name="name">rating.rating.search</field>
+        <field name="model">rating.rating</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="res_name"/><field name="partner_id"/><field name="rated_partner_id"/><filter name="rating_happy" string="Happy" domain="[[&quot;rating_text&quot;, &quot;=&quot;, &quot;top&quot;]]"/><filter name="rating_okay" string="Neutral" domain="[[&quot;rating_text&quot;, &quot;=&quot;, &quot;ok&quot;]]"/><filter name="rating_unhappy" string="Unhappy" domain="[[&quot;rating_text&quot;, &quot;=&quot;, &quot;ko&quot;]]"/><filter name="unanswered" string="Waiting for an answer" domain="[[&quot;consumed&quot;, &quot;=&quot;, false]]"/><groupby name="rating_text" string="Rating"/><groupby name="rated_partner_id" string="Rated operator"/><groupby name="partner_id" string="Customer"/><groupby name="res_model" string="Document model"/></search></field>
+    </record>
+
+    <record id="rating_rating_action" model="ir.actions.act_window">
+        <field name="name">Ratings</field>
+        <field name="res_model">rating.rating</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- What the customers actually answered: the pending requests are
+         noise on a satisfaction screen. -->
+    <record id="rating_rating_action_answered" model="ir.actions.act_window">
+        <field name="name">Customer answers</field>
+        <field name="res_model">rating.rating</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[["consumed", "=", true]]</field>
+    </record>
+</odoo>

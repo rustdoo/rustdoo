@@ -1371,6 +1371,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-analytic"
+version = "0.1.0"
+dependencies = [
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "rusdoo-testing",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-barcodes"
 version = "0.1.0"
 dependencies = [
@@ -1563,6 +1576,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-rating"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-mail",
+ "rusdoo-orm",
+ "rusdoo-testing",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "rusdoo-sale"
 version = "0.1.0"
 dependencies = [
@@ -1596,6 +1625,7 @@ dependencies = [
  "anyhow",
  "rusdoo-account",
  "rusdoo-account-debit-note",
+ "rusdoo-analytic",
  "rusdoo-barcodes",
  "rusdoo-base",
  "rusdoo-core",
@@ -1608,6 +1638,7 @@ dependencies = [
  "rusdoo-product",
  "rusdoo-purchase",
  "rusdoo-qweb",
+ "rusdoo-rating",
  "rusdoo-sale",
  "rusdoo-sales-team",
  "rusdoo-stock",

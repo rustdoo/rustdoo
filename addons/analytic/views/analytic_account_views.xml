@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_account_analytic_account_list" model="ir.ui.view">
+        <field name="name">account.analytic.account.list</field>
+        <field name="model">account.analytic.account</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Analytic Account"/><field name="code" string="Reference"/><field name="partner_id" string="Customer"/><field name="plan_id" string="Plan"/><field name="root_plan_id" string="Root plan"/><field name="company_id" string="Company"/><field name="debit" string="Debit"/><field name="credit" string="Credit"/><field name="balance" string="Balance"/></list></field>
+    </record>
+
+    <record id="view_account_analytic_account_form" model="ir.ui.view">
+        <field name="name">account.analytic.account.form</field>
+        <field name="model">account.analytic.account</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Analytic Account"/><field name="code" string="Reference"/><field name="partner_id" string="Customer"/><field name="active" string="Active"/></group><group><field name="plan_id" string="Plan"/><field name="root_plan_id" string="Root plan" readonly="1"/><field name="company_id" string="Company"/><field name="balance" string="Balance" readonly="1"/></group><field name="line_ids" string="Analytic items"><list><field name="date" string="Date"/><field name="name" string="Description"/><field name="partner_id" string="Partner"/><field name="unit_amount" string="Quantity"/><field name="amount" string="Amount"/></list></field></form></field>
+    </record>
+
+    <record id="view_account_analytic_account_search" model="ir.ui.view">
+        <field name="name">account.analytic.account.search</field>
+        <field name="model">account.analytic.account</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="code"/><field name="partner_id"/><filter name="inactive" string="Archived" domain="[[&quot;active&quot;, &quot;=&quot;, false]]"/><groupby name="plan_id" string="Plan"/><groupby name="root_plan_id" string="Root plan"/><groupby name="partner_id" string="Customer"/></search></field>
+    </record>
+
+    <record id="view_account_analytic_account_kanban" model="ir.ui.view">
+        <field name="name">account.analytic.account.kanban</field>
+        <field name="model">account.analytic.account</field>
+        <field name="type">kanban</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><kanban><field name="display_name"/><field name="plan_id" string="Plan"/><field name="balance" string="Balance"/></kanban></field>
+    </record>
+
+    <record id="action_account_analytic_account" model="ir.actions.act_window">
+        <field name="name">Analytic Accounts</field>
+        <field name="res_model">account.analytic.account</field>
+        <field name="view_mode">list,kanban,form</field>
+    </record>
+</odoo>

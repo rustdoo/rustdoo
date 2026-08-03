@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="account_analytic_plan_view_list" model="ir.ui.view">
+        <field name="name">account.analytic.plan.list</field>
+        <field name="model">account.analytic.plan</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="sequence" string="Order"/><field name="name" string="Plan"/><field name="default_applicability" string="Applicability"/><field name="all_account_count" string="Accounts"/><field name="color" string="Colour"/></list></field>
+    </record>
+
+    <record id="account_analytic_plan_view_form" model="ir.ui.view">
+        <field name="name">account.analytic.plan.form</field>
+        <field name="model">account.analytic.plan</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_view_children_plans" type="object" string="Subplans"/><button name="action_view_analytical_accounts" type="object" string="Analytic accounts"/><group><field name="name" string="Plan"/><field name="complete_name" string="Full name" readonly="1"/><field name="parent_id" string="Parent plan"/><field name="default_applicability" string="Applicability"/></group><group><field name="sequence" string="Order"/><field name="color" string="Colour"/><field name="children_count" string="Subplans" readonly="1"/><field name="all_account_count" string="Accounts, subplans included" readonly="1"/></group><field name="description" string="Description"/><field name="applicability_ids" string="When this plan applies"><list><field name="business_domain" string="Domain"/><field name="company_id" string="Company"/><field name="applicability" string="Applicability"/></list></field></form></field>
+    </record>
+
+    <record id="account_analytic_plan_view_search" model="ir.ui.view">
+        <field name="name">account.analytic.plan.search</field>
+        <field name="model">account.analytic.plan</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><filter name="root_plans" string="Root plans" domain="[[&quot;parent_id&quot;, &quot;=&quot;, false]]"/><groupby name="parent_id" string="Parent plan"/></search></field>
+    </record>
+
+    <!-- Only the root plans: a subplan is reached through the plan it
+         belongs to, and listing both side by side loses the tree. -->
+    <record id="account_analytic_plan_action" model="ir.actions.act_window">
+        <field name="name">Analytic Plans</field>
+        <field name="res_model">account.analytic.plan</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[["parent_id", "=", false]]</field>
+    </record>
+</odoo>

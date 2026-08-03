@@ -51,8 +51,10 @@ async fn schema_pool(url: &str) -> sqlx::PgPool {
 fn registry() -> Registry {
     let mut registry = rusdoo_base::registry().expect("base models");
     rusdoo_mail::extend(&mut registry).expect("mail models");
+    rusdoo_rating::extend(&mut registry).expect("rating models");
     rusdoo_product::extend(&mut registry).expect("product models");
     rusdoo_account::extend(&mut registry).expect("account models");
+    rusdoo_analytic::extend(&mut registry).expect("analytic models");
     rusdoo_stock::extend(&mut registry).expect("stock models");
     rusdoo_purchase::extend(&mut registry).expect("purchase models");
     // the pilot batch's modules

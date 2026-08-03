@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A menu of its own. In Odoo these screens hang under Accounting's
+     configuration menu, and `analytic` does not depend on `account` — it
+     is the other way round — so they cannot be hung there from here. -->
+<odoo>
+    <record id="menu_analytic_root" model="ir.ui.menu">
+        <field name="name">Analytics</field>
+        <field name="sequence">30</field>
+    </record>
+    <record id="menu_analytic_account" model="ir.ui.menu">
+        <field name="name">Analytic Accounts</field>
+        <field name="parent_id" ref="menu_analytic_root"/>
+        <field name="sequence">10</field>
+        <field name="action">analytic.action_account_analytic_account</field>
+    </record>
+    <record id="menu_analytic_line" model="ir.ui.menu">
+        <field name="name">Analytic Items</field>
+        <field name="parent_id" ref="menu_analytic_root"/>
+        <field name="sequence">20</field>
+        <field name="action">analytic.account_analytic_line_action</field>
+    </record>
+    <record id="menu_analytic_plan" model="ir.ui.menu">
+        <field name="name">Analytic Plans</field>
+        <field name="parent_id" ref="menu_analytic_root"/>
+        <field name="sequence">30</field>
+        <field name="action">analytic.account_analytic_plan_action</field>
+    </record>
+    <record id="menu_analytic_distribution_model" model="ir.ui.menu">
+        <field name="name">Distribution Models</field>
+        <field name="parent_id" ref="menu_analytic_root"/>
+        <field name="sequence">40</field>
+        <field name="action">analytic.action_analytic_distribution_model</field>
+    </record>
+</odoo>

@@ -1,0 +1,18 @@
+[package]
+name = "rusdoo-analytic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+sqlx.workspace = true
+rusdoo-core = { path = "../rusdoo-core" }
+rusdoo-orm = { path = "../rusdoo-orm" }
+
+[dev-dependencies]
+rusdoo-testing = { path = "../rusdoo-testing" }
+tokio.workspace = true
+sqlx.workspace = true
+serde_json.workspace = true
+rusdoo-base = { path = "../rusdoo-base" }

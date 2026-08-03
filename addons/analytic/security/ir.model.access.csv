@@ -1,0 +1,6 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_account_analytic_plan,analytic plan,account.analytic.plan,group_analytic_accounting,1,1,1,1
+access_account_analytic_applicability,analytic applicability,account.analytic.applicability,group_analytic_accounting,1,1,1,1
+access_account_analytic_account,analytic account,account.analytic.account,group_analytic_accounting,1,1,1,1
+access_account_analytic_line,analytic line,account.analytic.line,group_analytic_accounting,1,1,1,1
+access_account_analytic_distribution_model,analytic distribution model,account.analytic.distribution.model,group_analytic_accounting,1,1,1,1
