@@ -165,45 +165,134 @@
             this.refresh();
         }
 
-        renderFilters() {
+        /**
+         * A barra de busca com facetas.
+         *
+         * Cada coisa que restringe a lista — o texto digitado, um filtro
+         * ligado, um agrupamento — vira uma pastilha dentro da barra,
+         * com um × que a remove. É a diferença entre ver *o que* está
+         * filtrando e ter que adivinhar por que a lista está curta.
+         */
+        renderSearchBar() {
+            const facets = [];
+            if (this.query) {
+                facets.push(
+                    this.facet("Buscar", this.query, () => {
+                        this.query = "";
+                        this.offset = 0;
+                        this.refresh();
+                    })
+                );
+            }
+            for (const filter of this.filters) {
+                if (!this.active.has(filter.name)) {
+                    continue;
+                }
+                facets.push(
+                    this.facet("Filtro", filter.label, () => this.toggleFilter(filter.name))
+                );
+            }
+            if (this.groupBy) {
+                const entry = this.groupbys.find((g) => g.name === this.groupBy);
+                facets.push(
+                    this.facet("Agrupar", entry ? entry.label : this.groupBy, () =>
+                        this.setGroupBy(this.groupBy)
+                    )
+                );
+            }
+            const input = el("input", {
+                type: "text",
+                class: "o_searchview_input",
+                placeholder: facets.length ? "" : "Buscar…",
+                value: this.query,
+                oninput: debounce((event) => {
+                    this.query = event.target.value.trim();
+                    this.offset = 0;
+                    this.refresh();
+                }, 250),
+            });
+            return el("div", { class: "o_searchview" }, [
+                el("div", { class: "o_searchview_facets" }, facets),
+                input,
+                this.renderSearchMenu(),
+            ]);
+        }
+
+        /** Uma pastilha: o que ela é, o que ela vale, e como sair dela. */
+        facet(kind, label, remove) {
+            return el("div", { class: "o_facet" }, [
+                el("span", { class: "o_facet_kind" }, kind),
+                el("span", { class: "o_facet_value" }, String(label)),
+                el(
+                    "button",
+                    { type: "button", class: "o_facet_remove", title: "Remover", onclick: remove },
+                    "×"
+                ),
+            ]);
+        }
+
+        /** O menu de filtros e agrupamentos da view de busca. */
+        renderSearchMenu() {
             if (!this.filters.length && !this.groupbys.length) {
                 return null;
             }
-            const groups = this.groupbys.length
-                ? [el("span", { class: "o_filter_label" }, "Agrupar por:")].concat(
-                      this.groupbys.map((entry) =>
-                          el(
-                              "button",
-                              {
-                                  class:
-                                      this.groupBy === entry.name
-                                          ? "o_filter o_filter_on"
-                                          : "o_filter",
-                                  type: "button",
-                                  onclick: () => this.setGroupBy(entry.name),
-                              },
-                              entry.label
-                          )
-                      )
-                  )
-                : [];
-            return el(
-                "div",
-                { class: "o_filters" },
-                this.filters.map((filter) =>
-                    el(
-                        "button",
-                        {
-                            class: this.active.has(filter.name)
-                                ? "o_filter o_filter_on"
-                                : "o_filter",
-                            type: "button",
-                            onclick: () => this.toggleFilter(filter.name),
-                        },
-                        filter.label
-                    )
-                ).concat(groups)
+            const items = [];
+            if (this.filters.length) {
+                items.push(el("div", { class: "o_search_section" }, "Filtros"));
+                for (const filter of this.filters) {
+                    items.push(
+                        el(
+                            "button",
+                            {
+                                type: "button",
+                                class:
+                                    "o_search_option" +
+                                    (this.active.has(filter.name) ? " o_search_option_on" : ""),
+                                onclick: () => this.toggleFilter(filter.name),
+                            },
+                            filter.label
+                        )
+                    );
+                }
+            }
+            if (this.groupbys.length) {
+                items.push(el("div", { class: "o_search_section" }, "Agrupar por"));
+                for (const entry of this.groupbys) {
+                    items.push(
+                        el(
+                            "button",
+                            {
+                                type: "button",
+                                class:
+                                    "o_search_option" +
+                                    (this.groupBy === entry.name ? " o_search_option_on" : ""),
+                                onclick: () => this.setGroupBy(entry.name),
+                            },
+                            entry.label
+                        )
+                    );
+                }
+            }
+            const menu = el("div", { class: "o_search_menu" }, items);
+            const toggle = el(
+                "button",
+                { type: "button", class: "o_search_toggle", title: "Filtros" },
+                "▾"
             );
+            const wrap = el("div", { class: "o_search_dropdown" }, [toggle, menu]);
+            toggle.addEventListener("click", (event) => {
+                event.stopPropagation();
+                wrap.classList.toggle("o_open");
+            });
+            // um clique fora fecha: um menu que fica aberto atrapalha a
+            // própria lista que ele acabou de filtrar
+            document.addEventListener(
+                "click",
+                () => wrap.classList.remove("o_open"),
+                { once: true }
+            );
+            menu.addEventListener("click", (event) => event.stopPropagation());
+            return wrap;
         }
 
         /** O rótulo de um grupo: um many2one vem como [id, nome]. */
@@ -376,17 +465,6 @@
         }
 
         renderControlPanel() {
-            const search = el("input", {
-                type: "search",
-                class: "o_searchview",
-                placeholder: "Buscar…",
-                value: this.query,
-                oninput: debounce((event) => {
-                    this.query = event.target.value.trim();
-                    this.offset = 0;
-                    this.refresh();
-                }, 250),
-            });
             const first = this.length === 0 ? 0 : this.offset + 1;
             const last = Math.min(this.offset + this.records.length, this.length);
             return el("div", { class: "o_control_panel" }, [
@@ -399,7 +477,7 @@
                               "Novo"
                           )
                         : null,
-                    search,
+                    this.renderSearchBar(),
                     el("span", { class: "o_pager" }, first + "-" + last + " / " + this.length),
                     el(
                         "button",
@@ -470,7 +548,6 @@
         render() {
             fill(this.root, [
                 this.renderControlPanel(),
-                this.renderFilters(),
                 this.groupBy ? this.renderGroups() : this.renderTable(),
             ]);
             return this.root;

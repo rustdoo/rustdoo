@@ -864,3 +864,146 @@ input[type="checkbox"].o_input {
     font-size: 0.8125rem;
     max-width: 10rem;
 }
+
+/* Barra de busca com facetas ------------------------------------------- */
+
+/* O que restringe a lista fica visível dentro da própria barra: a
+   diferença entre ver *o que* está filtrando e adivinhar por que a
+   lista está curta. */
+.o_searchview {
+    display: flex;
+    align-items: center;
+    gap: var(--o-space-2);
+    flex: 1 1 320px;
+    min-width: 240px;
+    max-width: 560px;
+    padding: 3px var(--o-space-2);
+    background: var(--o-surface);
+    border: 1px solid var(--o-border);
+    border-radius: 4px;
+}
+
+.o_searchview:focus-within {
+    border-color: var(--o-brand);
+    box-shadow: 0 0 0 2px var(--o-brand-soft);
+}
+
+.o_searchview_facets {
+    display: flex;
+    gap: var(--o-space-1);
+    flex-wrap: wrap;
+}
+
+.o_searchview_input {
+    flex: 1;
+    min-width: 80px;
+    border: 0;
+    outline: 0;
+    padding: 3px 0;
+    font: inherit;
+    background: transparent;
+    color: var(--o-text);
+}
+
+.o_facet {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--o-brand-soft);
+    border-radius: 4px;
+    overflow: hidden;
+    font-size: var(--o-font-sm);
+    line-height: 1.6;
+}
+
+.o_facet_kind {
+    background: var(--o-brand);
+    color: #fff;
+    padding: 0 var(--o-space-2);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.o_facet_value {
+    padding: 0 var(--o-space-2);
+    color: var(--o-text);
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.o_facet_remove {
+    border: 0;
+    background: transparent;
+    color: var(--o-muted);
+    padding: 0 var(--o-space-2) 1px;
+    font-size: var(--o-font-lg);
+    line-height: 1;
+}
+
+.o_facet_remove:hover {
+    color: var(--o-danger);
+}
+
+.o_search_dropdown {
+    position: relative;
+}
+
+.o_search_toggle {
+    border: 0;
+    background: transparent;
+    color: var(--o-muted);
+    padding: 0 var(--o-space-1);
+    font-size: var(--o-font-lg);
+    line-height: 1;
+}
+
+.o_search_menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 20;
+    min-width: 200px;
+    padding: var(--o-space-2) 0;
+    background: var(--o-surface);
+    border: 1px solid var(--o-border);
+    border-radius: 4px;
+    box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+}
+
+.o_search_dropdown.o_open .o_search_menu {
+    display: block;
+}
+
+.o_search_section {
+    padding: var(--o-space-1) var(--o-space-4);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--o-muted);
+}
+
+.o_search_option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: var(--o-space-2) var(--o-space-4);
+    color: var(--o-text);
+}
+
+.o_search_option:hover {
+    background: var(--o-bg-subtle);
+}
+
+.o_search_option_on {
+    color: var(--o-brand);
+    font-weight: 600;
+}
+
+.o_search_option_on::before {
+    content: "✓ ";
+}
