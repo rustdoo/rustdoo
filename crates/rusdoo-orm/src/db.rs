@@ -60,6 +60,15 @@ pub fn lazy_pool(url: &str) -> Result<PgPool, RusdooError> {
     pool_options().connect_lazy(url).map_err(db_err)
 }
 
+/// PostgreSQL's SQLSTATEs for a reference the database will not allow.
+///
+/// Two, not one: `23503` is a plain foreign key violation — what an
+/// insert pointing at nothing gets — and `23001` is the one a `RESTRICT`
+/// raises when something still points at the row being deleted. They are
+/// different codes for the two sides of the same reference.
+const FOREIGN_KEY_VIOLATION: &str = "23503";
+const RESTRICT_VIOLATION: &str = "23001";
+
 fn db_err(e: sqlx::Error) -> RusdooError {
     RusdooError::Database(e.to_string())
 }
@@ -73,21 +82,66 @@ impl Model {
     /// declared message instead of the driver's is the whole point of
     /// having declared it.
     pub(crate) fn explain(&self, error: sqlx::Error) -> RusdooError {
+        self.explain_for(error, Wrote::Record)
+    }
+
+    /// The same, told which side of the reference the caller was on.
+    ///
+    /// A broken foreign key gives PostgreSQL the same SQLSTATE either
+    /// way, and the two mean opposite things: writing one means the
+    /// record you pointed at is not there, deleting one means something
+    /// still points at you. A message that guessed wrong would send the
+    /// user looking in the wrong place.
+    pub(crate) fn explain_for(&self, error: sqlx::Error, wrote: Wrote) -> RusdooError {
         let sqlx::Error::Database(ref db) = error else {
             return db_err(error);
         };
-        let Some(name) = db.constraint() else {
-            return db_err(error);
-        };
-        match self
-            .sql_constraints()
-            .iter()
-            .find(|constraint| constraint.name == name)
-        {
-            Some(constraint) => RusdooError::Validation(constraint.message.clone()),
-            None => db_err(error),
+        if let Some(constraint) = db.constraint().and_then(|name| {
+            self.sql_constraints()
+                .iter()
+                .find(|constraint| constraint.name == name)
+        }) {
+            return RusdooError::Validation(constraint.message.clone());
         }
+        // a foreign key has no declared message — it was not declared at
+        // all, it came from the reference itself — so the message is
+        // built from what the database refused. The constraint's *name*
+        // is not always there: a RESTRICT reported against the table on
+        // the other side of the reference arrives without one, and the
+        // reading does not depend on it.
+        if matches!(
+            db.code().as_deref(),
+            Some(FOREIGN_KEY_VIOLATION) | Some(RESTRICT_VIOLATION)
+        ) {
+            return RusdooError::Validation(match wrote {
+                Wrote::Record => {
+                    let column = db
+                        .constraint()
+                        .and_then(|name| {
+                            name.strip_prefix(&format!("{}_", self.meta.table))
+                                .and_then(|rest| rest.strip_suffix("_fkey"))
+                        })
+                        .map(|column| format!(".{column}"))
+                        .unwrap_or_default();
+                    format!(
+                        "{}{column} aponta para um registro que não existe",
+                        self.meta.name
+                    )
+                }
+                Wrote::Deletion => {
+                    "há registros que dependem deste: apague-os ou desvincule-os primeiro".into()
+                }
+            });
+        }
+        db_err(error)
     }
+}
+
+/// Which side of a reference the failing statement was on.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Wrote {
+    Record,
+    Deletion,
 }
 
 fn bind_value<'q>(query: PgQuery<'q>, value: &'q Value) -> Result<PgQuery<'q>, RusdooError> {
@@ -109,6 +163,21 @@ fn bind_value<'q>(query: PgQuery<'q>, value: &'q Value) -> Result<PgQuery<'q>, R
         // arrays/objects land in jsonb columns
         Value::Array(_) | Value::Object(_) => query.bind(value.clone()),
     })
+}
+
+/// Run a statement on a connection the caller already has, translating a
+/// constraint violation into the message the model declared.
+pub(crate) async fn execute_in(
+    conn: &mut PgConnection,
+    sql: &str,
+    params: &[Value],
+    model: &Model,
+) -> Result<u64, RusdooError> {
+    let done = build_query(sql, params)?
+        .execute(conn)
+        .await
+        .map_err(|error| model.explain_for(error, Wrote::Deletion))?;
+    Ok(done.rows_affected())
 }
 
 fn build_query<'q>(sql: &'q str, params: &'q [Value]) -> Result<PgQuery<'q>, RusdooError> {
@@ -274,6 +343,28 @@ impl Model {
         Ok(records)
     }
 
+    /// `read` on a connection the caller already holds — what a hook
+    /// running inside a delete's transaction needs.
+    pub(crate) async fn read_in(
+        &self,
+        conn: &mut PgConnection,
+        ids: &[i64],
+        fields: &[&str],
+    ) -> Result<Vec<Map<String, Value>>, RusdooError> {
+        let fields = &without_id(fields)[..];
+        let (sql, params) = self.read_sql(ids, fields)?;
+        let rows = build_query(&sql, &params)?
+            .fetch_all(conn)
+            .await
+            .map_err(db_err)?;
+        let mut records: Vec<Map<String, Value>> = rows
+            .iter()
+            .map(|row| self.row_to_json(row, fields))
+            .collect::<Result<_, RusdooError>>()?;
+        order_like(&mut records, ids);
+        Ok(records)
+    }
+
     pub async fn write(
         &self,
         pool: &PgPool,
@@ -304,7 +395,7 @@ impl Model {
         let done = build_query(&sql, &params)?
             .execute(pool)
             .await
-            .map_err(|error| self.explain(error))?;
+            .map_err(|error| self.explain_for(error, Wrote::Deletion))?;
         Ok(done.rows_affected())
     }
 
@@ -544,6 +635,45 @@ impl Registry {
         Ok(values)
     }
 
+    /// Run the dynamic defaults of every field the create left out.
+    ///
+    /// In the create's own transaction, next to the sequence draw and
+    /// for the same reason: what a default reads must be what the record
+    /// is about to be stored next to.
+    async fn run_dynamic_defaults<'a>(
+        &self,
+        conn: &mut PgConnection,
+        uid: i64,
+        model: &'a Model,
+        mut values: Vec<(&'a str, Value)>,
+    ) -> Result<Vec<(&'a str, Value)>, RusdooError> {
+        for field in model.fields() {
+            let Some(func) = field.default_fn else {
+                continue;
+            };
+            if field.readonly || !field.stored {
+                continue;
+            }
+            // a value the caller passed always wins, including an
+            // explicit null: "unset on purpose" is a decision
+            if values.iter().any(|(name, _)| *name == field.name) {
+                continue;
+            }
+            let ctx = crate::fields::DefaultCtx {
+                registry: self,
+                conn: &mut *conn,
+                uid,
+                model: &model.meta.name,
+            };
+            let value = func(ctx).await?;
+            if value.is_null() {
+                continue;
+            }
+            values.push((field.name.as_str(), value));
+        }
+        Ok(values)
+    }
+
     fn create_in<'a>(
         &'a self,
         tx: &'a mut Transaction<'static, Postgres>,
@@ -556,6 +686,9 @@ impl Registry {
                 .get(model_name)
                 .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
             let (values, x2many) = self.split_x2many(model, values)?;
+            let values = self
+                .run_dynamic_defaults(&mut *tx, uid, model, values)
+                .await?;
             let values = self.draw_sequences(&mut *tx, model, values).await?;
             if model.meta.inherits.is_empty() {
                 let id = model.create_conn(&mut *tx, uid, values).await?;

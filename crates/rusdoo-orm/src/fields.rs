@@ -90,7 +90,66 @@ pub struct Field {
     /// inside the create's own transaction, so two clients creating at
     /// once never get the same number.
     pub sequence: Option<String>,
+    /// a default the ORM has to *run*, not read: Odoo's callable
+    /// `default=`. See [`DefaultFn`].
+    pub default_fn: Option<DefaultFn>,
+    /// what the database does to this reference when the record it
+    /// points at is deleted (Odoo's `ondelete=` on a many2one)
+    pub ondelete: Option<OnDelete>,
 }
+
+/// What happens to a reference when its target is deleted, port of
+/// Odoo's `ondelete=` on a many2one.
+///
+/// Without one of these, deleting a referenced record leaves the column
+/// pointing at an id that no longer exists — a form that opens onto
+/// nothing, and a join that silently drops rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnDelete {
+    /// the reference is emptied — Odoo's default for a many2one
+    SetNull,
+    /// the delete is refused while anything still points here
+    Restrict,
+    /// the referring records go too: only for records that have no life
+    /// of their own, like the lines of a document
+    Cascade,
+}
+
+impl OnDelete {
+    pub fn sql(self) -> &'static str {
+        match self {
+            OnDelete::SetNull => "SET NULL",
+            OnDelete::Restrict => "RESTRICT",
+            OnDelete::Cascade => "CASCADE",
+        }
+    }
+}
+
+/// What a dynamic default is given: the acting user, and the database.
+///
+/// The connection rather than the pool because the default runs inside
+/// the create's own transaction — a default that reads a record the same
+/// call just wrote must see it, and one that reads from another
+/// connection would not.
+pub struct DefaultCtx<'a> {
+    pub registry: &'a crate::registry::Registry,
+    pub conn: &'a mut sqlx::PgConnection,
+    /// the user the record is being created as — what "my company" means
+    pub uid: i64,
+    pub model: &'a str,
+}
+
+/// A default the ORM runs at create time, port of Odoo's callable
+/// `default=` (`fields.Datetime.now`, `lambda self: self.env.company`).
+///
+/// A constant cannot say "today", "the acting user's company", or "the
+/// first stage of this pipeline" — and those are most of the defaults a
+/// real model has.
+pub type DefaultFn = for<'a> fn(
+    DefaultCtx<'a>,
+) -> std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<Value, rusdoo_core::RusdooError>> + Send + 'a>,
+>;
 
 impl Field {
     pub fn new(name: &str, ty: FieldType) -> Self {
@@ -106,7 +165,29 @@ impl Field {
             related: None,
             compute: None,
             sequence: None,
+            default_fn: None,
+            ondelete: None,
         }
+    }
+
+    /// Declare what the database does to this reference when its target
+    /// is deleted (Odoo's `ondelete=`).
+    ///
+    /// It becomes a real foreign key, which is the point: a rule that
+    /// lives in the application is a rule that a second writer, an
+    /// import, or a psql session walks straight past.
+    pub fn ondelete(mut self, behaviour: OnDelete) -> Self {
+        self.ondelete = Some(behaviour);
+        self
+    }
+
+    /// Declare a default the ORM runs, port of Odoo's callable
+    /// `default=`. It wins over a constant default on the same field:
+    /// declaring both is a mistake, and the one that had to be written
+    /// as code is the one that meant something.
+    pub fn default_from(mut self, func: DefaultFn) -> Self {
+        self.default_fn = Some(func);
+        self
     }
 
     /// Derive the value from `depends` with `func`.

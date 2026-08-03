@@ -126,6 +126,8 @@ async fn fixture(schema: &'static str) -> Option<Fixture> {
         "res_partner",
         "res_company",
         "res_country",
+        "res_users",
+        "res_groups",
         "ir_sequence",
     ] {
         sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{table}" CASCADE"#))
@@ -138,6 +140,9 @@ async fn fixture(schema: &'static str) -> Option<Fixture> {
         "res.country",
         "res.company",
         "res.partner",
+        // o default de empresa de `account.move` lê o usuário que cria
+        "res.groups",
+        "res.users",
         "product.product",
         "account.move",
         "account.move.line",

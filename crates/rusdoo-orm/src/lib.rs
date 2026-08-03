@@ -3,6 +3,7 @@
 pub mod access;
 pub mod config;
 pub mod crud;
+pub mod defaults;
 pub mod db;
 pub mod ddl;
 pub mod domain;
@@ -14,3 +15,4 @@ pub mod registry;
 pub mod rules;
 pub mod sequence;
 pub mod sql;
+pub mod unlink;

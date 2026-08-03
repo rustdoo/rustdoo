@@ -282,9 +282,7 @@ pub async fn install_modules(
     addons_paths: &[&Path],
     xml_ids: &mut XmlIds,
 ) -> Result<InstallReport, RusdooError> {
-    for model in registry.models() {
-        model.init_table(pool).await?;
-    }
+    registry.init_tables(pool).await?;
     let manifests = discover_addons(addons_paths)?;
     let order = dependency_order(&manifests)?;
     let by_name: HashMap<&str, &Manifest> =
@@ -377,6 +375,9 @@ pub async fn install_modules(
         );
         report.modules.push((name.clone(), totals));
     }
+    // as chaves estrangeiras por último: um módulo instalado no meio do
+    // caminho referencia modelos de outro que ainda não tinha tabela
+    registry.init_foreign_keys(pool).await?;
     Ok(report)
 }
 

@@ -64,6 +64,8 @@ pub struct Model {
     order: Option<String>,
     /// `_sql_constraints`: the rules the database itself enforces
     sql_constraints: Vec<SqlConstraint>,
+    /// `@api.ondelete`: what must be true before a record may be deleted
+    unlink_hooks: Vec<crate::unlink::UnlinkHook>,
 }
 
 impl Model {
@@ -75,7 +77,32 @@ impl Model {
             transient: false,
             order: None,
             sql_constraints: Vec::new(),
+            unlink_hooks: Vec::new(),
         }
+    }
+
+    /// Refuse a delete when `check` says so, port of `@api.ondelete`.
+    ///
+    /// A foreign key answers "what happens to what points at this"; this
+    /// answers "may this go at all", which only the business knows — a
+    /// confirmed order is not deletable even when nothing references it.
+    pub fn on_unlink(mut self, name: &'static str, check: crate::unlink::OnDeleteFn) -> Self {
+        self.unlink_hooks.push(crate::unlink::UnlinkHook { name, check });
+        self
+    }
+
+    pub fn unlink_hooks(&self) -> &[crate::unlink::UnlinkHook] {
+        &self.unlink_hooks
+    }
+
+    /// The inherited hooks, ahead of this model's own.
+    pub(crate) fn with_unlink_hooks(
+        mut self,
+        mut inherited: Vec<crate::unlink::UnlinkHook>,
+    ) -> Self {
+        inherited.extend(self.unlink_hooks.iter().copied());
+        self.unlink_hooks = inherited;
+        self
     }
 
     /// Attach a rule the database enforces, port of `_sql_constraints`.

@@ -20,7 +20,7 @@ use rusdoo_core::RusdooError;
 use rusdoo_orm::access::Operation;
 use rusdoo_orm::crud::SearchOptions;
 use rusdoo_orm::domain::parse_domain;
-use rusdoo_orm::fields::{Field, FieldType};
+use rusdoo_orm::fields::{Field, FieldType, OnDelete};
 use rusdoo_orm::methods::{MethodCtx, MethodFuture, MethodRegistry};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
@@ -200,7 +200,9 @@ fn team_member() -> Model {
     Model::new(
         meta("crm.team.member", "crm_team_member"),
         vec![
-            m2o("crm_team_id", "crm.team").required(),
+            m2o("crm_team_id", "crm.team")
+                .required()
+                .ondelete(OnDelete::Cascade),
             m2o("user_id", "res.users").required(),
             // what the member list shows without a second lookup
             char("name").related("user_id.name"),

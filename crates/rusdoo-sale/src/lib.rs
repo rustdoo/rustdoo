@@ -9,7 +9,8 @@ use rusdoo_core::RusdooError;
 use rusdoo_orm::access::Operation;
 use rusdoo_orm::crud::SearchOptions;
 use rusdoo_orm::domain::parse_domain;
-use rusdoo_orm::fields::{Field, FieldType};
+use rusdoo_orm::defaults;
+use rusdoo_orm::fields::{Field, FieldType, OnDelete};
 use rusdoo_orm::methods::{MethodCtx, MethodFuture, MethodRegistry};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
@@ -594,11 +595,38 @@ fn cancel_wizard() -> Model {
     Model::new(
         meta("sale.order.cancel", "sale_order_cancel"),
         vec![
-            m2o("order_id", "sale.order").required(),
+            m2o("order_id", "sale.order")
+                .required()
+                .ondelete(OnDelete::Cascade),
             Field::new("reason", FieldType::Text).required(),
         ],
     )
     .transient()
+}
+
+/// Port of `_unlink_except_draft_or_cancel`: um pedido que já saiu do
+/// rascunho não é apagado, é cancelado.
+///
+/// Uma pergunta ao banco para todos os ids, não uma por registro: o
+/// hook recebe o conjunto inteiro justamente para isso.
+fn refuse_unless_draft_or_cancel(
+    mut ctx: rusdoo_orm::unlink::UnlinkCtx<'_>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), RusdooError>> + Send + '_>> {
+    Box::pin(async move {
+        // uma leitura para todos os ids, não uma por registro: o hook
+        // recebe o conjunto inteiro justamente para isso
+        for record in ctx.read(&["name", "state"]).await? {
+            let state = record.get("state").and_then(Value::as_str).unwrap_or("");
+            if state == "draft" || state == "cancel" {
+                continue;
+            }
+            let name = record.get("name").and_then(Value::as_str).unwrap_or("?");
+            return Err(RusdooError::Validation(format!(
+                "o pedido {name} não está em rascunho: cancele-o antes de apagar"
+            )));
+        }
+        Ok(())
+    })
 }
 
 /// `sale.order` — the order itself.
@@ -608,8 +636,9 @@ fn order() -> Model {
         vec![
             char("name").required().from_sequence("sale.order"),
             m2o("partner_id", "res.partner").required(),
-            m2o("company_id", "res.company"),
-            Field::new("date_order", FieldType::Datetime),
+            m2o("company_id", "res.company").default_from(defaults::USER_COMPANY),
+            // `default=fields.Datetime.now` no Odoo
+            Field::new("date_order", FieldType::Datetime).default_from(defaults::NOW),
             Field::new(
                 "state",
                 FieldType::Selection(vec![
@@ -637,6 +666,8 @@ fn order() -> Model {
     )
     // `_order` do Odoo: o pedido mais novo primeiro
     .ordered("date_order desc, id desc")
+    // `_unlink_except_draft_or_cancel` (sale_order.py)
+    .on_unlink("apenas rascunho ou cancelado", refuse_unless_draft_or_cancel)
 }
 
 /// A line nobody can fulfil: zero of something is not a sale, and a
@@ -656,7 +687,9 @@ fn order_line() -> Model {
     Model::new(
         meta("sale.order.line", "sale_order_line"),
         vec![
-            m2o("order_id", "sale.order").required(),
+            m2o("order_id", "sale.order")
+                .required()
+                .ondelete(OnDelete::Cascade),
             m2o("product_id", "product.product"),
             char("name"),
             Field::new("product_uom_qty", PRICE).default_value(json!(1.0)),

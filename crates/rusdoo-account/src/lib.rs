@@ -13,7 +13,8 @@
 
 use rusdoo_core::RusdooError;
 use rusdoo_orm::access::Operation;
-use rusdoo_orm::fields::{Field, FieldType};
+use rusdoo_orm::defaults;
+use rusdoo_orm::fields::{Field, FieldType, OnDelete};
 use rusdoo_orm::methods::{MethodCtx, MethodFuture, MethodRegistry};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
@@ -121,6 +122,25 @@ fn due_after_issue(record: &Map<String, Value>) -> Result<(), String> {
     Ok(())
 }
 
+/// Port do guarda de `unlink` em `account.move`: um lançamento que já
+/// foi para a contabilidade não some sem deixar rastro.
+fn refuse_posted(
+    mut ctx: rusdoo_orm::unlink::UnlinkCtx<'_>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), RusdooError>> + Send + '_>> {
+    Box::pin(async move {
+        for record in ctx.read(&["name", "state"]).await? {
+            if record.get("state").and_then(Value::as_str) != Some("posted") {
+                continue;
+            }
+            let name = record.get("name").and_then(Value::as_str).unwrap_or("?");
+            return Err(RusdooError::Validation(format!(
+                "a fatura {name} está lançada: volte-a a rascunho antes de apagar"
+            )));
+        }
+        Ok(())
+    })
+}
+
 /// `account.move` — an invoice (or a bill, or a plain entry).
 fn mv() -> Model {
     Model::new(
@@ -129,7 +149,7 @@ fn mv() -> Model {
             char("name").required().from_sequence("account.move"),
             char("ref"),
             m2o("partner_id", "res.partner").required(),
-            m2o("company_id", "res.company"),
+            m2o("company_id", "res.company").default_from(defaults::USER_COMPANY),
             Field::new("invoice_date", FieldType::Date),
             Field::new("invoice_date_due", FieldType::Date),
             Field::new(
@@ -177,6 +197,8 @@ fn mv() -> Model {
     // mesma coisa é a data da fatura e o número. A intenção é uma só:
     // a fatura mais nova primeiro.
     .ordered("invoice_date desc, name desc, id desc")
+    // uma fatura lançada é um documento fiscal: cancela-se, não se apaga
+    .on_unlink("nenhuma fatura lançada", refuse_posted)
 }
 
 /// `account.move.line` — one billed thing, at one price.
@@ -184,7 +206,9 @@ fn move_line() -> Model {
     Model::new(
         meta("account.move.line", "account_move_line"),
         vec![
-            m2o("move_id", "account.move").required(),
+            m2o("move_id", "account.move")
+                .required()
+                .ondelete(OnDelete::Cascade),
             m2o("product_id", "product.product"),
             char("name"),
             Field::new("quantity", PRICE).default_value(json!(1.0)),

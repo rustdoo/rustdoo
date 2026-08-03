@@ -58,9 +58,7 @@ async fn main() -> anyhow::Result<()> {
                 .collect();
             seed_admin(&registry, &pool, &groups).await?;
         } else {
-            for model in registry.models() {
-                model.init_table(&pool).await?;
-            }
+            registry.init_tables(&pool).await?;
             tracing::info!("schema initialized (no addons directory found)");
             seed_admin(&registry, &pool, &[]).await?;
         }

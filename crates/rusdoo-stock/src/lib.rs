@@ -10,7 +10,8 @@
 
 use rusdoo_core::RusdooError;
 use rusdoo_orm::access::Operation;
-use rusdoo_orm::fields::{Field, FieldType};
+use rusdoo_orm::defaults;
+use rusdoo_orm::fields::{Field, FieldType, OnDelete};
 use rusdoo_orm::methods::{MethodCtx, MethodFuture, MethodRegistry};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
@@ -99,10 +100,10 @@ fn picking() -> Model {
         vec![
             char("name").required().from_sequence("stock.picking.out"),
             m2o("partner_id", "res.partner"),
-            m2o("company_id", "res.company"),
+            m2o("company_id", "res.company").default_from(defaults::USER_COMPANY),
             m2o("location_id", "stock.location"),
             m2o("location_dest_id", "stock.location"),
-            Field::new("scheduled_date", FieldType::Datetime),
+            Field::new("scheduled_date", FieldType::Datetime).default_from(defaults::NOW),
             Field::new(
                 "picking_type",
                 FieldType::Selection(vec![
@@ -157,7 +158,9 @@ fn mv() -> Model {
     Model::new(
         meta("stock.move", "stock_move"),
         vec![
-            m2o("picking_id", "stock.picking").required(),
+            m2o("picking_id", "stock.picking")
+                .required()
+                .ondelete(OnDelete::Cascade),
             m2o("product_id", "product.product").required(),
             char("name"),
             Field::new("product_uom_qty", PRICE).default_value(json!(1.0)),

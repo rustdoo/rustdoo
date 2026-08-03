@@ -148,12 +148,30 @@ impl TransactionCase {
             sequences.extend(module.sequences.iter().copied());
         }
 
-        // every registered model gets its table, like the boot does
-        for model in registry.models() {
-            model
-                .init_table(&pool)
+        // every registered model gets its table and its references, like
+        // the boot does
+        registry
+            .init_tables(&pool)
+            .await
+            .expect("criando as tabelas dos modelos");
+        // the superuser exists, like it does after a real boot: every
+        // call a case makes is made *as* uid 1, and a record stamped
+        // with an author who is not in the table is a reference the
+        // database now refuses — rightly
+        if registry.get("res.users").is_some() {
+            sqlx::query(
+                r#"INSERT INTO "res_users" ("id", "login", "name", "active")
+                   VALUES (1, 'admin', 'Administrador', true)
+                   ON CONFLICT ("id") DO NOTHING"#,
+            )
+            .execute(&pool)
+            .await
+            .expect("criando o superusuário do caso");
+            // the serial has to move past the row that was given an id
+            sqlx::query(r#"SELECT setval('res_users_id_seq', GREATEST(1, (SELECT MAX("id") FROM "res_users")))"#)
+                .execute(&pool)
                 .await
-                .expect("criando a tabela do modelo");
+                .expect("avançando a sequência de res.users");
         }
         // and the sequences the addons' data files would have loaded,
         // without which a numbered document cannot be created at all

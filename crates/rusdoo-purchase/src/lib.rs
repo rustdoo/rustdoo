@@ -11,7 +11,8 @@ use rusdoo_core::RusdooError;
 use rusdoo_orm::access::Operation;
 use rusdoo_orm::crud::SearchOptions;
 use rusdoo_orm::domain::parse_domain;
-use rusdoo_orm::fields::{Field, FieldType};
+use rusdoo_orm::defaults;
+use rusdoo_orm::fields::{Field, FieldType, OnDelete};
 use rusdoo_orm::methods::{MethodCtx, MethodFuture, MethodRegistry};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
@@ -133,8 +134,8 @@ fn order() -> Model {
         vec![
             char("name").required().from_sequence("purchase.order"),
             m2o("partner_id", "res.partner").required(),
-            m2o("company_id", "res.company"),
-            Field::new("date_order", FieldType::Datetime),
+            m2o("company_id", "res.company").default_from(defaults::USER_COMPANY),
+            Field::new("date_order", FieldType::Datetime).default_from(defaults::NOW),
             Field::new("date_planned", FieldType::Datetime),
             char("partner_ref"),
             Field::new(
@@ -181,7 +182,9 @@ fn order_line() -> Model {
     Model::new(
         meta("purchase.order.line", "purchase_order_line"),
         vec![
-            m2o("order_id", "purchase.order").required(),
+            m2o("order_id", "purchase.order")
+                .required()
+                .ondelete(OnDelete::Cascade),
             m2o("product_id", "product.product"),
             char("name"),
             Field::new("product_qty", PRICE).default_value(json!(1.0)),

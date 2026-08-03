@@ -1023,10 +1023,9 @@ impl OrmService {
                 let ids = parse_ids(args.first())?;
                 self.check_records(uid, model, Operation::Unlink, &ids)
                     .await?;
-                let m = self.registry.get(model).ok_or_else(|| {
-                    RpcError::from(RusdooError::Validation(format!("unknown model: {model}")))
-                })?;
-                m.unlink(&self.pool, &ids).await?;
+                // through the registry, so the model's `@api.ondelete`
+                // checks run — and run in the delete's own transaction
+                self.registry.unlink_as(&self.pool, uid, model, &ids).await?;
                 Ok(json!(true))
             }
             // field metadata for the web client's form/list builder. An
@@ -1357,8 +1356,33 @@ impl OrmService {
                     if let Some(value) = context
                         .and_then(|ctx| ctx.get(&format!("default_{name}")))
                         .cloned()
-                        .or_else(|| field.default.clone())
                     {
+                        out.insert(name.clone(), value);
+                        continue;
+                    }
+                    // a dynamic default has to run to be answered: a
+                    // fresh form that shows an empty date because the
+                    // default was a function is a form the user fills in
+                    // by hand with what the server already knew
+                    if let Some(func) = field.default_fn {
+                        let mut conn = self
+                            .pool
+                            .acquire()
+                            .await
+                            .map_err(|error| RpcError::from(RusdooError::Database(error.to_string())))?;
+                        let value = func(rusdoo_orm::fields::DefaultCtx {
+                            registry: &self.registry,
+                            conn: &mut conn,
+                            uid,
+                            model,
+                        })
+                        .await?;
+                        if !value.is_null() {
+                            out.insert(name.clone(), value);
+                        }
+                        continue;
+                    }
+                    if let Some(value) = field.default.clone() {
                         out.insert(name.clone(), value);
                     }
                 }

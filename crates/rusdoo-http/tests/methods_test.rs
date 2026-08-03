@@ -43,6 +43,8 @@ async fn fixture(url: &str, schema: &'static str) -> (OrmService, sqlx::PgPool) 
         "product_product",
         "res_partner",
         "res_company",
+        "res_users",
+        "res_groups",
         "res_country",
         "ir_sequence",
     ] {
@@ -58,6 +60,9 @@ async fn fixture(url: &str, schema: &'static str) -> (OrmService, sqlx::PgPool) 
         "res.country",
         "res.company",
         "res.partner",
+        // o default de empresa lê o usuário que está criando
+        "res.groups",
+        "res.users",
         "product.product",
         "sale.order",
         "sale.order.line",

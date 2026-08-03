@@ -69,6 +69,7 @@ impl Registry {
         // `_inherit` adds fields and behaviour, it does not licence the
         // parent's records to break the parent's constraints
         let mut constraints: Vec<crate::model::Constraint> = Vec::new();
+        let mut hooks: Vec<crate::unlink::UnlinkHook> = Vec::new();
         let mut fields: Vec<Field> = Vec::new();
         // a child that declares no `_order` of its own keeps the one its
         // parent chose: a module that adds a field to `account.move`
@@ -80,6 +81,9 @@ impl Registry {
             })?;
             merge_fields(&mut fields, parent_model.fields().iter().cloned());
             constraints.extend(parent_model.constraints().iter().cloned());
+            // um `_inherit` acrescenta comportamento, não licencia os
+            // registros do pai a serem apagados sem as checagens dele
+            hooks.extend(parent_model.unlink_hooks().iter().copied());
             if let Some(order) = parent_model.declared_order() {
                 inherited_order = Some(order.to_string());
             }
@@ -113,6 +117,7 @@ impl Registry {
                 merged = merged.ordered(&order);
             }
         }
+        let merged = merged.with_unlink_hooks(hooks);
         self.models
             .insert(meta.name, merged.rebuilt(merged_meta, fields, constraints));
         Ok(())

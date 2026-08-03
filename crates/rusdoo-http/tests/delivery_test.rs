@@ -53,6 +53,8 @@ async fn fixture(url: &str, schema: &'static str) -> OrmService {
         "product_product",
         "res_partner",
         "res_company",
+        "res_users",
+        "res_groups",
         "res_country",
         "ir_sequence",
     ] {
@@ -68,6 +70,9 @@ async fn fixture(url: &str, schema: &'static str) -> OrmService {
         "res.country",
         "res.company",
         "res.partner",
+        // o default de empresa lê o usuário que está criando
+        "res.groups",
+        "res.users",
         "product.product",
         "account.move",
         "account.move.line",
