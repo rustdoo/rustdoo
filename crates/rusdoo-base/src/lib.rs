@@ -202,6 +202,7 @@ fn partner() -> Model {
             Field::new("active", FieldType::Boolean).default_value(json!(true)),
         ],
     )
+    .ordered("name, id")
 }
 
 /// `res.groups` — what an ACL grant and a record rule are addressed to.

@@ -159,6 +159,9 @@ fn order() -> Model {
             Field::new("notes", FieldType::Text),
         ],
     )
+    // o Odoo ordena por `priority desc, id desc`; sem o campo de
+    // prioridade, o que sobra da intenção é o pedido mais novo primeiro
+    .ordered("id desc")
 }
 
 /// Buying zero of something is not an order, and a negative price is a

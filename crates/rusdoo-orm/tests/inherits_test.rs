@@ -136,7 +136,7 @@ fn search_on_delegated_field_goes_through_the_link() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_users" WHERE "partner_id" IN (SELECT "id" FROM "res_partner" WHERE "name" = $1)"#
+        r#"SELECT "id" FROM "res_users" WHERE "partner_id" IN (SELECT "id" FROM "res_partner" WHERE "name" = $1) ORDER BY "id" ASC"#
     );
     assert_eq!(params, vec![json!("Ana")]);
 }
@@ -152,7 +152,7 @@ fn search_chains_two_delegation_levels() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "hr_employee" WHERE "user_id" IN (SELECT "id" FROM "res_users" WHERE "partner_id" IN (SELECT "id" FROM "res_partner" WHERE "email" = $1))"#
+        r#"SELECT "id" FROM "hr_employee" WHERE "user_id" IN (SELECT "id" FROM "res_users" WHERE "partner_id" IN (SELECT "id" FROM "res_partner" WHERE "email" = $1)) ORDER BY "id" ASC"#
     );
 }
 
@@ -167,7 +167,7 @@ fn dotted_path_through_delegation() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_users" WHERE "partner_id" IN (SELECT "id" FROM "res_partner" WHERE "company_id" IN (SELECT "id" FROM "res_company" WHERE "name" = $1))"#
+        r#"SELECT "id" FROM "res_users" WHERE "partner_id" IN (SELECT "id" FROM "res_partner" WHERE "company_id" IN (SELECT "id" FROM "res_company" WHERE "name" = $1)) ORDER BY "id" ASC"#
     );
 }
 

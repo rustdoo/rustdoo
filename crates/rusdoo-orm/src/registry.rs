@@ -11,14 +11,6 @@ use std::collections::{HashMap, HashSet};
 pub(crate) const MAX_DELEGATION_DEPTH: usize = 8;
 
 /// Rebuilding a model must not quietly turn a dialog into stored data.
-fn keep_kind(model: Model, transient: bool) -> Model {
-    if transient {
-        model.transient()
-    } else {
-        model
-    }
-}
-
 #[derive(Debug, Default)]
 pub struct Registry {
     models: HashMap<String, Model>,
@@ -43,7 +35,9 @@ impl Registry {
     /// starts the new model from a copy of the parents' fields
     /// (prototype inheritance).
     pub fn register(&mut self, model: Model) -> Result<(), RusdooError> {
-        let (meta, mut own_fields, own_constraints, transient) = model.into_parts();
+        let meta = model.meta.clone();
+        let mut own_fields = model.fields().to_vec();
+        let own_constraints = model.constraints().to_vec();
 
         if meta.inherit.is_empty() {
             if self.models.contains_key(&meta.name) {
@@ -56,8 +50,7 @@ impl Registry {
             ensure_log_access(&mut own_fields);
             self.models.insert(
                 meta.name.clone(),
-                keep_kind(Model::new(meta, own_fields), transient)
-                    .with_constraints(own_constraints),
+                model.rebuilt(meta, own_fields, own_constraints),
             );
             return Ok(());
         }
@@ -77,12 +70,19 @@ impl Registry {
         // parent's records to break the parent's constraints
         let mut constraints: Vec<crate::model::Constraint> = Vec::new();
         let mut fields: Vec<Field> = Vec::new();
+        // a child that declares no `_order` of its own keeps the one its
+        // parent chose: a module that adds a field to `account.move`
+        // must not make its list stop being newest-first
+        let mut inherited_order: Option<String> = None;
         for parent in meta.inherit.iter().rev() {
             let parent_model = self.models.get(parent).ok_or_else(|| {
                 RusdooError::Validation(format!("_inherit parent not registered: {parent}"))
             })?;
             merge_fields(&mut fields, parent_model.fields().iter().cloned());
             constraints.extend(parent_model.constraints().iter().cloned());
+            if let Some(order) = parent_model.declared_order() {
+                inherited_order = Some(order.to_string());
+            }
         }
         merge_fields(&mut fields, own_fields);
 
@@ -107,11 +107,14 @@ impl Registry {
             inherits,
         };
         constraints.extend(own_constraints);
-        self.models.insert(
-            meta.name,
-            keep_kind(Model::new(merged_meta, fields), transient)
-                .with_constraints(constraints),
-        );
+        let mut merged = model;
+        if merged.declared_order().is_none() {
+            if let Some(order) = inherited_order {
+                merged = merged.ordered(&order);
+            }
+        }
+        self.models
+            .insert(meta.name, merged.rebuilt(merged_meta, fields, constraints));
         Ok(())
     }
 }

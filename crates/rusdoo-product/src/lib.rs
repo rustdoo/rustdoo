@@ -68,6 +68,9 @@ fn product() -> Model {
         &["list_price", "standard_price"],
         prices_are_not_negative,
     )
+    // o Odoo ordena por `is_favorite desc, name`; sem os favoritos,
+    // por nome
+    .ordered("name, id")
 }
 
 #[cfg(test)]

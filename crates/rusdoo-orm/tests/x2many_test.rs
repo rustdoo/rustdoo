@@ -122,7 +122,7 @@ fn m2m_any_goes_through_relation_table() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (SELECT "partner_id" FROM "res_partner_category_rel" WHERE "category_id" IN (SELECT "id" FROM "res_partner_category" WHERE "name" = $1))"#
+        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (SELECT "partner_id" FROM "res_partner_category_rel" WHERE "category_id" IN (SELECT "id" FROM "res_partner_category" WHERE "name" = $1)) ORDER BY "id" ASC"#
     );
     assert_eq!(params, vec![json!("vip")]);
 }
@@ -135,7 +135,7 @@ fn m2m_dotted_path_goes_through_relation_table() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (SELECT "partner_id" FROM "res_partner_category_rel" WHERE "category_id" IN (SELECT "id" FROM "res_partner_category" WHERE "name" = $1))"#
+        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (SELECT "partner_id" FROM "res_partner_category_rel" WHERE "category_id" IN (SELECT "id" FROM "res_partner_category" WHERE "name" = $1)) ORDER BY "id" ASC"#
     );
 }
 
@@ -147,7 +147,7 @@ fn m2m_in_ids_matches_linked_records() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (SELECT "partner_id" FROM "res_partner_category_rel" WHERE "category_id" IN ($1, $2))"#
+        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (SELECT "partner_id" FROM "res_partner_category_rel" WHERE "category_id" IN ($1, $2)) ORDER BY "id" ASC"#
     );
     assert_eq!(params.len(), 2);
 }
@@ -160,7 +160,7 @@ fn m2m_not_in_ids_excludes_linked_records() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "id" NOT IN (SELECT "partner_id" FROM "res_partner_category_rel" WHERE "category_id" IN ($1))"#
+        r#"SELECT "id" FROM "res_partner" WHERE "id" NOT IN (SELECT "partner_id" FROM "res_partner_category_rel" WHERE "category_id" IN ($1)) ORDER BY "id" ASC"#
     );
 }
 
@@ -172,7 +172,7 @@ fn o2m_in_ids_goes_through_inverse() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (SELECT "parent_id" FROM "res_partner" WHERE "id" IN ($1))"#
+        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (SELECT "parent_id" FROM "res_partner" WHERE "id" IN ($1)) ORDER BY "id" ASC"#
     );
 }
 
@@ -186,7 +186,7 @@ fn child_of_on_id_uses_recursive_cte() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (WITH RECURSIVE __rusdoo_tree AS (SELECT "id" FROM "res_partner" WHERE "id" IN ($1) UNION SELECT __t."id" FROM "res_partner" __t JOIN __rusdoo_tree __r ON __t."parent_id" = __r."id") SELECT "id" FROM __rusdoo_tree)"#
+        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (WITH RECURSIVE __rusdoo_tree AS (SELECT "id" FROM "res_partner" WHERE "id" IN ($1) UNION SELECT __t."id" FROM "res_partner" __t JOIN __rusdoo_tree __r ON __t."parent_id" = __r."id") SELECT "id" FROM __rusdoo_tree) ORDER BY "id" ASC"#
     );
     assert_eq!(params, vec![json!(1)]);
 }
@@ -200,7 +200,7 @@ fn child_of_on_self_referential_m2o_remaps_to_id() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (WITH RECURSIVE __rusdoo_tree AS (SELECT "id" FROM "res_partner" WHERE "id" IN ($1) UNION SELECT __t."id" FROM "res_partner" __t JOIN __rusdoo_tree __r ON __t."parent_id" = __r."id") SELECT "id" FROM __rusdoo_tree)"#
+        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (WITH RECURSIVE __rusdoo_tree AS (SELECT "id" FROM "res_partner" WHERE "id" IN ($1) UNION SELECT __t."id" FROM "res_partner" __t JOIN __rusdoo_tree __r ON __t."parent_id" = __r."id") SELECT "id" FROM __rusdoo_tree) ORDER BY "id" ASC"#
     );
 }
 
@@ -212,7 +212,7 @@ fn child_of_on_foreign_m2o_keeps_the_column() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "main_category_id" IN (WITH RECURSIVE __rusdoo_tree AS (SELECT "id" FROM "res_partner_category" WHERE "id" IN ($1) UNION SELECT __t."id" FROM "res_partner_category" __t JOIN __rusdoo_tree __r ON __t."parent_id" = __r."id") SELECT "id" FROM __rusdoo_tree)"#
+        r#"SELECT "id" FROM "res_partner" WHERE "main_category_id" IN (WITH RECURSIVE __rusdoo_tree AS (SELECT "id" FROM "res_partner_category" WHERE "id" IN ($1) UNION SELECT __t."id" FROM "res_partner_category" __t JOIN __rusdoo_tree __r ON __t."parent_id" = __r."id") SELECT "id" FROM __rusdoo_tree) ORDER BY "id" ASC"#
     );
 }
 
@@ -222,7 +222,7 @@ fn child_of_with_empty_id_list_matches_nothing() {
 
     let (sql, params) = search(&reg, json!([["id", "child_of", []]]));
 
-    assert_eq!(sql, r#"SELECT "id" FROM "res_partner" WHERE FALSE"#);
+    assert_eq!(sql, r#"SELECT "id" FROM "res_partner" WHERE FALSE ORDER BY "id" ASC"#);
     assert!(params.is_empty());
 }
 
@@ -244,7 +244,7 @@ fn parent_of_on_id_walks_upwards() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (WITH RECURSIVE __rusdoo_tree AS (SELECT "id", "parent_id" FROM "res_partner" WHERE "id" IN ($1) UNION SELECT __t."id", __t."parent_id" FROM "res_partner" __t JOIN __rusdoo_tree __r ON __t."id" = __r."parent_id") SELECT "id" FROM __rusdoo_tree)"#
+        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (WITH RECURSIVE __rusdoo_tree AS (SELECT "id", "parent_id" FROM "res_partner" WHERE "id" IN ($1) UNION SELECT __t."id", __t."parent_id" FROM "res_partner" __t JOIN __rusdoo_tree __r ON __t."id" = __r."parent_id") SELECT "id" FROM __rusdoo_tree) ORDER BY "id" ASC"#
     );
     assert_eq!(params, vec![json!(7)]);
 }

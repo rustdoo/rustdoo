@@ -45,6 +45,8 @@ pub struct Model {
     /// a `TransientModel`: its records are a dialog somebody had open,
     /// not data the business keeps
     transient: bool,
+    /// `_order`: how a search with no order of its own comes back
+    order: Option<String>,
 }
 
 impl Model {
@@ -54,6 +56,7 @@ impl Model {
             fields,
             constraints: Vec::new(),
             transient: false,
+            order: None,
         }
     }
 
@@ -96,13 +99,45 @@ impl Model {
         &self.fields
     }
 
-    pub(crate) fn into_parts(self) -> (ModelMeta, Vec<Field>, Vec<Constraint>, bool) {
-        (self.meta, self.fields, self.constraints, self.transient)
+    /// Port of `_order`: how a search that names no order of its own
+    /// comes back. `"date desc, id desc"` reads like Odoo's.
+    ///
+    /// Without it a `SELECT` with no `ORDER BY` may answer in any order
+    /// PostgreSQL likes — which usually looks like insertion order right
+    /// up to the first `UPDATE`, and then quietly stops.
+    pub fn ordered(mut self, order: &str) -> Self {
+        self.order = Some(order.to_string());
+        self
     }
 
-    /// Rebuild with the constraints kept — the registry folds fields
-    /// from the `_inherit` chain and must not drop the rules on the way.
-    pub(crate) fn with_constraints(mut self, constraints: Vec<Constraint>) -> Self {
+    /// What this model declared, if anything — what an `_inherit` child
+    /// falls back to when it declares no order of its own.
+    pub(crate) fn declared_order(&self) -> Option<&str> {
+        self.order.as_deref()
+    }
+
+    /// The order to search by: the declared one, or `id` like Odoo.
+    pub fn order(&self) -> &str {
+        self.order.as_deref().unwrap_or("id")
+    }
+
+    /// The same model with its identity, fields and rules replaced —
+    /// what the registry does after folding an `_inherit` chain.
+    ///
+    /// It rebuilds *from* the model instead of constructing a new one so
+    /// that everything the caller declared and this function says nothing
+    /// about is carried over untouched. The previous shape took the model
+    /// apart and put a new one together, which meant every attribute
+    /// added later had to be threaded through by hand — and the first one
+    /// that was not, the constraints, was silently dropped for a while.
+    pub(crate) fn rebuilt(
+        mut self,
+        meta: ModelMeta,
+        fields: Vec<Field>,
+        constraints: Vec<Constraint>,
+    ) -> Self {
+        self.meta = meta;
+        self.fields = fields;
         self.constraints = constraints;
         self
     }

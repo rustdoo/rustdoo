@@ -134,6 +134,10 @@ fn picking() -> Model {
             Field::new("note", FieldType::Text),
         ],
     )
+    // o Odoo põe a prioridade na frente (`priority desc,
+    // scheduled_date asc, id desc`); sem ela, a data prometida é o
+    // que organiza a fila de quem separa
+    .ordered("scheduled_date asc, id desc")
 }
 
 /// Nothing moves backwards: a negative quantity is a move in the other

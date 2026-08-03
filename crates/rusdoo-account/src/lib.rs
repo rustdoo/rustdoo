@@ -172,6 +172,11 @@ fn mv() -> Model {
         &["invoice_date", "invoice_date_due"],
         due_after_issue,
     )
+    // `_order` do Odoo é `date desc, name desc, invoice_date desc, id
+    // desc`; sem o campo `date` contábil, o que o port tem que diz a
+    // mesma coisa é a data da fatura e o número. A intenção é uma só:
+    // a fatura mais nova primeiro.
+    .ordered("invoice_date desc, name desc, id desc")
 }
 
 /// `account.move.line` — one billed thing, at one price.

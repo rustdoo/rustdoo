@@ -1196,11 +1196,15 @@ impl Registry {
                 let co = self.get(comodel).ok_or_else(|| {
                     RusdooError::Validation(format!("comodel not registered: {comodel}"))
                 })?;
+                // the lines come back in the comodel's `_order`: a form
+                // whose lines move between two reloads of the same record
+                // is a form the user stops trusting
                 format!(
-                    r#"SELECT {}, "id" FROM {} WHERE {} IN ({in_list})"#,
+                    r#"SELECT {}, "id" FROM {} WHERE {} IN ({in_list}) ORDER BY {}"#,
                     quote_ident(inverse)?,
                     quote_ident(&co.meta.table)?,
                     quote_ident(inverse)?,
+                    co.order_sql()?,
                 )
             }
             other => {

@@ -51,16 +51,11 @@ impl Model {
         opts: &SearchOptions,
         ctx: Ctx,
     ) -> Result<(String, Vec<Value>), RusdooError> {
-        let mut params = Vec::new();
-        let active_test = self.active_test_domain(domain, opts);
-        let where_sql = render(active_test.as_ref().unwrap_or(domain), &mut params, ctx)?;
-        let mut sql = format!(
-            r#"SELECT "id" FROM {} WHERE {where_sql}"#,
-            quote_ident(&self.meta.table)?
-        );
-        if let Some(order) = &opts.order {
-            sql.push_str(&format!(" ORDER BY {}", self.order_by(order)?));
-        }
+        let (mut sql, params) = self.select_from_where(r#""id""#, domain, opts, ctx)?;
+        // a search with no order of its own gets the model's `_order`,
+        // never PostgreSQL's whim
+        let order = opts.order.as_deref().unwrap_or_else(|| self.order());
+        sql.push_str(&format!(" ORDER BY {}", self.order_by(order)?));
         if let Some(limit) = opts.limit {
             sql.push_str(&format!(" LIMIT {limit}"));
         }
@@ -68,6 +63,27 @@ impl Model {
             sql.push_str(&format!(" OFFSET {offset}"));
         }
         Ok((sql, params))
+    }
+
+    /// `SELECT <columns> FROM <table> WHERE <domain>`, with no ordering
+    /// and no paging — the part a search and a count agree on.
+    fn select_from_where(
+        &self,
+        columns: &str,
+        domain: &Domain,
+        opts: &SearchOptions,
+        ctx: Ctx,
+    ) -> Result<(String, Vec<Value>), RusdooError> {
+        let mut params = Vec::new();
+        let active_test = self.active_test_domain(domain, opts);
+        let where_sql = render(active_test.as_ref().unwrap_or(domain), &mut params, ctx)?;
+        Ok((
+            format!(
+                "SELECT {columns} FROM {} WHERE {where_sql}",
+                quote_ident(&self.meta.table)?
+            ),
+            params,
+        ))
     }
 
     /// How many records the domain matches, as SQL.
@@ -92,15 +108,18 @@ impl Model {
         opts: &SearchOptions,
         ctx: Ctx,
     ) -> Result<(String, Vec<Value>), RusdooError> {
-        let (inner, params) = self.search_sql_with(domain, opts, ctx)?;
+        // no paging: count straight from the table. The count is built
+        // from the same pieces as the search rather than by editing its
+        // SQL as a string — a `COUNT(*)` that inherited the search's
+        // `ORDER BY name` is rejected by PostgreSQL outright, and that is
+        // what a text substitution had been quietly getting away with
+        // while every model's order was `None`.
         if opts.limit.is_none() && opts.offset.is_none() {
-            // no paging: count straight from the table
-            let from = inner
-                .split_once(" FROM ")
-                .map(|(_, rest)| rest)
-                .expect("search SQL always has a FROM");
-            return Ok((format!("SELECT COUNT(*) FROM {from}"), params));
+            return self.select_from_where("COUNT(*)", domain, opts, ctx);
         }
+        // with paging the subquery must keep its order: `LIMIT` over an
+        // unordered select is a different set of rows every time
+        let (inner, params) = self.search_sql_with(domain, opts, ctx)?;
         Ok((
             format!("SELECT COUNT(*) FROM ({inner}) AS \"counted\""),
             params,
@@ -248,6 +267,12 @@ impl Model {
 
     /// `"name asc, id desc"` -> `"name" ASC, "id" DESC`, validated against
     /// the model's fields so arbitrary SQL can never reach ORDER BY.
+    /// The model's own `_order`, rendered as SQL — what a relation reads
+    /// its lines by.
+    pub(crate) fn order_sql(&self) -> Result<String, RusdooError> {
+        self.order_by(self.order())
+    }
+
     fn order_by(&self, spec: &str) -> Result<String, RusdooError> {
         let clauses: Vec<String> = spec
             .split(',')

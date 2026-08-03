@@ -635,6 +635,8 @@ fn order() -> Model {
             Field::new("note", FieldType::Text),
         ],
     )
+    // `_order` do Odoo: o pedido mais novo primeiro
+    .ordered("date_order desc, id desc")
 }
 
 /// A line nobody can fulfil: zero of something is not a sale, and a

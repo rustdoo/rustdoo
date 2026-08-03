@@ -376,7 +376,7 @@ fn eq_false_on_boolean_matches_falsy_or_null() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE ("active" = $1 OR "active" IS NULL)"#
+        r#"SELECT "id" FROM "res_partner" WHERE ("active" = $1 OR "active" IS NULL) ORDER BY "id" ASC"#
     );
     assert_eq!(params, vec![json!(false)]);
 }
@@ -396,7 +396,7 @@ fn neq_false_on_integer_requires_set_and_nonzero() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE ("color" != $1 AND "color" IS NOT NULL)"#
+        r#"SELECT "id" FROM "res_partner" WHERE ("color" != $1 AND "color" IS NOT NULL) ORDER BY "id" ASC"#
     );
     assert_eq!(params, vec![json!(0)]);
 }

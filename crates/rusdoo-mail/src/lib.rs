@@ -82,6 +82,8 @@ fn message() -> Model {
             ),
         ],
     )
+    // a conversa mais recente no topo, como o chatter desenha
+    .ordered("id desc")
 }
 
 /// `mail.followers` — who hears about a record.

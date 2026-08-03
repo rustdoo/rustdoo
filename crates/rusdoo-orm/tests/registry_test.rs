@@ -183,7 +183,7 @@ fn many2one_path_renders_semijoin() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "company_id" IN (SELECT "id" FROM "res_company" WHERE "name" = $1)"#
+        r#"SELECT "id" FROM "res_partner" WHERE "company_id" IN (SELECT "id" FROM "res_company" WHERE "name" = $1) ORDER BY "id" ASC"#
     );
     assert_eq!(params, vec![json!("Acme")]);
 }
@@ -200,7 +200,7 @@ fn one2many_path_renders_inverse_semijoin() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (SELECT "parent_id" FROM "res_partner" WHERE "name" LIKE $1)"#
+        r#"SELECT "id" FROM "res_partner" WHERE "id" IN (SELECT "parent_id" FROM "res_partner" WHERE "name" LIKE $1) ORDER BY "id" ASC"#
     );
     assert_eq!(params, vec![json!("%x%")]);
 }
@@ -217,7 +217,7 @@ fn multi_hop_path_nests_subqueries() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "company_id" IN (SELECT "id" FROM "res_company" WHERE "partner_id" IN (SELECT "id" FROM "res_partner" WHERE "name" = $1))"#
+        r#"SELECT "id" FROM "res_partner" WHERE "company_id" IN (SELECT "id" FROM "res_company" WHERE "partner_id" IN (SELECT "id" FROM "res_partner" WHERE "name" = $1)) ORDER BY "id" ASC"#
     );
 }
 
@@ -245,7 +245,7 @@ fn any_operator_takes_a_subdomain() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "company_id" IN (SELECT "id" FROM "res_company" WHERE "name" = $1)"#
+        r#"SELECT "id" FROM "res_partner" WHERE "company_id" IN (SELECT "id" FROM "res_company" WHERE "name" = $1) ORDER BY "id" ASC"#
     );
     assert_eq!(params, vec![json!("Acme")]);
 }
@@ -262,7 +262,7 @@ fn not_any_on_many2one_includes_null() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE ("company_id" NOT IN (SELECT "id" FROM "res_company" WHERE "name" = $1) OR "company_id" IS NULL)"#
+        r#"SELECT "id" FROM "res_partner" WHERE ("company_id" NOT IN (SELECT "id" FROM "res_company" WHERE "name" = $1) OR "company_id" IS NULL) ORDER BY "id" ASC"#
     );
 }
 
@@ -279,7 +279,7 @@ fn not_any_on_one2many_guards_null_inverse() {
 
     assert_eq!(
         sql,
-        r#"SELECT "id" FROM "res_partner" WHERE "id" NOT IN (SELECT "parent_id" FROM "res_partner" WHERE ("name" = $1) AND "parent_id" IS NOT NULL)"#
+        r#"SELECT "id" FROM "res_partner" WHERE "id" NOT IN (SELECT "parent_id" FROM "res_partner" WHERE ("name" = $1) AND "parent_id" IS NOT NULL) ORDER BY "id" ASC"#
     );
 }
 
