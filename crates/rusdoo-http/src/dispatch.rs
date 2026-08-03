@@ -1154,7 +1154,14 @@ impl OrmService {
                 }
                 let ids: Vec<i64> = pairs.iter().map(|(id, _)| *id).collect();
                 let ident = self.identity(uid).await;
-                let records = self.web_read_records(&ident, model, &ids, &spec).await?;
+                let records = self.web_read_records(
+                        &ident,
+                        model,
+                        &ids,
+                        &spec,
+                        rusdoo_orm::context::Context::from_value(kwargs.get("context")).lang(),
+                    )
+                    .await?;
                 Ok(json!(records))
             }
             // the web client's read path: fields shaped by a specification
@@ -1166,7 +1173,14 @@ impl OrmService {
                     args.get(1).or_else(|| kwargs.get("specification")),
                 )?;
                 let ident = self.identity(uid).await;
-                let records = self.web_read_records(&ident, model, &ids, &spec).await?;
+                let records = self.web_read_records(
+                        &ident,
+                        model,
+                        &ids,
+                        &spec,
+                        rusdoo_orm::context::Context::from_value(kwargs.get("context")).lang(),
+                    )
+                    .await?;
                 Ok(json!(records))
             }
             "web_search_read" => {
@@ -1184,7 +1198,14 @@ impl OrmService {
                     .registry
                     .search(&self.pool, model, &domain, &opts)
                     .await?;
-                let records = self.web_read_records(&ident, model, &ids, &spec).await?;
+                let records = self.web_read_records(
+                        &ident,
+                        model,
+                        &ids,
+                        &spec,
+                        rusdoo_orm::context::Context::from_value(kwargs.get("context")).lang(),
+                    )
+                    .await?;
                 if records.is_empty() {
                     return Ok(json!({"length": 0, "records": []}));
                 }
@@ -1278,7 +1299,13 @@ impl OrmService {
                     None => saved,
                 };
                 let records = self
-                    .web_read_records(&ident, model, &read_ids, &spec)
+                    .web_read_records(
+                        &ident,
+                        model,
+                        &read_ids,
+                        &spec,
+                        rusdoo_orm::context::Context::from_value(kwargs.get("context")).lang(),
+                    )
                     .await?;
                 Ok(json!(records))
             }

@@ -19,6 +19,7 @@
         constructor(target) {
             this.target = target;
             this.session = null;
+            this.langs = [];
             this.menus = {};
             this.currentApp = null;
             this.notification = el("div", { class: "o_notification" });
@@ -60,6 +61,16 @@
             } catch (error) {
                 this.menus = {};
                 this.notify(error);
+            }
+            try {
+                // os idiomas instalados, para o seletor da barra. Um banco
+                // com um só não ganha um seletor de uma opção.
+                this.langs = await api.callKw("res.lang", "search_read", [
+                    [["active", "=", true]],
+                    ["name", "code"],
+                ]);
+            } catch (error) {
+                this.langs = [];
             }
             this.renderApp();
             const apps = this.appMenus();
@@ -135,6 +146,7 @@
                 el("span", { class: "o_brand" }, "rusdoo"),
                 el("div", { class: "o_apps" }, apps),
                 el("div", { class: "o_user" }, [
+                    this.renderLangPicker(),
                     el("span", {}, this.session ? this.session.username || "" : ""),
                     el(
                         "button",
@@ -152,6 +164,47 @@
                     ),
                 ]),
             ]);
+        }
+
+        /**
+         * O seletor de idioma.
+         *
+         * Trocar aqui reescreve o `lang` do usuário e recarrega: o
+         * idioma é do usuário, não da aba — abrir uma segunda aba não
+         * pode mostrar a mesma tela em outra língua.
+         */
+        renderLangPicker() {
+            if (!this.langs || this.langs.length < 2) {
+                return el("span", { class: "o_lang_empty" });
+            }
+            const current = (api.userContext().lang) || "en_US";
+            const select = el(
+                "select",
+                { class: "o_input o_lang_picker", title: "Idioma" },
+                this.langs.map((lang) =>
+                    el(
+                        "option",
+                        Object.assign(
+                            { value: lang.code },
+                            lang.code === current ? { selected: "selected" } : {}
+                        ),
+                        lang.name
+                    )
+                )
+            );
+            select.addEventListener("change", async () => {
+                try {
+                    await api.callKw("res.users", "write", [
+                        [this.session.uid],
+                        { lang: select.value },
+                    ]);
+                } catch (error) {
+                    this.onError(error);
+                    return;
+                }
+                window.location.reload();
+            });
+            return select;
         }
 
         renderSidebar() {

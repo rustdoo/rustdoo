@@ -249,3 +249,50 @@ async fn a_filter_matches_the_name_in_the_callers_language_live() {
 
     case.close().await;
 }
+
+/// A lista é a tela mais comum que existe, e ela não passa pelo `read`:
+/// passa pelo `web_search_read`. Traduzir só um dos dois deixaria o
+/// outro respondendo no idioma de origem e parecendo certo.
+#[tokio::test]
+async fn the_list_view_answers_in_the_callers_language_live() {
+    let Some(case) = TransactionCase::open("translation_list", &["base", "product"]).await else {
+        return;
+    };
+    let service = OrmService::insecure(case.registry(), case.pool());
+    let id = call(
+        &service,
+        "product.product",
+        "create",
+        json!([{"name": "Oak table", "list_price": 100.0}]),
+        in_lang("en_US"),
+    )
+    .await["result"]
+        .as_i64()
+        .unwrap();
+    call(
+        &service,
+        "product.product",
+        "write",
+        json!([[id], {"name": "Mesa de carvalho"}]),
+        in_lang("pt_BR"),
+    )
+    .await;
+
+    for (lang, expected) in [("pt_BR", "Mesa de carvalho"), ("en_US", "Oak table")] {
+        let answer = call(
+            &service,
+            "product.product",
+            "web_search_read",
+            json!([[], {"name": {}}]),
+            in_lang(lang),
+        )
+        .await;
+        assert_eq!(
+            answer["result"]["records"][0]["name"],
+            json!(expected),
+            "web_search_read em {lang}: {answer}"
+        );
+    }
+
+    case.close().await;
+}

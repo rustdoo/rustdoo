@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Os idiomas que o banco fala. `en_US` é o de origem: é sob ele
+             que um texto sem tradução fica guardado, e é para ele que uma
+             leitura cai quando o idioma pedido não tem valor. -->
+        <record id="lang_en" model="res.lang">
+            <field name="name">English (US)</field>
+            <field name="code">en_US</field>
+            <field name="iso_code">en</field>
+            <field name="url_code">en</field>
+            <field name="date_format">%m/%d/%Y</field>
+            <field name="decimal_point">.</field>
+            <field name="thousands_sep">,</field>
+        </record>
+
+        <record id="lang_pt_BR" model="res.lang">
+            <field name="name">Português (BR)</field>
+            <field name="code">pt_BR</field>
+            <field name="iso_code">pt_BR</field>
+            <field name="url_code">pt-BR</field>
+            <field name="date_format">%d/%m/%Y</field>
+            <field name="decimal_point">,</field>
+            <field name="thousands_sep">.</field>
+        </record>
+
+        <record id="lang_es" model="res.lang">
+            <field name="name">Español</field>
+            <field name="code">es_ES</field>
+            <field name="iso_code">es</field>
+            <field name="url_code">es</field>
+            <field name="date_format">%d/%m/%Y</field>
+            <field name="decimal_point">,</field>
+            <field name="thousands_sep">.</field>
+        </record>
+    </data>
+</odoo>

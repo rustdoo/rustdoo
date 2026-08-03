@@ -67,13 +67,30 @@
         return response.json();
     }
 
+    /**
+     * O contexto do usuário, como o servidor o devolveu no boot.
+     *
+     * Toda chamada o carrega, que é o que faz o idioma da sessão valer:
+     * sem isso o servidor responderia sempre no idioma de origem, por
+     * mais que o usuário tivesse escolhido outro.
+     */
+    let userContext = {};
+
+    function setUserContext(context) {
+        userContext = context && typeof context === "object" ? context : {};
+    }
+
     /** `call_kw`: um método do ORM sobre um modelo. */
     function callKw(model, method, args, kwargs) {
+        const extra = kwargs || {};
+        // um contexto que a chamada trouxe vence o da sessão, chave a
+        // chave — é assim que um `with_context` pontual funciona
+        const context = Object.assign({}, userContext, extra.context || {});
         return rpc("/web/dataset/call_kw", {
             model: model,
             method: method,
             args: args || [],
-            kwargs: kwargs || {},
+            kwargs: Object.assign({}, extra, { context: context }),
         });
     }
 
@@ -82,9 +99,24 @@
         rpc: rpc,
         getJson: getJson,
         callKw: callKw,
-        sessionInfo: () => rpc("/web/session/get_session_info", {}),
-        authenticate: (login, password) =>
-            rpc("/web/session/authenticate", { login: login, password: password }),
+        setUserContext: setUserContext,
+        userContext: () => Object.assign({}, userContext),
+        sessionInfo: async () => {
+            const info = await rpc("/web/session/get_session_info", {});
+            setUserContext(info && info.user_context);
+            return info;
+        },
+        authenticate: async (login, password) => {
+            const answer = await rpc("/web/session/authenticate", {
+                login: login,
+                password: password,
+            });
+            // o idioma do usuário vale a partir do login, não do próximo
+            // recarregamento da página
+            const info = await rpc("/web/session/get_session_info", {});
+            setUserContext(info && info.user_context);
+            return answer;
+        },
         destroy: () => rpc("/web/session/destroy", {}),
         loadMenus: () => getJson("/web/webclient/load_menus"),
         loadAction: (actionId) => rpc("/web/action/load", { action_id: actionId }),

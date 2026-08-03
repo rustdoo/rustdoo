@@ -22,3 +22,5 @@ access_ir_act_report_system,ir.actions.report admin,ir.actions.report,group_syst
 access_ir_attachment_user,anexos usuário,ir.attachment,group_user,1,1,1,0
 access_ir_attachment_system,anexos admin,ir.attachment,group_system,1,1,1,1
 access_ir_cron_system,ir.cron admin,ir.cron,group_system,1,1,1,1
+access_res_lang_user,res.lang leitura,res.lang,group_user,1,0,0,0
+access_res_lang_system,res.lang admin,res.lang,group_system,1,1,1,1

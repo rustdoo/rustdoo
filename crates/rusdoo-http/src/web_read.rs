@@ -234,12 +234,18 @@ impl OrmService {
     /// `web_read`: read `spec`'s fields on `ids` and shape relational
     /// values by their sub-spec. Rows come back in `ids` order (the search
     /// order when called from `web_search_read`).
+    /// `lang` travels with the read because a list of forty products is
+    /// the most common screen there is, and it goes through here — not
+    /// through `read`. Threading it into one of the two would have left
+    /// the other answering in the source language and looking correct
+    /// until somebody translated something.
     pub(crate) fn web_read_records<'a>(
         &'a self,
         ident: &'a crate::session::Session,
         model: &'a str,
         ids: &'a [i64],
         spec: &'a WebSpec,
+        lang: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<Value>, RpcError>> + Send + 'a>> {
         Box::pin(async move {
             if ids.is_empty() {
@@ -277,7 +283,7 @@ impl OrmService {
             let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
             let rows = self
                 .registry
-                .read(&self.pool, model, ids, &name_refs)
+                .read_lang(&self.pool, model, ids, &name_refs, lang)
                 .await?;
             // the SQL IN gives no order guarantee; restore the ids order
             let mut by_id: HashMap<i64, Map<String, Value>> = rows
@@ -309,11 +315,11 @@ impl OrmService {
                 let Some(field) = m.field(name) else { continue };
                 match &field.ty {
                     FieldType::Many2one { comodel } => {
-                        self.shape_many2one(ident, comodel, name, sub, &mut records)
+                        self.shape_many2one(ident, comodel, name, sub, &mut records, lang)
                             .await?;
                     }
                     FieldType::One2many { comodel, .. } | FieldType::Many2many { comodel, .. } => {
-                        self.shape_x2many(ident, comodel, name, sub, &mut records)
+                        self.shape_x2many(ident, comodel, name, sub, &mut records, lang)
                             .await?;
                     }
                     _ => {}
@@ -336,6 +342,7 @@ impl OrmService {
         name: &str,
         sub: &SubSpec,
         records: &mut [Map<String, Value>],
+        lang: &str,
     ) -> Result<(), RpcError> {
         let Some(sub_fields) = &sub.fields else {
             for record in records.iter_mut() {
@@ -360,7 +367,7 @@ impl OrmService {
                     .filter_map(|r| m2o_pair(r.get(name)))
                     .map(|(id, _)| id),
             );
-            self.web_read_records(ident, comodel, &co_ids, &extra)
+            self.web_read_records(ident, comodel, &co_ids, &extra, lang)
                 .await?
                 .into_iter()
                 .filter_map(|v| match v {
@@ -388,6 +395,7 @@ impl OrmService {
     /// list stays as-is. With one, ids become nested records; the
     /// per-record `limit` caps how many are read in full — ids beyond it
     /// stay `{id}` stubs, like Odoo.
+    #[allow(clippy::too_many_arguments)]
     async fn shape_x2many(
         &self,
         ident: &crate::session::Session,
@@ -395,6 +403,7 @@ impl OrmService {
         name: &str,
         sub: &SubSpec,
         records: &mut [Map<String, Value>],
+        lang: &str,
     ) -> Result<(), RpcError> {
         let Some(sub_fields) = &sub.fields else {
             return Ok(());
@@ -422,7 +431,7 @@ impl OrmService {
             }
         }));
         let nested: HashMap<i64, Value> = self
-            .web_read_records(ident, comodel, &co_ids, sub_fields)
+            .web_read_records(ident, comodel, &co_ids, sub_fields, lang)
             .await?
             .into_iter()
             .filter_map(|v| Some((v.get("id")?.as_i64()?, v)))

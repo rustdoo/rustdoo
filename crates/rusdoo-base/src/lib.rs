@@ -104,6 +104,7 @@ fn power_on<'a>(
 
 fn models() -> Vec<Model> {
     vec![
+        lang(),
         config_parameter(),
         sequence(),
         country(),
@@ -119,6 +120,47 @@ fn models() -> Vec<Model> {
         autovacuum(),
         ui_menu(),
     ]
+}
+
+/// `res.lang` — the languages a database answers in.
+///
+/// Port of `odoo/addons/base/models/res_lang.py`, the fields a client
+/// actually needs: what the language is called, its code, and how it
+/// writes a date, a time and a number. A language is a row and not a
+/// constant because installing one is a decision an administrator makes,
+/// and because the formats belong to the language, not to the code.
+fn lang() -> Model {
+    Model::new(
+        meta("res.lang", "res_lang"),
+        vec![
+            char("name").required(),
+            // `en_US`, `pt_BR` — the key every translated column uses
+            char("code").required(),
+            // the name of the `.po` file the translations come from
+            char("iso_code"),
+            char("url_code").required(),
+            Field::new("active", FieldType::Boolean).default_value(json!(true)),
+            Field::new(
+                "direction",
+                FieldType::Selection(vec![
+                    ("ltr".into(), "Da esquerda para a direita".into()),
+                    ("rtl".into(), "Da direita para a esquerda".into()),
+                ]),
+            )
+            .default_value(json!("ltr")),
+            char("date_format").default_value(json!("%m/%d/%Y")),
+            char("time_format").default_value(json!("%H:%M:%S")),
+            char("decimal_point").default_value(json!(".")),
+            char("thousands_sep").default_value(json!(",")),
+        ],
+    )
+    .sql_constrained(
+        "res_lang_code_uniq",
+        r#"UNIQUE ("code")"#,
+        "já existe um idioma com esse código",
+    )
+    // Odoo's `_order`: the installed ones first, then by name
+    .ordered("active desc, name, id")
 }
 
 /// `ir.config_parameter` — the switches a database is set with.

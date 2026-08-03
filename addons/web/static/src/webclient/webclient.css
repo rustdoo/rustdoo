@@ -716,3 +716,11 @@ input[type="checkbox"].o_input {
     padding: 0;
     font-size: 0.8125rem;
 }
+
+/* Seletor de idioma na barra superior. */
+.o_lang_picker {
+    height: 1.75rem;
+    padding: 0 0.375rem;
+    font-size: 0.8125rem;
+    max-width: 10rem;
+}
