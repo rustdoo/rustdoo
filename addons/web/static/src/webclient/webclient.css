@@ -11,6 +11,21 @@
     --o-muted: #6b7280;
     --o-danger: #b91c1c;
     --o-ok: #157347;
+    --o-brand-soft: #d6c6d2;
+    --o-bg-subtle: #f6f6f7;
+
+    /* Escala de espaçamento: um passo de 4px. Ter os valores num só
+       lugar é o que impede a tela de virar uma coleção de margens
+       escolhidas uma a uma. */
+    --o-space-1: 4px;
+    --o-space-2: 8px;
+    --o-space-3: 12px;
+    --o-space-4: 16px;
+    --o-space-5: 24px;
+    --o-space-6: 32px;
+
+    --o-font-sm: 13px;
+    --o-font-lg: 16px;
 }
 
 * {
@@ -247,37 +262,162 @@ button {
 
 /* formulário ----------------------------------------------------------- */
 
+/* A folha: um cartão centrado sobre o fundo, como uma página de papel.
+   É o que faz um formulário parecer um documento e não uma tela de
+   configuração. */
+.o_form_sheet_bg {
+    padding: var(--o-space-5) 0;
+}
+
 .o_form_sheet {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 24px;
     background: var(--o-surface);
     border: 1px solid var(--o-border);
-    border-radius: 4px;
-    padding: 20px;
+    border-radius: 6px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: var(--o-space-5) var(--o-space-6) var(--o-space-6);
+}
+
+/* A barra de status, no alto da folha: ações à esquerda, estágios à
+   direita. Onde o registro está na vida dele é metade do motivo de
+   abrir o formulário. */
+.o_form_statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--o-space-4);
+    flex-wrap: wrap;
+    margin: calc(var(--o-space-5) * -1) calc(var(--o-space-6) * -1) var(--o-space-5);
+    padding: var(--o-space-3) var(--o-space-6);
+    border-bottom: 1px solid var(--o-border);
+    background: var(--o-bg-subtle);
+    border-radius: 6px 6px 0 0;
+}
+
+.o_statusbar_buttons {
+    display: flex;
+    gap: var(--o-space-2);
+    flex-wrap: wrap;
+}
+
+.o_statusbar_status {
+    display: flex;
+    align-items: center;
+    gap: var(--o-space-1);
+    margin-left: auto;
+}
+
+.o_stage {
+    padding: 2px var(--o-space-3);
+    border: 1px solid var(--o-border);
+    border-radius: 999px;
+    font-size: var(--o-font-sm);
+    color: var(--o-muted);
+    background: var(--o-surface);
+    white-space: nowrap;
+}
+
+.o_stage_done {
+    color: var(--o-brand);
+    border-color: var(--o-brand-soft);
+}
+
+.o_stage_active {
+    color: #fff;
+    background: var(--o-brand);
+    border-color: var(--o-brand);
+    font-weight: 600;
+}
+
+/* Grupos irmãos lado a lado: a assinatura de um formulário do Odoo —
+   duas colunas de pares, não uma lista comprida que obriga a rolar. */
+.o_group_pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 0 var(--o-space-6);
+    margin-bottom: var(--o-space-5);
 }
 
 .o_group {
-    flex: 1 1 320px;
-    min-width: 280px;
+    margin-bottom: var(--o-space-5);
 }
 
+.o_group_title {
+    font-weight: 600;
+    color: var(--o-text);
+    padding-bottom: var(--o-space-2);
+    margin-bottom: var(--o-space-3);
+    border-bottom: 1px solid var(--o-border);
+}
+
+/* Rótulo e valor alinhados numa grade, não com uma largura fixa: rótulos
+   longos deixam de empurrar o campo para fora. */
 .o_form_row {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(120px, 30%) 1fr;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 10px;
+    gap: var(--o-space-3);
+    padding: var(--o-space-1) 0;
+    min-height: 30px;
 }
 
 .o_form_row label {
-    width: 140px;
-    flex: 0 0 auto;
     color: var(--o-muted);
+    font-size: var(--o-font-sm);
+    text-align: left;
+    overflow-wrap: anywhere;
 }
 
 .o_form_row label.o_required::after {
     content: " *";
     color: var(--o-danger);
+}
+
+/* Abas ------------------------------------------------------------------ */
+
+.o_notebook {
+    margin-top: var(--o-space-5);
+}
+
+.o_notebook_headers {
+    display: flex;
+    gap: var(--o-space-1);
+    border-bottom: 1px solid var(--o-border);
+}
+
+.o_notebook_tab {
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: 0;
+    padding: var(--o-space-2) var(--o-space-4);
+    color: var(--o-muted);
+    border-radius: 4px 4px 0 0;
+    margin-bottom: -1px;
+}
+
+.o_notebook_tab:hover {
+    color: var(--o-text);
+}
+
+.o_notebook_tab.o_active {
+    color: var(--o-brand);
+    background: var(--o-surface);
+    border-color: var(--o-border);
+    border-bottom-color: var(--o-surface);
+    font-weight: 600;
+}
+
+.o_notebook_page {
+    padding-top: var(--o-space-4);
+}
+
+.o_separator {
+    font-weight: 600;
+    color: var(--o-text);
+    margin: var(--o-space-5) 0 var(--o-space-3);
+    padding-bottom: var(--o-space-2);
+    border-bottom: 1px solid var(--o-border);
 }
 
 .o_field {
