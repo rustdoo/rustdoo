@@ -209,11 +209,20 @@ fn build_bundle(
                 let target = entry.target.as_deref().unwrap_or_default();
                 let target_files = walker.expand(declaration.module, target)?;
                 let Some(index) = paths.position_of(&target_files) else {
-                    return Err(RusdooError::Validation(format!(
+                    // the same rule `remove` follows above, for the same
+                    // reason: a bundle Odoo would only ever build on
+                    // request is built here at boot, so a directive whose
+                    // anchor arrives later — or never, in this install —
+                    // does nothing instead of refusing everything.
+                    // `onboarding` positions a variables file `before`
+                    // one that another addon contributes.
+                    tracing::warn!(
                         "module {}: {:?} in bundle {bundle:?} targets {target:?}, \
-                         which is not in the bundle",
-                        declaration.module, entry.directive
-                    )));
+                         which is not in the bundle, ignored",
+                        declaration.module,
+                        entry.directive
+                    );
+                    continue;
                 };
                 match entry.directive {
                     AssetDirective::Before => paths.insert(index, files),

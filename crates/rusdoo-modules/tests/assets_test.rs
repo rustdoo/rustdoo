@@ -257,24 +257,32 @@ fn a_path_in_an_uninstalled_module_is_an_error() {
     );
 }
 
+/// A `before`/`after`/`replace` whose anchor is not in the bundle does
+/// nothing, and says so.
+///
+/// The sibling of the rule `remove` follows. Odoo builds a bundle when a
+/// page asks for it, so a directive whose anchor another addon
+/// contributes — or that this install simply does not have — is
+/// evaluated in a bundle where the anchor is already there, or is never
+/// evaluated at all. Resolving every bundle at boot reaches both cases,
+/// and `onboarding` really does position a variables file `before` one
+/// that arrives from elsewhere.
+
 #[test]
-fn a_directive_targeting_an_absent_file_is_an_error() {
+fn a_directive_targeting_an_absent_file_is_ignored() {
     let fixture = Fixture::new("bad-target");
     let web = fixture.addon(
         "web",
-        r#"{'name': 'Web', 'assets': {'web.assets_backend': ['web/static/src/one.js']}}"#,
+        r#"{'name': 'Web', 'assets': {'web.assets_backend': [
+            'web/static/src/one.js',
+            ('before', 'web/static/src/nowhere.js', 'web/static/src/two.js')]}}"#,
         &["static/src/one.js", "static/src/two.js"],
     );
-    let patch = fixture.addon(
-        "patch",
-        r#"{'name': 'Patch', 'depends': ['web'], 'assets': {'web.assets_backend': [
-               ('after', 'web/static/src/two.js', 'patch/static/src/late.js')]}}"#,
-        &["static/src/late.js"],
-    );
-    let error = resolve_bundles(&[&web, &patch]).expect_err("bad target rejected");
-    assert!(
-        error.to_string().contains("not in the bundle"),
-        "unexpected error: {error}"
+    let bundles = resolve_bundles(&[&web]).expect("the bundle still resolves");
+    assert_eq!(
+        paths(bundles.files("web.assets_backend")),
+        vec!["web/static/src/one.js"],
+        "the anchored file is dropped with its directive, and the rest stands"
     );
 }
 
