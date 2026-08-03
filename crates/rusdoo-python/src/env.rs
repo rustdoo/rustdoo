@@ -66,22 +66,42 @@ pub fn current() -> Result<Env, RusdooError> {
 
 /// Run an ORM future from Python, blocking until it answers.
 ///
-/// `block_in_place` first: the caller is on a tokio worker, and blocking
-/// it without telling the runtime would stall every other task sharing
-/// that thread. Told, the runtime moves the rest of its work elsewhere.
-/// Off a runtime thread there is nothing to warn, and the handle blocks
-/// directly.
-pub fn wait<F: Future>(future: F) -> F::Output {
+/// Two things are released, and leaving out either one costs the whole
+/// server its concurrency.
+///
+/// **The GIL.** This is reached from inside a Python call, which holds
+/// it, and what follows is a query — microseconds of bytecode in front
+/// of a round trip to Postgres. Holding the interpreter lock across that
+/// wait would serialize every Python call in the process on the
+/// *database's* latency rather than on any Python running, and no second
+/// interpreter would fix it: there is nothing to run in parallel, only
+/// something to wait for. Measured, holding it flattened throughput to
+/// 1.0x at every level of concurrency; releasing it is what makes the
+/// bridge scale at all (`examples/gil_bench.rs`).
+///
+/// **The worker thread.** Blocking a tokio worker without telling the
+/// runtime would stall every other task sharing it. Told, the runtime
+/// moves the rest of its work elsewhere. Off a runtime thread there is
+/// nothing to warn, and the handle blocks directly.
+pub fn wait<F>(future: F) -> F::Output
+where
+    F: Future + Send,
+    F::Output: Send,
+{
     let env = CURRENT.with(|slot| slot.borrow().clone());
-    match env {
-        Some(env) => match tokio::runtime::Handle::try_current() {
-            Ok(_) => tokio::task::block_in_place(|| env.handle.block_on(future)),
-            Err(_) => env.handle.block_on(future),
-        },
+    let Some(env) = env else {
         // no environment: the caller is about to get a clear error from
         // `current()` anyway, so this only has to not panic
-        None => futures_lite_block_on(future),
-    }
+        return futures_lite_block_on(future);
+    };
+    let block = move || match tokio::runtime::Handle::try_current() {
+        Ok(_) => tokio::task::block_in_place(|| env.handle.block_on(future)),
+        Err(_) => env.handle.block_on(future),
+    };
+    // `attach` first because `detach` needs a token to prove the GIL is
+    // there to be given up. On the thread that called into Python it
+    // already is, and attaching to what is held costs nothing.
+    pyo3::Python::attach(|py| py.detach(block))
 }
 
 /// A last-resort executor for the case above.
