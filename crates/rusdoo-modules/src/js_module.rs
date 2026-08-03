@@ -205,7 +205,7 @@ static EXPORT_FCT_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 fn convert_export_function(content: &str) -> String {
     EXPORT_FCT_RE
-        .replace_all(content, "$space__exports.$identifier = $identifier; $type $identifier")
+        .replace_all(content, "${space}__exports.$identifier = $identifier; $type $identifier")
         .into_owned()
 }
 
@@ -299,7 +299,7 @@ static EXPORT_DEFAULT_RE: LazyLock<Regex> = LazyLock::new(|| {
 fn convert_default_export(content: &str) -> String {
     let out = EXPORT_FCT_DEFAULT_RE.replace_all(
         content,
-        "$space__exports[Symbol.for(\"default\")] = $identifier; $type $identifier",
+        "${space}__exports[Symbol.for(\"default\")] = $identifier; $type $identifier",
     );
     let out = EXPORT_CLASS_DEFAULT_RE.replace_all(
         &out,
@@ -310,7 +310,7 @@ fn convert_default_export(content: &str) -> String {
         "$space$type $identifier = __exports[Symbol.for(\"default\")]",
     );
     EXPORT_DEFAULT_RE
-        .replace_all(&out, "$space__exports[Symbol.for(\"default\")] =")
+        .replace_all(&out, "${space}__exports[Symbol.for(\"default\")] =")
         .into_owned()
 }
 
@@ -710,5 +710,44 @@ odoo.define(`test_assetsbundle.Alias`, ['@test_assetsbundle/alias'], function (r
             "/web/static/src/legacy.js",
             "/** @odoo-module ignore **/\nvar a = 1;"
         ));
+    }
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::*;
+
+    /// `export function` and a bare `export default`.
+    ///
+    /// These were written `$space__exports` in the replacement, which
+    /// this engine reads as one variable named `space__exports` — no
+    /// such group, so it expanded to nothing and the line came out
+    /// starting with `.name = ...`. A syntax error at that point takes
+    /// down every module after it in the bundle, which is how a browser
+    /// found it and the unit tests did not.
+    #[test]
+    fn an_exported_function_keeps_its_exports_prefix() {
+        let out = transpile(
+            "/demo/static/src/thing.js",
+            "export function greet() {}\nexport default function main() {}\nexport default 42;\n",
+        )
+        .expect("it transpiles");
+        assert!(
+            out.contains("__exports.greet = greet; function greet"),
+            "the named export kept its prefix: {out}"
+        );
+        assert!(
+            out.contains("__exports[Symbol.for(\"default\")] = main; function main"),
+            "so did the default one: {out}"
+        );
+        assert!(
+            out.contains("__exports[Symbol.for(\"default\")] = 42;"),
+            "and the bare default: {out}"
+        );
+        // nothing may come out starting at a dot
+        assert!(
+            !out.lines().any(|line| line.trim_start().starts_with(".")),
+            "a line begins with a dot, which is a syntax error: {out}"
+        );
     }
 }
