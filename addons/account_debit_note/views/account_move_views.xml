@@ -1,16 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- O Odoo enxerta os dois botões no form de `account` com
-         `inherit_id` e `position`. O port ainda não tem herança de
-         views: a saída é publicar o form inteiro com prioridade menor,
-         que é o que o servidor escolhe. O preço é a duplicação — mexeu
-         no form de `account`, mexa aqui também. -->
+    <!-- Uma herança de view: este módulo publica o que muda no form de
+         `account`, não uma cópia dele. Quem mexer no form de lá não
+         precisa lembrar deste arquivo. -->
     <record id="view_move_form_debit" model="ir.ui.view">
         <field name="name">account.move.form.debit</field>
         <field name="model">account.move</field>
         <field name="type">form</field>
-        <field name="priority">5</field>
-        <field name="arch" type="xml"><form><button name="action_post" type="object" string="Lançar" class="btn-primary"/><button name="action_cancel" type="object" string="Cancelar"/><button name="action_draft" type="object" string="Voltar a rascunho"/><button name="action_debit_note" type="object" string="Nota de débito"/><button name="action_view_debit_notes" type="object" string="Ver as notas de débito"/><report name="account.action_report_invoice" string="Imprimir"/><group><field name="name" string="Número"/><field name="partner_id" string="Cliente"/><field name="invoice_date" string="Data da fatura"/><field name="invoice_date_due" string="Vencimento"/></group><group><field name="move_type" string="Tipo"/><field name="state" string="Situação"/><field name="invoice_origin" string="Origem"/><field name="amount_total" string="Total"/></group><group><field name="debit_origin_id" string="Fatura debitada" readonly="1"/><field name="debit_note_count" string="Notas de débito emitidas" readonly="1"/></group><field name="line_ids" string="Linhas da fatura"><list><field name="product_id" string="Produto"/><field name="name" string="Descrição"/><field name="quantity" string="Quantidade"/><field name="price_unit" string="Preço unitário"/><field name="price_subtotal" string="Subtotal"/></list></field><group><field name="narration" string="Observações"/></group><chatter/></form></field>
+        <field name="inherit_id" ref="account.view_move_form"/>
+        <field name="arch" type="xml"><data><xpath expr="//button[@name='action_draft']" position="after"><button name="action_debit_note" type="object" string="Nota de débito"/><button name="action_view_debit_notes" type="object" string="Ver as notas de débito"/></xpath><xpath expr="//field[@name='invoice_origin']" position="after"><field name="debit_origin_id" string="Fatura debitada" readonly="1"/><field name="debit_note_count" string="Notas de débito emitidas" readonly="1"/></xpath></data></field>
     </record>
 
     <record id="action_debit_notes" model="ir.actions.act_window">

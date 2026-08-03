@@ -79,6 +79,15 @@ async fn fixture(url: &str, schema: &str) -> OrmService {
     .execute(&pool)
     .await
     .unwrap();
+    // a boot always has this table; what this fixture wants is a table
+    // with no rows for `res.partner`, which is what "no view yet" means
+    sqlx::query(
+        r#"CREATE TABLE "ir_ui_view" ("id" serial primary key, "model" varchar,
+           "type" varchar, "priority" int4, "inherit_id" int4, "arch" text)"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
 
     // an action scoped by a domain, reachable by external id
     let scoped = reg
@@ -231,7 +240,7 @@ async fn a_missing_default_view_is_omitted_not_an_error_live() {
         return;
     };
     let service = fixture(&url, "rusdoo_action_views").await;
-    // the fixture has no ir.ui.view rows at all
+    // the fixture's ir.ui.view table is empty
     let body = json!({"jsonrpc": "2.0", "id": 1, "method": "call",
                       "params": {"model": "res.partner", "method": "get_views", "args": [],
                                  "kwargs": {"views": [[false, "list"], [false, "form"]]}}});

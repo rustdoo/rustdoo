@@ -13,6 +13,7 @@ mod group;
 pub mod jsonrpc;
 pub mod report;
 pub mod routes;
+pub mod view_inherit;
 pub mod session;
 mod web_read;
 mod webclient;

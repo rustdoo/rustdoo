@@ -2865,6 +2865,12 @@ async fn get_views_returns_arch_and_fields_live() {
             Field::new("model", FieldType::Char { size: None }),
             Field::new("type", FieldType::Char { size: None }).default_value(json!("form")),
             Field::new("priority", FieldType::Integer).default_value(json!(16)),
+            Field::new(
+                "inherit_id",
+                FieldType::Many2one {
+                    comodel: "ir.ui.view".into(),
+                },
+            ),
             Field::new("arch", FieldType::Text),
         ],
     ))

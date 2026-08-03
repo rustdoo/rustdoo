@@ -1341,6 +1341,7 @@ dependencies = [
  "axum",
  "chrono",
  "http-body-util",
+ "quick-xml",
  "rusdoo-account",
  "rusdoo-base",
  "rusdoo-core",

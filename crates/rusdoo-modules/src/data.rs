@@ -161,7 +161,12 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
                         // Find where the closing tag starts (its '<' is the
                         // last one before end_pos) so trailing whitespace in
                         // </field  > cannot leak into the captured markup.
-                        let _ = element;
+                        if element.name().as_ref() != b"field" {
+                            return Err(xml_err(
+                                "field",
+                                "markup closed by an element that is not </field>",
+                            ));
+                        }
                         let end_pos = reader.buffer_position() as usize;
                         let tag_start = source[..end_pos].rfind('<').unwrap_or(end_pos);
                         let raw = source
@@ -208,6 +213,13 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
                 let name = element.name();
                 let attrs = attr_map(&element)?;
                 let inherited = *noupdate_stack.last().unwrap_or(&false);
+                // inside an open <field>, every element is content —
+                // including <data>, which a view patch uses to hold its
+                // instructions and which is otherwise a noupdate scope
+                if field.is_some() {
+                    markup = Some(if self_closing { 0 } else { 1 });
+                    continue;
+                }
                 match name.as_ref() {
                     b"odoo" | b"openerp" | b"data" => {
                         let flag = get_attr(&attrs, "noupdate")
@@ -268,11 +280,6 @@ pub fn parse_xml_data(source: &str) -> Result<Vec<DataRecord>, RusdooError> {
                         }
                     }
                     _ => {
-                        if field.is_some() {
-                            // child markup inside a field: capture it verbatim
-                            markup = Some(if self_closing { 0 } else { 1 });
-                            continue;
-                        }
                         if record.is_some() {
                             return Err(xml_err("record", "unexpected element inside <record>"));
                         }

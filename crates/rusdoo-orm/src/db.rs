@@ -104,6 +104,20 @@ impl Model {
         let mut tx = pool.begin().await.map_err(db_err)?;
         let sql = create_table_sql(self)?;
         sqlx::query(&sql).execute(&mut *tx).await.map_err(db_err)?;
+        // the table may predate a field the model gained since — from an
+        // upgrade, or from another module extending this model. Adding
+        // the column here is what makes either of those work on a
+        // database that already has data.
+        let mut wants_not_null = Vec::new();
+        for (statement, required) in crate::ddl::add_missing_columns_sql(self)? {
+            sqlx::query(&statement)
+                .execute(&mut *tx)
+                .await
+                .map_err(db_err)?;
+            if required {
+                wants_not_null.push(statement);
+            }
+        }
         for field in self.fields() {
             if let Some(rel_sql) = create_relation_table_sql(field)? {
                 sqlx::query(&rel_sql)
@@ -112,7 +126,34 @@ impl Model {
                     .map_err(db_err)?;
             }
         }
-        tx.commit().await.map_err(db_err)
+        tx.commit().await.map_err(db_err)?;
+
+        // the constraint comes after the commit, one statement at a
+        // time: a table with rows in it rejects a NOT NULL column, and a
+        // failed statement inside the transaction above would take the
+        // column it belongs to down with it.
+        for statement in wants_not_null {
+            let Some(column) = statement
+                .rsplit("ADD COLUMN IF NOT EXISTS ")
+                .next()
+                .and_then(|rest| rest.split_whitespace().next())
+                .map(|column| column.trim_matches('"').to_string())
+            else {
+                continue;
+            };
+            let not_null = crate::ddl::set_not_null_sql(self, &column)?;
+            if sqlx::query(&not_null).execute(pool).await.is_err() {
+                // saying so beats refusing the upgrade: the field is
+                // required in the model, and the rows that predate it
+                // are the ones the database cannot vouch for
+                tracing::warn!(
+                    "{}: a coluna {column:?} é obrigatória, mas há linhas sem valor — \
+                     a restrição NOT NULL não foi aplicada",
+                    self.meta.name
+                );
+            }
+        }
+        Ok(())
     }
 
     pub async fn search(

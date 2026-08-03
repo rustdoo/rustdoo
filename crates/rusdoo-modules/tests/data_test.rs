@@ -435,6 +435,32 @@ fn markup_close_tag_with_whitespace() {
 }
 
 #[test]
+fn a_view_patch_arch_survives_the_loader() {
+    // o arch de uma herança de view é `<data>` com um `<field>` de
+    // verdade dentro: nenhum dos dois é do registro, os dois já foram
+    // lidos como se fossem
+    let src = r#"<odoo><record id="v" model="ir.ui.view">
+        <field name="inherit_id" ref="account.view_move_form"/>
+        <field name="arch" type="xml"><data><xpath expr="//button[@name='action_draft']" position="after"><button name="x"/></xpath><field name="invoice_origin" position="after"><field name="debit_origin_id"/></field></data></field>
+    </record></odoo>"#;
+
+    let record = &parse_xml_data(src).unwrap()[0];
+
+    assert_eq!(record.fields.len(), 2, "dois campos, não cinco");
+    assert_eq!(
+        record.fields[0].1,
+        FieldValue::Ref("account.view_move_form".into())
+    );
+    let arch = match &record.fields[1].1 {
+        FieldValue::Text(t) => t,
+        other => panic!("expected text arch, got {other:?}"),
+    };
+    assert!(arch.starts_with("<data>"), "{arch}");
+    assert!(arch.ends_with("</data>"), "{arch}");
+    assert!(arch.contains(r#"<field name="debit_origin_id"/>"#), "{arch}");
+}
+
+#[test]
 fn access_csv_on_unknown_model_errors() {
     use rusdoo_modules::installer::{apply_access_records, XmlIds};
     use rusdoo_orm::access::AccessControl;

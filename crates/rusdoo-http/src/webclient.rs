@@ -246,14 +246,11 @@ impl OrmService {
             // none omits it: a client that can draw four kinds of view
             // should not be refused the two that exist. Asking for a
             // specific id that is missing stays an error.
-            match self.find_view(model, *view_id, kind).await {
-                Ok(view) => {
+            match self.find_view(model, *view_id, kind).await? {
+                Some(view) => {
                     views.insert(kind.clone(), view);
                 }
-                Err(error) if view_id.is_none() => {
-                    tracing::debug!("{model}: {}", error.message);
-                }
-                Err(error) => return Err(error),
+                None => tracing::debug!("{model}: sem view {kind} padrão"),
             }
         }
         let fields = self.fields_metadata(model, &std::collections::HashSet::new())?;
@@ -268,12 +265,17 @@ impl OrmService {
     /// the answer is stable). A view asked for by id must really belong
     /// to this model and type — answering with someone else's arch would
     /// render the wrong screen.
+    ///
+    /// `None` means this model has no default view of that kind — the
+    /// one case the caller may pass over. Anything else, a broken query
+    /// included, is an error: a database that cannot answer must not
+    /// read to the client as a screen that was never drawn.
     async fn find_view(
         &self,
         model: &str,
         view_id: Option<i64>,
         kind: &str,
-    ) -> Result<Value, RpcError> {
+    ) -> Result<Option<Value>, RpcError> {
         let row: Option<ViewRow> = match view_id {
             Some(id) => sqlx::query_as(
                 r#"SELECT "id", "model", "type", "arch" FROM "ir_ui_view" WHERE "id" = $1"#,
@@ -282,9 +284,12 @@ impl OrmService {
             .fetch_optional(&self.pool)
             .await
             .map_err(db_error)?,
+            // a patch is not a view a client can ask for: it has no
+            // meaning without the one it extends, so it never wins the
+            // default lookup
             None => sqlx::query_as(
                 r#"SELECT "id", "model", "type", "arch" FROM "ir_ui_view"
-                   WHERE "model" = $1 AND "type" = $2
+                   WHERE "model" = $1 AND "type" = $2 AND "inherit_id" IS NULL
                    ORDER BY "priority" NULLS LAST, "id" LIMIT 1"#,
             )
             .bind(model)
@@ -294,10 +299,12 @@ impl OrmService {
             .map_err(db_error)?,
         };
         let Some((id, view_model, view_type, arch)) = row else {
-            return Err(RpcError::invalid_params(match view_id {
-                Some(id) => format!("no ir.ui.view with id {id}"),
-                None => format!("no {kind} view for model {model}"),
-            }));
+            return match view_id {
+                Some(id) => Err(RpcError::invalid_params(format!(
+                    "no ir.ui.view with id {id}"
+                ))),
+                None => Ok(None),
+            };
         };
         if view_model.as_deref() != Some(model) {
             return Err(RpcError::invalid_params(format!(
@@ -311,12 +318,46 @@ impl OrmService {
                 view_type.unwrap_or_default()
             )));
         }
-        Ok(json!({
+        let arch = self.inherited_arch(id, arch.unwrap_or_default()).await?;
+        Ok(Some(json!({
             "id": id,
             "model": model,
             "type": kind,
-            "arch": arch.unwrap_or_default(),
-        }))
+            "arch": arch,
+        })))
+    }
+
+    /// The arch with every patch of it applied, and the patches of those
+    /// patches after them — `ir.ui.view._apply_view_inheritance`.
+    ///
+    /// Lowest priority first, then id, so the order a client sees does
+    /// not depend on which module happened to install first. A patch
+    /// that fails is reported, not skipped: a module asked for a change
+    /// to this screen and did not get it.
+    async fn inherited_arch(&self, base_id: i32, arch: String) -> Result<String, RpcError> {
+        let mut result = arch;
+        let mut pending = vec![base_id];
+        while let Some(parent) = pending.pop() {
+            let children: Vec<(i32, Option<String>)> = sqlx::query_as(
+                r#"SELECT "id", "arch" FROM "ir_ui_view" WHERE "inherit_id" = $1
+                   ORDER BY "priority" NULLS LAST, "id""#,
+            )
+            .bind(parent)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db_error)?;
+            for (child, patch) in children {
+                let patch = patch.unwrap_or_default();
+                if patch.trim().is_empty() {
+                    continue;
+                }
+                result = crate::view_inherit::apply_inheritance(&result, &patch).map_err(|error| {
+                    RpcError::invalid_params(format!("ir.ui.view {child}: {error}"))
+                })?;
+                pending.push(child);
+            }
+        }
+        Ok(result)
     }
 }
 

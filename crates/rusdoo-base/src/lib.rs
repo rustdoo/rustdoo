@@ -257,6 +257,10 @@ fn ui_view() -> Model {
             char("type").default_value(json!("form")),
             // lowest wins when several views share a model and type
             Field::new("priority", FieldType::Integer).default_value(json!(16)),
+            // set when this view is a patch of another one instead of a
+            // view in its own right: a module that adds a field to
+            // somebody else's form publishes the difference, not a copy
+            m2o("inherit_id", "ir.ui.view"),
             Field::new("arch", FieldType::Text),
         ],
     )
