@@ -190,18 +190,28 @@ fn a_file_lands_once_however_many_times_it_is_declared() {
     );
 }
 
+/// A path naming no file is skipped, not refused.
+///
+/// The stricter rule was here first and it was wrong — not as a matter
+/// of taste, but because Odoo does the other thing (`IrAsset._get_paths`
+/// logs a warning and returns nothing) and Odoo's own `web` manifest
+/// names a file its tree does not ship. Refusing it means being unable
+/// to serve the addon this port exists to be compatible with, over a
+/// typo in somebody else's manifest.
 #[test]
-fn a_literal_path_that_does_not_exist_is_an_error() {
+fn a_literal_path_that_does_not_exist_is_skipped() {
     let fixture = Fixture::new("missing");
     let web = fixture.addon(
         "web",
-        r#"{'name': 'Web', 'assets': {'web.assets_backend': ['web/static/src/typo.js']}}"#,
+        r#"{'name': 'Web', 'assets': {'web.assets_backend': [
+            'web/static/src/typo.js', 'web/static/src/right.js']}}"#,
         &["static/src/right.js"],
     );
-    let error = resolve_bundles(&[&web]).expect_err("missing file rejected");
-    assert!(
-        error.to_string().contains("does not exist"),
-        "unexpected error: {error}"
+    let bundles = resolve_bundles(&[&web]).expect("the bundle still resolves");
+    assert_eq!(
+        paths(bundles.files("web.assets_backend")),
+        vec!["web/static/src/right.js"],
+        "the file that exists is served, the one that does not is dropped"
     );
 }
 

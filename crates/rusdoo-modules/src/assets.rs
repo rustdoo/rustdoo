@@ -315,7 +315,14 @@ impl<'a> Walker<'a> {
         if !is_glob(definition) {
             let disk = root.join(rest);
             if !disk.is_file() {
-                return Err(bad("does not exist"));
+                // warned and skipped, not refused, which is Odoo's own
+                // behaviour (`IrAsset._get_paths` logs and returns
+                // nothing). It is not the stricter rule that is right
+                // here: Odoo's own `web` manifest names a file its tree
+                // does not ship, and a port that refused it could not
+                // serve the addon this port exists to be compatible with.
+                tracing::warn!("asset path {definition:?} resolves to nothing, skipped");
+                return Ok(Vec::new());
             }
             return Ok(vec![AssetFile {
                 module: module.to_string(),
