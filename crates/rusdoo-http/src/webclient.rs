@@ -90,7 +90,173 @@ impl OrmService {
             "partner_id": Value::Null,
             "max_file_upload_size": MAX_FILE_UPLOAD_SIZE,
             "active_ids_limit": ACTIVE_IDS_LIMIT,
+            // The company switcher is drawn on every page of the backend
+            // and reads these without checking: no `user_companies` is a
+            // client that renders its navbar and throws.
+            "user_companies": self.user_companies(session.uid).await,
+            // whether an action may celebrate itself with a rainbow. A
+            // constant here because `base_setup` is what makes it a
+            // setting, and that addon is not ported.
+            "show_effect": true,
+            "currencies": self.currencies().await,
+            // Odoo's `bundle_params` carries the language a lazy bundle
+            // must be fetched in, so a dialog loaded later is not in
+            // English inside a Portuguese client.
+            "bundle_params": {"lang": lang},
         })
+    }
+
+    /// The companies the user may act for, as the switcher reads them.
+    ///
+    /// Odoo walks `res.company` through the hierarchy the user is allowed
+    /// (`_get_company_ids`) plus the ancestors it must name to draw the
+    /// tree. Multi-company allowance is not modelled in this port yet, so
+    /// what a user has is the company on their own record — stated here
+    /// rather than pretended: the switcher then shows one company, which
+    /// is the truth about this database.
+    async fn user_companies(&self, uid: i64) -> Value {
+        let company = self.user_company(uid).await;
+        let Some((id, name)) = company else {
+            // A database whose `res.company` was never installed: Odoo
+            // sends no `user_companies` for a non-internal user either,
+            // and the switcher then draws nothing.
+            return Value::Null;
+        };
+        json!({
+            "current_company": id,
+            "allowed_companies": {
+                id.to_string(): {
+                    "id": id,
+                    "name": name,
+                    "sequence": 10,
+                    "child_ids": [],
+                    "parent_id": false,
+                }
+            },
+            "disallowed_ancestor_companies": {},
+        })
+    }
+
+    /// The company on the user's own record, with its name. A user whose
+    /// company is unset acts for the first one there is: Odoo requires
+    /// `company_id` on `res.users`, so a row without it is this port's
+    /// own gap and not a user who belongs nowhere.
+    async fn user_company(&self, uid: i64) -> Option<(i64, String)> {
+        self.registry.get("res.company")?;
+        let own = match self
+            .registry
+            .get("res.users")
+            .and_then(|model| model.field("company_id"))
+        {
+            Some(_) => self
+                .registry
+                .read(&self.pool, "res.users", &[uid], &["company_id"])
+                .await
+                .ok()
+                .and_then(|rows| rows.into_iter().next())
+                // a many2one reads back as [id, display_name]
+                .and_then(|row| {
+                    let pair = row.get("company_id")?.as_array()?.clone();
+                    let id = pair.first()?.as_i64()?;
+                    let name = pair
+                        .get(1)
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string();
+                    Some((id, name))
+                }),
+            None => None,
+        };
+        match own {
+            Some(company) => Some(company),
+            None => self.first_company().await,
+        }
+    }
+
+    /// The company a database starts with, by id.
+    async fn first_company(&self) -> Option<(i64, String)> {
+        let domain = rusdoo_orm::domain::parse_domain(&json!([])).ok()?;
+        let opts = rusdoo_orm::crud::SearchOptions {
+            limit: Some(1),
+            ..Default::default()
+        };
+        let ids = self
+            .registry
+            .search(&self.pool, "res.company", &domain, &opts)
+            .await
+            .ok()?;
+        let row = self
+            .registry
+            .read(&self.pool, "res.company", &ids, &["name"])
+            .await
+            .ok()?
+            .into_iter()
+            .next()?;
+        Some((
+            row.get("id")?.as_i64()?,
+            row.get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+        ))
+    }
+
+    /// Every currency the client may have to format, keyed by id — port
+    /// of `res.currency.get_all_currencies`. A database without the model
+    /// answers none, and the client formats a monetary field with the
+    /// digits of the field itself.
+    async fn currencies(&self) -> Value {
+        let Some(model) = self.registry.get("res.currency") else {
+            return json!({});
+        };
+        let wanted: Vec<&str> = ["name", "symbol", "position", "decimal_places"]
+            .into_iter()
+            .filter(|field| model.field(field).is_some())
+            .collect();
+        let Ok(domain) = rusdoo_orm::domain::parse_domain(&json!([])) else {
+            return json!({});
+        };
+        let Ok(ids) = self
+            .registry
+            .search(
+                &self.pool,
+                "res.currency",
+                &domain,
+                &rusdoo_orm::crud::SearchOptions::default(),
+            )
+            .await
+        else {
+            return json!({});
+        };
+        let Ok(rows) = self
+            .registry
+            .read(&self.pool, "res.currency", &ids, &wanted)
+            .await
+        else {
+            return json!({});
+        };
+        let mut out = serde_json::Map::new();
+        for row in rows {
+            let Some(id) = row.get("id").and_then(Value::as_i64) else {
+                continue;
+            };
+            let digits = row
+                .get("decimal_places")
+                .and_then(Value::as_i64)
+                .unwrap_or(2);
+            out.insert(
+                id.to_string(),
+                json!({
+                    "name": row.get("name").cloned().unwrap_or(Value::Null),
+                    "symbol": row.get("symbol").cloned().unwrap_or(Value::Null),
+                    "position": row.get("position").cloned().unwrap_or(json!("after")),
+                    // Odoo's own pair: the total width nobody uses, then
+                    // the decimal places that matter
+                    "digits": [69, digits],
+                }),
+            );
+        }
+        json!(out)
     }
 
     /// The user's language and timezone, as the client's context carries
