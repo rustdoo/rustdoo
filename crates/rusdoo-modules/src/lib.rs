@@ -11,3 +11,4 @@ pub mod po;
 pub mod loader;
 pub mod manifest;
 pub mod pyliteral;
+pub mod templates;

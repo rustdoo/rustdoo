@@ -95,10 +95,23 @@ impl AssetHub {
         if files.is_empty() {
             return None;
         }
+        // The JS half of a bundle carries the XML half with it: Odoo
+        // compiles the templates into one more module at the end
+        // (`<bundle>.bundle.xml`), which is where the client's OWL
+        // components find them. They are part of this answer, so their
+        // mtimes decide its freshness too.
+        let template_files: Vec<_> = if extension == "js" {
+            self.bundles.files_with_extension(bundle, &["xml"]).collect()
+        } else {
+            Vec::new()
+        };
         // a cached bundle is only good while the files it was built from
         // are the ones on disk: a deploy that replaces them without
         // restarting the server must not keep serving yesterday's client
-        let newest = newest_mtime(&files);
+        let newest = newest_mtime(&files)
+            .into_iter()
+            .chain(newest_mtime(&template_files))
+            .max();
         if let Some(hit) = self.cache.read().expect("asset cache lock").get(name) {
             if hit.built_from == newest {
                 return Some(Arc::clone(hit));
@@ -151,6 +164,27 @@ impl AssetHub {
             body.extend_from_slice(format!("/* {} */\n", file.path).as_bytes());
             body.extend_from_slice(&content);
             body.push(b'\n');
+        }
+        if !template_files.is_empty() {
+            let mut sources: Vec<(String, String)> = Vec::with_capacity(template_files.len());
+            for file in &template_files {
+                match std::fs::read_to_string(&file.disk) {
+                    // the URL the client sees, which is what the template
+                    // is registered under
+                    Ok(source) => sources.push((format!("/{}", file.path), source)),
+                    Err(error) => {
+                        tracing::error!("template {} unreadable: {error}", file.path);
+                        return None;
+                    }
+                }
+            }
+            let templates: Vec<rusdoo_modules::templates::TemplateFile<'_>> = sources
+                .iter()
+                .map(|(url, source)| rusdoo_modules::templates::TemplateFile { url, source })
+                .collect();
+            body.extend_from_slice(
+                rusdoo_modules::templates::template_module(bundle, &templates).as_bytes(),
+            );
         }
         let rendered = Arc::new(Rendered {
             etag: etag_of(&body),
