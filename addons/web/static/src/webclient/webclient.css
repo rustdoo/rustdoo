@@ -591,3 +591,50 @@ input[type="checkbox"].o_input {
 .o_kanban_label::after {
     content: ":";
 }
+
+/* anexos ------------------------------------------------------------------ */
+
+.o_attachments {
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--o-border);
+}
+
+.o_attach_head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.o_attach_input {
+    font-size: 13px;
+}
+
+.o_attach_list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.o_attachment {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--o-border);
+    border-radius: 999px;
+    background: var(--o-bg);
+    color: var(--o-brand);
+    text-decoration: none;
+    font-size: 13px;
+}
+
+.o_attachment:hover {
+    border-color: var(--o-brand);
+}
+
+.o_attach_size {
+    color: var(--o-muted);
+    font-size: 12px;
+}

@@ -67,8 +67,10 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
    `name_search`/`web_name_search`, `web_save`, `web_read_group`,
    `get_session_info`, `load_menus`, `onchange`, `/web/action/load`,
    e os assets: bundles resolvidos dos manifests e servidos em
-   `/web/assets/<bundle>.js|css` + `/<módulo>/static/<arquivo>`.
-   Falta: unfolding de grupos, upload de binários.
+   `/web/assets/<bundle>.js|css` + `/<módulo>/static/<arquivo>`. Anexos
+   (`ir.attachment`) sobem por multipart e voltam por `/web/content/<id>`,
+   com os bytes num filestore em disco.
+   Falta: unfolding de grupos no servidor, multi-database.
 4. **Fase 3 — Módulos + dados** ✅ no essencial: parser de
    `__manifest__.py`, grafo de dependências, loader de XML/CSV
    (`ir.model.data`), instalação de addons.
@@ -84,7 +86,7 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
    (as linhas de um pedido), botões de ação do arch, o chatter e os
    filtros e agrupamento da view de busca (com contagem e somas por
    grupo) e a view kanban (colunas por grupo, com troca list/quadro).
-   Falta: anexos, edição em massa.
+   Falta: edição em massa, arrastar cartões no quadro.
 7. **Fase 6 — Addons de negócio** *(atual)*: port módulo a módulo em ordem
    do grafo de dependências. Já portados: `mail` (chatter), `product`,
    `sale` (pedidos, linhas, totais e botões de estado) e `account`
@@ -121,6 +123,7 @@ Abra <http://localhost:8069/web>. Variáveis úteis:
 | `RUSDOO_ADDR` | endereço de escuta (padrão `0.0.0.0:8069`) |
 | `RUSDOO_ADDONS_PATH` | diretório de addons (padrão `addons`) |
 | `RUSDOO_INSECURE_COOKIES` | cookies de sessão sem `Secure`, para HTTP local |
+| `RUSDOO_FILESTORE` | onde os anexos ficam em disco (padrão `filestore`) |
 
 ## Testes
 

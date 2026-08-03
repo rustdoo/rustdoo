@@ -73,6 +73,7 @@ pub struct OrmService {
     pub(crate) rules: Arc<rusdoo_orm::rules::RecordRules>,
     pub(crate) assets: Arc<crate::assets::AssetHub>,
     pub(crate) methods: Arc<rusdoo_orm::methods::MethodRegistry>,
+    pub(crate) filestore: Arc<std::path::PathBuf>,
 }
 
 impl OrmService {
@@ -89,6 +90,7 @@ impl OrmService {
             rules: Arc::new(rusdoo_orm::rules::RecordRules::new()),
             assets: crate::assets::AssetHub::empty(),
             methods: Arc::new(rusdoo_orm::methods::MethodRegistry::new()),
+            filestore: Arc::new(crate::attachment::default_filestore()),
         }
     }
 
@@ -110,6 +112,14 @@ impl OrmService {
     /// running the method; a client can ask the same question.
     pub fn method_operation(&self, model: &str, method: &str) -> Option<Operation> {
         self.methods.get(model, method).map(|entry| entry.operation)
+    }
+
+    /// Where the attachment bytes live. It belongs to the service, not
+    /// to the process: two databases served by one binary keep their
+    /// files apart.
+    pub fn with_filestore(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.filestore = Arc::new(path.into());
+        self
     }
 
     /// Install the model methods the compiled-in modules attach.

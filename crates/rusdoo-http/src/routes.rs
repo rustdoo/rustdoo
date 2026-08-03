@@ -39,8 +39,9 @@ pub fn router(service: OrmService) -> Router {
         .route("/report/html/{xml_id}/{res_id}", get(render_report_page))
         .route("/web/action/{xml_id}", get(render_action_page))
         .route("/jsonrpc", post(jsonrpc_endpoint))
-        .with_state(service)
+        .with_state(service.clone())
         .merge(assets)
+        .merge(crate::attachment::routes(service))
 }
 
 /// Browser-visible status page (the web client lands here in Phase 5).
@@ -309,6 +310,15 @@ async fn load_menus(State(service): State<OrmService>, headers: HeaderMap) -> Re
         )
             .into_response(),
     }
+}
+
+/// The session a request carries, for the routes that live in another
+/// module (assets, attachments) and answer for the same user.
+pub(crate) fn session_of(
+    service: &OrmService,
+    headers: &HeaderMap,
+) -> Option<crate::session::Session> {
+    current_session(service, headers)
 }
 
 fn current_session(service: &OrmService, headers: &HeaderMap) -> Option<crate::session::Session> {

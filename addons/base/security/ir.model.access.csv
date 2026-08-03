@@ -19,3 +19,5 @@ access_ir_sequence_user,ir.sequence usuário,ir.sequence,group_user,1,0,0,0
 access_ir_sequence_system,ir.sequence admin,ir.sequence,group_system,1,1,1,1
 access_ir_act_report_user,ir.actions.report usuário,ir.actions.report,group_user,1,0,0,0
 access_ir_act_report_system,ir.actions.report admin,ir.actions.report,group_system,1,1,1,1
+access_ir_attachment_user,anexos usuário,ir.attachment,group_user,1,1,1,0
+access_ir_attachment_system,anexos admin,ir.attachment,group_system,1,1,1,1

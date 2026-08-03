@@ -67,6 +67,7 @@ fn models() -> Vec<Model> {
         ui_view(),
         act_window(),
         report(),
+        attachment(),
         ui_menu(),
     ]
 }
@@ -240,6 +241,28 @@ fn report() -> Model {
     )
 }
 
+/// `ir.attachment` — a file kept next to a record.
+///
+/// The bytes live in the filestore on disk, not in the row: a database
+/// dump should not carry every PDF anyone ever uploaded. The row keeps
+/// what the file is and where it went.
+fn attachment() -> Model {
+    Model::new(
+        meta("ir.attachment", "ir_attachment"),
+        vec![
+            char("name").required(),
+            // which record it belongs to (Odoo's model/res_id pair)
+            char("res_model"),
+            Field::new("res_id", FieldType::Integer),
+            char("mimetype"),
+            Field::new("file_size", FieldType::Integer).default_value(json!(0)),
+            // the name the bytes have inside the filestore
+            char("store_fname"),
+            char("description"),
+        ],
+    )
+}
+
 /// `ir.ui.menu` — the navigation tree.
 fn ui_menu() -> Model {
     Model::new(
@@ -272,6 +295,7 @@ mod tests {
             "ir.ui.view",
             "ir.actions.act_window",
             "ir.actions.report",
+            "ir.attachment",
             "ir.ui.menu",
         ] {
             assert!(reg.get(name).is_some(), "{name} must be registered");

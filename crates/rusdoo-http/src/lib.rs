@@ -6,6 +6,7 @@
 //! routing, session expiry.
 
 pub mod assets;
+pub mod attachment;
 pub mod dispatch;
 mod group;
 pub mod jsonrpc;

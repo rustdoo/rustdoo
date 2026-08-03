@@ -26,17 +26,49 @@
             this.resId = config.resId || null;
             this.onError = config.onError || function () {};
             this.messages = [];
+            this.attachments = [];
             this.root = el("div", { class: "o_chatter" });
         }
 
         async load() {
             if (!this.resId) {
                 this.messages = [];
+                this.attachments = [];
                 return;
             }
             this.messages = await callKw(this.model, "message_fetch", [[this.resId]], {
                 limit: FETCH_LIMIT,
             });
+            // os anexos são registros como quaisquer outros: quem não
+            // pode lê-los recebe erro, e o painel diz isso em vez de
+            // esconder que existem
+            this.attachments = await callKw("ir.attachment", "search_read", [
+                [
+                    ["res_model", "=", this.model],
+                    ["res_id", "=", this.resId],
+                ],
+            ], { fields: ["id", "name", "file_size"] });
+        }
+
+        /** Envia os arquivos escolhidos e recarrega o painel. */
+        async upload(files) {
+            const form = new FormData();
+            form.append("model", this.model);
+            form.append("id", String(this.resId));
+            for (const file of files) {
+                form.append("ufile", file, file.name);
+            }
+            const response = await fetch("/web/binary/upload_attachment", {
+                method: "POST",
+                credentials: "same-origin",
+                body: form,
+            });
+            const answer = await response.json();
+            if (!response.ok || answer.error) {
+                throw new Error(answer.error || "falha no envio");
+            }
+            await this.load();
+            this.render();
         }
 
         async post(body) {
@@ -73,6 +105,68 @@
             return el("div", { class: "o_composer_box" }, [input, send]);
         }
 
+        /** Tamanho legível: um anexo não se mede em bytes na tela. */
+        renderSize(size) {
+            const bytes = Number(size) || 0;
+            if (bytes >= 1024 * 1024) {
+                return (bytes / 1024 / 1024).toFixed(1) + " MB";
+            }
+            if (bytes >= 1024) {
+                return Math.round(bytes / 1024) + " kB";
+            }
+            return bytes + " B";
+        }
+
+        renderAttachments() {
+            const input = el("input", {
+                type: "file",
+                multiple: "multiple",
+                class: "o_attach_input",
+                onchange: async (event) => {
+                    const files = Array.from(event.target.files || []);
+                    if (!files.length) {
+                        return;
+                    }
+                    try {
+                        await this.upload(files);
+                    } catch (error) {
+                        this.onError(error);
+                    }
+                },
+            });
+            return el("div", { class: "o_attachments" }, [
+                el("div", { class: "o_attach_head" }, [
+                    el("strong", {}, "Anexos"),
+                    input,
+                ]),
+                el(
+                    "div",
+                    { class: "o_attach_list" },
+                    this.attachments.length
+                        ? this.attachments.map((attachment) =>
+                              el(
+                                  "a",
+                                  {
+                                      class: "o_attachment",
+                                      href: "/web/content/" + attachment.id,
+                                      target: "_blank",
+                                      rel: "noopener",
+                                  },
+                                  [
+                                      attachment.name,
+                                      el(
+                                          "span",
+                                          { class: "o_attach_size" },
+                                          this.renderSize(attachment.file_size)
+                                      ),
+                                  ]
+                              )
+                          )
+                        : el("span", { class: "o_nocontent" }, "Nenhum anexo.")
+                ),
+            ]);
+        }
+
         renderMessage(message) {
             return el("div", { class: "o_message" }, [
                 el("div", { class: "o_message_head" }, [
@@ -93,6 +187,7 @@
             }
             fill(this.root, [
                 el("h3", {}, "Discussão"),
+                this.renderAttachments(),
                 this.renderComposer(),
                 el(
                     "div",
