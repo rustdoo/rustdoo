@@ -95,24 +95,43 @@ impl AssetHub {
                 return Some(Arc::clone(hit));
             }
         }
-        let mut body = Vec::new();
-        for file in files {
-            match std::fs::read(&file.disk) {
-                Ok(content) => {
-                    // keep the origin of each chunk visible: a stack trace
-                    // in the browser is otherwise a line number into a
-                    // file nobody wrote
-                    body.extend_from_slice(format!("/* {} */\n", file.path).as_bytes());
-                    body.extend_from_slice(&content);
-                    body.push(b'\n');
-                }
-                Err(error) => {
-                    // the file was there when the bundle resolved; losing
-                    // it now must not serve a silently truncated bundle
-                    tracing::error!("asset {} unreadable: {error}", file.path);
-                    return None;
-                }
+        // the bundle's Sass compiles as one unit, before anything is
+        // concatenated. See [`compile_sass`] for why it cannot be per
+        // file.
+        let compiled = match compile_sass(&files, &self.roots) {
+            Ok(compiled) => compiled,
+            Err(error) => {
+                tracing::error!("bundle {name} does not compile: {error}");
+                return None;
             }
+        };
+        let mut body = Vec::new();
+        // whatever Sass hoisted above the first file — `@charset`, and
+        // the at-rules CSS 2.1 requires at the top — belongs there and
+        // nowhere else
+        if let Some(hoisted) = compiled.get(HOISTED) {
+            body.extend_from_slice(hoisted.as_bytes());
+            body.push(b'\n');
+        }
+        for file in files {
+            let content = match compiled.get(&file.path) {
+                Some(css) => css.clone().into_bytes(),
+                None => match std::fs::read(&file.disk) {
+                    Ok(content) => content,
+                    Err(error) => {
+                        // the file was there when the bundle resolved;
+                        // losing it now must not serve a silently
+                        // truncated bundle
+                        tracing::error!("asset {} unreadable: {error}", file.path);
+                        return None;
+                    }
+                },
+            };
+            // keep the origin of each chunk visible: a stack trace in the
+            // browser is otherwise a line number into a file nobody wrote
+            body.extend_from_slice(format!("/* {} */\n", file.path).as_bytes());
+            body.extend_from_slice(&content);
+            body.push(b'\n');
         }
         let rendered = Arc::new(Rendered {
             etag: etag_of(&body),
@@ -237,6 +256,131 @@ fn answer(rendered: Option<Arc<Rendered>>, headers: &HeaderMap, cache: &str) -> 
 /// The newest modification time among a bundle's files. `None` when the
 /// filesystem cannot say — in which case the cache is kept, because
 /// rebuilding on every request would be worse than a stale byte.
+/// The key the at-rules Sass hoisted above everything are filed under.
+/// Not a path any asset can have, because `/` never starts one here.
+const HOISTED: &str = "/hoisted";
+
+/// The bundle's Sass as the CSS the browser can actually read, port of
+/// `preprocess_css` in `odoo/addons/base/models/assetsbundle.py`.
+///
+/// **One unit, not one per file**, and that is the whole difficulty. An
+/// Odoo stylesheet is written expecting the variables and mixins that
+/// earlier files of the same bundle defined — `$o-brand-primary`, the
+/// Bootstrap helpers — and never imports them itself. Compiled
+/// separately, 133 of the 190 stylesheets in the `web` addon fail on an
+/// undefined variable. Compiled together, as Odoo compiles them, they
+/// have what they were written against.
+///
+/// The output is then split back per file. Sass reorders nothing inside
+/// a unit, so a marker in front of each file's source comes out in front
+/// of that file's rules, and the bundle can be reassembled in
+/// declaration order with the plain `.css` files still in their places —
+/// which is what cascade order means. Odoo splits it the same way, for
+/// the same reason.
+///
+/// The load paths are every addons root plus every `static/lib/*/scss`
+/// an addon ships, which is where `@import "variables"` finds Bootstrap:
+/// unlike a plain stylesheet's, a Sass `@import` is left exactly as the
+/// addon wrote it (`PreprocessedCSS.rx_import = None` there) and is the
+/// importer's to resolve.
+fn compile_sass(
+    files: &[&rusdoo_modules::assets::AssetFile],
+    roots: &HashMap<String, PathBuf>,
+) -> Result<HashMap<String, String>, String> {
+    let sass: Vec<&&rusdoo_modules::assets::AssetFile> = files
+        .iter()
+        .filter(|file| matches!(file.extension(), "scss" | "sass"))
+        .collect();
+    if sass.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut source = String::new();
+    for file in &sass {
+        let content = std::fs::read_to_string(&file.disk)
+            .map_err(|error| format!("{} unreadable: {error}", file.path))?;
+        // a loud comment: Sass keeps it, and every style of output keeps
+        // it, which is what makes it usable as a marker
+        source.push_str(&format!("/*!{}*/\n", file.path));
+        source.push_str(&content);
+        source.push('\n');
+    }
+
+    let mut options = grass::Options::default().style(grass::OutputStyle::Expanded);
+    for root in load_paths(files, roots) {
+        options = options.load_path(root);
+    }
+    let css = grass::from_string(source, &options).map_err(|error| error.to_string())?;
+    Ok(split_by_marker(&css))
+}
+
+/// Where an `@import` inside the bundle's Sass may be looked up.
+///
+/// Three kinds, and each is needed by real addons: the directory holding
+/// the addons (so a module-qualified `web/static/src/scss/x` resolves),
+/// the `scss` directory of every vendored library (so Bootstrap's bare
+/// `variables` resolves), and each contributing file's own directory (so
+/// a partial next to it resolves, as it would compiling that file alone).
+fn load_paths(
+    files: &[&rusdoo_modules::assets::AssetFile],
+    roots: &HashMap<String, PathBuf>,
+) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = Vec::new();
+    let mut add = |path: PathBuf| {
+        if path.is_dir() && !paths.contains(&path) {
+            paths.push(path);
+        }
+    };
+    for file in files {
+        if let Some(directory) = file.disk.parent() {
+            add(directory.to_path_buf());
+        }
+    }
+    for root in roots.values() {
+        if let Some(addons) = root.parent() {
+            add(addons.to_path_buf());
+        }
+        let lib = root.join("static").join("lib");
+        let Ok(entries) = std::fs::read_dir(&lib) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            add(entry.path().join("scss"));
+        }
+    }
+    paths
+}
+
+/// The compiled bundle cut back into the files it came from, on the
+/// markers [`compile_sass`] planted.
+///
+/// Anything before the first marker is what Sass hoisted to the top and
+/// is filed under [`HOISTED`].
+fn split_by_marker(css: &str) -> HashMap<String, String> {
+    let mut chunks = HashMap::new();
+    let mut key = HOISTED.to_string();
+    let mut current = String::new();
+    for line in css.lines() {
+        let trimmed = line.trim();
+        if let Some(path) = trimmed
+            .strip_prefix("/*!")
+            .and_then(|rest| rest.strip_suffix("*/"))
+        {
+            if !current.trim().is_empty() {
+                chunks.insert(key, current.trim().to_string());
+            }
+            key = path.to_string();
+            current = String::new();
+            continue;
+        }
+        current.push_str(line);
+        current.push('\n');
+    }
+    if !current.trim().is_empty() {
+        chunks.insert(key, current.trim().to_string());
+    }
+    chunks
+}
+
 fn newest_mtime(files: &[&rusdoo_modules::assets::AssetFile]) -> Option<std::time::SystemTime> {
     files
         .iter()

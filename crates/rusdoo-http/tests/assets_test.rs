@@ -267,3 +267,99 @@ async fn the_rpc_routes_still_answer_alongside_the_asset_routes() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+/// An addon shipping SCSS: nesting, a variable, and an `@import` of a
+/// partial next to it — the three things every Odoo stylesheet uses.
+fn scss_app(fixture: &Fixture) -> axum::Router {
+    let manifest_source = r#"{
+        'name': 'Sassy',
+        'assets': {'web.assets_backend': [
+            'sassy/static/src/theme.scss',
+            'sassy/static/src/plain.css',
+        ]},
+    }"#;
+    let addon = fixture.root.join("sassy");
+    fixture.write("sassy/__manifest__.py", manifest_source);
+    fixture.write(
+        "sassy/static/src/_variables.scss",
+        "$brand: #336699;\n",
+    );
+    fixture.write(
+        "sassy/static/src/theme.scss",
+        r#"@import "variables";
+
+.o_form {
+    color: $brand;
+    .o_field { padding: 4px; }
+}
+"#,
+    );
+    fixture.write("sassy/static/src/plain.css", ".plain { margin: 0; }");
+
+    let mut manifest = parse_manifest(manifest_source, "sassy").expect("manifest");
+    manifest.path = addon.clone();
+    let bundles = resolve_bundles(&[&manifest]).expect("bundles resolve");
+    let roots: HashMap<String, PathBuf> = [("sassy".to_string(), addon)].into_iter().collect();
+
+    let url = std::env::var("RUSDOO_TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:rusdoo@localhost:55432/postgres".into());
+    let service = OrmService::insecure(
+        Arc::new(Registry::new()),
+        rusdoo_orm::db::lazy_pool(&url).unwrap(),
+    )
+    .with_assets(AssetHub::new(bundles, roots));
+    router(service)
+}
+
+/// A `.scss` in a bundle is compiled, not handed to the browser as it
+/// was written.
+///
+/// The bundle is served as `text/css`, so shipping Sass syntax inside it
+/// is not "unsupported" — it is a stylesheet the browser drops on the
+/// floor, silently, and a client that looks unstyled for no visible
+/// reason. Every Odoo addon ships `.scss`: the `web` addon alone has 190
+/// of them.
+#[tokio::test]
+async fn scss_in_a_bundle_is_compiled_to_css() {
+    let fixture = Fixture::new("scss");
+    let (status, headers, body) = get(scss_app(&fixture), "/web/assets/web.assets_backend.css").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers["content-type"], "text/css; charset=utf-8");
+
+    // the variable resolved and the nesting was flattened
+    assert!(
+        body.contains("#336699"),
+        "the @import'd variable resolved: {body}"
+    );
+    assert!(
+        body.contains(".o_form .o_field"),
+        "the nesting was flattened: {body}"
+    );
+    // and nothing Sass-shaped survived into what the browser is told is CSS
+    assert!(!body.contains("$brand"), "a variable reached the client: {body}");
+    assert!(!body.contains("@import"), "an @import reached the client: {body}");
+
+    // a plain .css file still goes through untouched, and after the scss:
+    // declaration order is cascade order
+    let compiled = body.find(".o_form").expect("the scss is in the bundle");
+    let plain = body.find(".plain").expect("the css is in the bundle");
+    assert!(compiled < plain, "declaration order held: {body}");
+}
+
+/// A stylesheet that does not compile fails the bundle instead of
+/// serving the half of it that did.
+#[tokio::test]
+async fn broken_scss_does_not_serve_half_a_stylesheet() {
+    let fixture = Fixture::new("scss-broken");
+    let app = scss_app(&fixture);
+    fixture.write(
+        "sassy/static/src/theme.scss",
+        ".o_form { color: $never_declared; }",
+    );
+    let (status, _, _) = get(app, "/web/assets/web.assets_backend.css").await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "a bundle that cannot be built is not served truncated"
+    );
+}
