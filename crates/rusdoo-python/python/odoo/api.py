@@ -35,10 +35,31 @@ class Environment:
     def user(self):
         return self["res.users"].browse(self.uid)
 
-    def ref(self, xml_id):
-        raise NotImplementedError(
-            "env.ref is not bridged yet: external ids resolve on the Rust side"
-        )
+    @property
+    def company(self):
+        """The company the acting user works for.
+
+        Odoo's `env.company` is the *active* company, which the client
+        picks out of the ones the user is allowed. There is no such
+        switch here yet, so it is the user's own — the same answer for
+        every user who has one company, which is most of them.
+        """
+        company = self.user.company_id
+        if not company:
+            raise ValueError("user %s belongs to no company" % self.uid)
+        return company
+
+    def ref(self, xml_id, raise_if_not_found=True):
+        """The record an external id names, as Odoo's `env.ref`."""
+        from .models import RecordSet
+
+        found = _rusdoo.ref(xml_id)
+        if found is None:
+            if raise_if_not_found:
+                raise ValueError("no record has the external id %r" % xml_id)
+            return None
+        model_name, res_id = found
+        return RecordSet(model_name, [res_id], self)
 
 
 def _tag(**marks):

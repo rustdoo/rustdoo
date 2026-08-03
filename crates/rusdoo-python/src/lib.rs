@@ -173,28 +173,55 @@ fn fields_of(model: &str) -> PyResult<Vec<String>> {
         .collect())
 }
 
-/// `_rusdoo.comodel_of(model, field)` — what a relational field points
-/// at, so a dotted `mapped` knows which model it walked into.
+/// `_rusdoo.relation_of(model, field)` — `(comodel, kind)` when the
+/// field is a relation, `None` when it is an ordinary value.
+///
+/// The kind matters and the comodel alone would not be enough: a
+/// many2one reads back as the pair `[id, name]` and a many2many of two
+/// records as `[id, id]`. Told which it is, the recordset never has to
+/// guess from the shape.
 #[pyfunction]
-fn comodel_of(model: &str, field: &str) -> PyResult<String> {
+fn relation_of(model: &str, field: &str) -> PyResult<Option<(String, String)>> {
     let env = current().map_err(py_err)?;
-    let declared = env
-        .registry
-        .get(model)
-        .and_then(|m| m.field(field).cloned())
-        .ok_or_else(|| {
-            py_err(RusdooError::Validation(format!(
-                "{model} has no field {field:?}"
-            )))
-        })?;
-    match &declared.ty {
-        FieldType::Many2one { comodel }
-        | FieldType::One2many { comodel, .. }
-        | FieldType::Many2many { comodel, .. } => Ok(comodel.clone()),
-        other => Err(py_err(RusdooError::Validation(format!(
-            "{model}.{field} is a {other:?}, not a relation: it cannot be walked through"
-        )))),
-    }
+    let Some(declared) = env.registry.get(model).and_then(|m| m.field(field).cloned()) else {
+        return Ok(None);
+    };
+    Ok(match &declared.ty {
+        FieldType::Many2one { comodel } => Some((comodel.clone(), "many2one".to_string())),
+        FieldType::One2many { comodel, .. } => Some((comodel.clone(), "one2many".to_string())),
+        FieldType::Many2many { comodel, .. } => Some((comodel.clone(), "many2many".to_string())),
+        _ => None,
+    })
+}
+
+/// `_rusdoo.ref(xml_id)` — `(model, id)` for an external id, or `None`.
+///
+/// Straight to `ir_model_data`, because that is where a data file's
+/// `id="..."` ended up and the table outlives the load that wrote it: an
+/// addon calling `env.ref` at runtime is asking about a database, not
+/// about the install that filled it.
+// named `ref` on the Python side, which is what `env.ref` calls, and
+// cannot be named that here — it is a Rust keyword
+#[pyfunction]
+#[pyo3(name = "ref")]
+fn xml_id_ref(xml_id: &str) -> PyResult<Option<(String, i64)>> {
+    let env = current().map_err(py_err)?;
+    let (module, name) = xml_id.split_once('.').ok_or_else(|| {
+        py_err(RusdooError::Validation(format!(
+            "an external id is 'module.name': {xml_id:?}"
+        )))
+    })?;
+    let found: Option<(String, i32)> = wait(
+        sqlx::query_as(
+            r#"SELECT "model", "res_id" FROM "ir_model_data"
+               WHERE "module" = $1 AND "name" = $2"#,
+        )
+        .bind(module)
+        .bind(name)
+        .fetch_optional(&env.pool),
+    )
+    .map_err(|error| py_err(RusdooError::Database(error.to_string())))?;
+    Ok(found.map(|(model, id)| (model, i64::from(id))))
 }
 
 /// `_rusdoo.uid()` — who the calls are being made as.
@@ -261,7 +288,8 @@ fn _rusdoo(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(write, module)?)?;
     module.add_function(wrap_pyfunction!(unlink, module)?)?;
     module.add_function(wrap_pyfunction!(fields_of, module)?)?;
-    module.add_function(wrap_pyfunction!(comodel_of, module)?)?;
+    module.add_function(wrap_pyfunction!(relation_of, module)?)?;
+    module.add_function(wrap_pyfunction!(xml_id_ref, module)?)?;
     module.add_function(wrap_pyfunction!(uid, module)?)
 }
 

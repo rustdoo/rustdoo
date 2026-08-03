@@ -239,7 +239,16 @@ class RecordSet:
             raise ValueError(
                 "reading %r wants one record, got %d" % (name, len(self._ids))
             )
-        return self._read_one()[name]
+        value = self._read_one()[name]
+        # a relation answers records, not the ids the ORM read. Half of
+        # every addon is written `order.partner_id.name`, and a pair
+        # `[id, name]` has no `.name` — an addon that hit that would have
+        # nothing to fix on its side.
+        relation = _rusdoo.relation_of(self._name, name)
+        if relation is not None:
+            comodel, kind = relation
+            return RecordSet(comodel, _ids_in(value, kind), self._env)
+        return value
 
     def __setattr__(self, name, value):
         if name.startswith("_"):
@@ -299,18 +308,28 @@ class RecordSet:
         """`records.mapped('name')` — the values, in order.
 
         A dotted path walks relations, as in Odoo. A relational hop
-        answers a recordset of the comodel, so `order.mapped(
-        'line_ids.product_id')` reads like it does there.
+        answers a recordset of the comodel — with the records it reached
+        deduplicated, as a set is — so `order.mapped('line_ids.
+        product_id')` reads like it does there, and `.mapped('name')` on
+        the last hop gives the plain values.
         """
         head, _, rest = path.partition(".")
-        values = []
-        for record in self:
-            value = getattr(record, head)
-            values.append(value)
-        if not rest:
+        values = [getattr(record, head) for record in self]
+        relation = _rusdoo.relation_of(self._name, head)
+        if relation is None:
+            if rest:
+                raise ValueError(
+                    "%s.%s is not a relation: %r cannot be walked through"
+                    % (self._name, head, path)
+                )
             return values
-        # a relational value comes back as [id, name] or a list of ids
-        return _flatten_relational(self._name, head, values, self._env).mapped(rest)
+        reached = []
+        for value in values:
+            for one in value._ids:
+                if one not in reached:
+                    reached.append(one)
+        hop = RecordSet(relation[0], reached, self._env)
+        return hop.mapped(rest) if rest else hop
 
     def filtered(self, predicate):
         kept = [r.id for r in self if predicate(r)]
@@ -325,23 +344,20 @@ class RecordSet:
         return RecordSet(self._name, found, self._env)
 
 
-def _flatten_relational(model_name, field, values, env):
-    """The comodel recordset behind a relational field's read values."""
-    import _rusdoo as native
+def _ids_in(value, kind):
+    """The ids behind what the ORM read for a relational field.
 
-    comodel = native.comodel_of(model_name, field)
-    ids = []
-    for value in values:
-        if value in (False, None):
-            continue
-        if isinstance(value, list) and value and isinstance(value[0], int):
-            # a many2one reads as [id, name]; an x2many as a list of ids
-            ids.extend(value[1:] and [value[0]] or value)
-        elif isinstance(value, list):
-            ids.extend(value)
-        elif isinstance(value, int):
-            ids.append(value)
-    return RecordSet(comodel, ids, env)
+    The two shapes are told apart by `kind` and never by looking at the
+    value: a many2one reads back as the pair `[id, name]`, and a
+    many2many holding two records reads back as `[id, id]`. Guessing
+    from the shape would take the second for the first exactly when
+    there are two of them.
+    """
+    if not value:
+        return []
+    if kind == "many2one":
+        return [value[0] if isinstance(value, list) else value]
+    return [one for one in value if isinstance(one, int)]
 
 
 class RowRecord:

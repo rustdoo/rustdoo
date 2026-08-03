@@ -389,8 +389,10 @@ result = {
         answer.contains("'after_write': 'double bass'"),
         "the write reached the database and the cache was dropped: {answer}"
     );
+    // one name and not three: a relational hop in `mapped` is a union of
+    // recordsets, as it is in Odoo, and the three members share a band
     assert!(
-        answer.contains("'band_names': ['Trio', 'Trio', 'Trio']"),
+        answer.contains("'band_names': ['Trio']"),
         "a dotted mapped walked the many2one: {answer}"
     );
     assert!(answer.contains("'left': 2"), "unlink removed one: {answer}");
@@ -849,4 +851,158 @@ class Booking(models.Model):
         .execute(&pool)
         .await
         .unwrap();
+}
+
+/// A relation read from Python is a recordset, and the environment can
+/// find a record by its external id.
+///
+/// `order.partner_id.name` is how half of every Odoo addon is written.
+/// Answering it with the `[id, name]` pair the ORM reads would make that
+/// line mean something else — `[id, name].name` is an `AttributeError`,
+/// and an addon that hits it has nothing to fix on its side.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_relation_is_a_recordset_and_env_ref_finds_one_live() {
+    let Some(pool) = rusdoo_testing::pool_in("rusdoo_py_relations") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut registry = Registry::new();
+    let mut methods = rusdoo_orm::methods::MethodRegistry::new();
+    rusdoo_python::load_python_module(
+        &mut registry,
+        &mut methods,
+        "library",
+        r#"
+from odoo import models, fields
+
+
+class Author(models.Model):
+    _name = "library.author"
+    _order = "id"
+
+    name = fields.Char(required=True)
+    country = fields.Char()
+    book_ids = fields.One2many("library.book", "author_id")
+
+
+class Book(models.Model):
+    _name = "library.book"
+    _order = "id"
+
+    name = fields.Char(required=True)
+    author_id = fields.Many2one("library.author", required=True)
+
+    def author_country(self):
+        """The dotted read every addon is written with."""
+        return self.author_id.country
+
+    def author_books(self):
+        """An x2many is a recordset too, and it has a length."""
+        return [len(self.author_id.book_ids), self.author_id.book_ids.mapped("name")]
+
+    def by_external_id(self, xml_id):
+        return self.env.ref(xml_id).name
+"#,
+    )
+    .expect("the addon loads");
+    registry.init_tables(&pool).await.expect("the tables are made");
+    // the table an external id lives in, as the module loader would have
+    // left it
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS "ir_model_data" (
+               "id" serial PRIMARY KEY,
+               "module" varchar NOT NULL,
+               "name" varchar NOT NULL,
+               "model" varchar NOT NULL,
+               "res_id" integer NOT NULL
+           )"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let registry = std::sync::Arc::new(registry);
+    let author = registry
+        .create_as(
+            &pool,
+            1,
+            "library.author",
+            vec![("name", json!("Le Guin")), ("country", json!("US"))],
+        )
+        .await
+        .unwrap();
+    let mut books = Vec::new();
+    for title in ["A Wizard of Earthsea", "The Dispossessed"] {
+        books.push(
+            registry
+                .create_as(
+                    &pool,
+                    1,
+                    "library.book",
+                    vec![("name", json!(title)), ("author_id", json!(author))],
+                )
+                .await
+                .unwrap(),
+        );
+    }
+    sqlx::query(
+        r#"INSERT INTO "ir_model_data" ("module", "name", "model", "res_id")
+           VALUES ('library', 'author_le_guin', 'library.author', $1)"#,
+    )
+    .bind(author as i32)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let call = |method: &'static str, rest: Vec<serde_json::Value>| {
+        let registry = std::sync::Arc::clone(&registry);
+        let pool = pool.clone();
+        let id = books[0];
+        let entry = methods.get("library.book", method).expect("registered");
+        async move {
+            let ctx = rusdoo_orm::methods::MethodCtx::new(
+                registry,
+                &pool,
+                1,
+                "library.book",
+                vec![id],
+            )
+            .with_rest(rest);
+            entry.call(ctx, &[], &serde_json::Map::new()).await
+        }
+    };
+
+    // a many2one walks through to the record behind it
+    assert_eq!(
+        call("author_country", vec![]).await.expect("the dotted read"),
+        json!("US")
+    );
+    // and a one2many is a set with a length and a `mapped`
+    assert_eq!(
+        call("author_books", vec![]).await.expect("the x2many read"),
+        json!([2, ["A Wizard of Earthsea", "The Dispossessed"]])
+    );
+    // an external id resolves to the record it names
+    assert_eq!(
+        call("by_external_id", vec![json!("library.author_le_guin")])
+            .await
+            .expect("env.ref"),
+        json!("Le Guin")
+    );
+    // and one that names nothing says so, rather than answering an empty
+    // set that would read as "the record has no name"
+    let error = call("by_external_id", vec![json!("library.nobody")])
+        .await
+        .expect_err("an unknown external id is refused");
+    assert!(
+        error.to_string().contains("library.nobody"),
+        "the message names what was missing: {error}"
+    );
+
+    for table in ["library_book", "library_author", "ir_model_data"] {
+        sqlx::query(&format!("DROP TABLE IF EXISTS {table} CASCADE"))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
 }
