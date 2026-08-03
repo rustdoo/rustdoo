@@ -2,7 +2,7 @@
 //! graph, addon discovery. Reference: odoo/modules/module.py, graph.py.
 
 use rusdoo_modules::graph::dependency_order;
-use rusdoo_modules::loader::discover_addons;
+use rusdoo_modules::loader::{discover_addons, select};
 use rusdoo_modules::manifest::{parse_manifest, Manifest};
 use std::path::Path;
 
@@ -130,6 +130,46 @@ fn missing_dependency_is_reported_by_name() {
     let err = dependency_order(&mods).unwrap_err();
 
     assert!(err.to_string().contains("ghost"));
+}
+
+// ---------- the install set (Odoo's `-i`) ----------
+
+#[test]
+fn an_install_set_brings_what_it_depends_on() {
+    let mods = vec![
+        stub("base", &[]),
+        stub("crm", &["mail"]),
+        stub("mail", &["base"]),
+        stub("uom", &["base"]),
+    ];
+
+    let selected = select(mods, &["crm".to_string()]).unwrap();
+
+    let names: Vec<&str> = selected.iter().map(|m| m.name.as_str()).collect();
+    assert!(names.contains(&"crm") && names.contains(&"mail") && names.contains(&"base"));
+    // a module nobody asked for stays on disk, uninstalled — which is
+    // what keeps its assets out of the client's bundle
+    assert!(!names.contains(&"uom"), "{names:?}");
+}
+
+#[test]
+fn base_is_installed_whether_it_is_named_or_not() {
+    // Odoo has no database without base: it is what res.users is in
+    let mods = vec![stub("base", &[]), stub("loner", &[])];
+
+    let selected = select(mods, &["loner".to_string()]).unwrap();
+
+    let names: Vec<&str> = selected.iter().map(|m| m.name.as_str()).collect();
+    assert!(names.contains(&"base"), "{names:?}");
+}
+
+#[test]
+fn an_unknown_name_in_the_install_set_is_refused() {
+    let mods = vec![stub("base", &[])];
+
+    let err = select(mods, &["ghost".to_string()]).unwrap_err();
+
+    assert!(err.to_string().contains("ghost"), "{err}");
 }
 
 // ---------- the real thing: all Odoo 19 addons ----------
@@ -336,6 +376,38 @@ fn measure_real_odoo_asset_coverage() {
         with_assets > 100,
         "expected the real addons to declare assets, got {with_assets}"
     );
+}
+
+/// The first file of the real backend bundle, which decides whether the
+/// client starts at all: every other file opens with `odoo.define(...)`,
+/// so anything ahead of `module_loader.js` is a TypeError that takes the
+/// whole bundle down.
+///
+/// It is the install set that puts it there, not luck: 141 of the 143
+/// addons contributing to `web.assets_backend` depend on `web`, so the
+/// order of `ir.asset` places web's own files first. The two that do not
+/// — `uom` and `test_translation_import` — sort ahead of `web` by name,
+/// and a server that installs every addon on disk really does serve
+/// them first.
+#[test]
+fn a_web_install_serves_the_module_loader_first() {
+    let roots = [
+        Path::new("../../odoo/odoo/addons"),
+        Path::new("../../odoo/addons"),
+    ];
+    if !roots[1].exists() {
+        eprintln!("skipped: reference clone not present");
+        return;
+    }
+    let manifests = discover_addons(&roots).unwrap();
+    let selected = select(manifests, &["web".to_string()]).unwrap();
+    let (bundles, _) = rusdoo_modules::assets::resolve_manifests(&selected).unwrap();
+
+    let first = bundles
+        .files_with_extension("web.assets_web", &["js", "mjs"])
+        .next()
+        .expect("the backend bundle ships JavaScript");
+    assert_eq!(first.path, "web/static/src/module_loader.js");
 }
 
 /// Every ES6 module the real Odoo tree ships, put through the

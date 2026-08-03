@@ -485,8 +485,18 @@ pub fn register_python_models(
     registry: &mut Registry,
     methods: &mut rusdoo_orm::methods::MethodRegistry,
 ) -> Result<usize, RusdooError> {
-    let manifests = discover_addons(addons_paths)?;
-    let order = dependency_order(&manifests)?;
+    register_python_models_of(&discover_addons(addons_paths)?, registry, methods)
+}
+
+/// The same for an already-discovered set — the entry point for a server
+/// running an install set (see [`crate::loader::select`]), which reads
+/// the tree once and installs a part of it.
+pub fn register_python_models_of(
+    manifests: &[Manifest],
+    registry: &mut Registry,
+    methods: &mut rusdoo_orm::methods::MethodRegistry,
+) -> Result<usize, RusdooError> {
+    let order = dependency_order(manifests)?;
     let by_name: HashMap<&str, &Manifest> =
         manifests.iter().map(|m| (m.name.as_str(), m)).collect();
     let mut loaded = 0;
@@ -538,9 +548,20 @@ pub async fn install_modules(
     addons_paths: &[&Path],
     xml_ids: &mut XmlIds,
 ) -> Result<InstallReport, RusdooError> {
-    registry.init_tables(pool).await?;
     let manifests = discover_addons(addons_paths)?;
-    let order = dependency_order(&manifests)?;
+    install_manifests(pool, registry, &manifests, xml_ids).await
+}
+
+/// The same for an already-discovered set — what a server running an
+/// install set (see [`crate::loader::select`]) installs.
+pub async fn install_manifests(
+    pool: &PgPool,
+    registry: &mut Registry,
+    manifests: &[Manifest],
+    xml_ids: &mut XmlIds,
+) -> Result<InstallReport, RusdooError> {
+    registry.init_tables(pool).await?;
+    let order = dependency_order(manifests)?;
     let by_name: HashMap<&str, &Manifest> =
         manifests.iter().map(|m| (m.name.as_str(), m)).collect();
 

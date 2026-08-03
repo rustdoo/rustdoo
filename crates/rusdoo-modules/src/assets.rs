@@ -75,8 +75,16 @@ impl Bundles {
 pub fn resolve_installed(
     paths: &[&Path],
 ) -> Result<(Bundles, HashMap<String, PathBuf>), RusdooError> {
-    let manifests = crate::loader::discover_addons(paths)?;
-    let order = crate::graph::dependency_order(&manifests)?;
+    resolve_manifests(&crate::loader::discover_addons(paths)?)
+}
+
+/// The same for an already-discovered set — which is how a server that
+/// runs an install set (see [`crate::loader::select`]) resolves only the
+/// bundles of the addons it installed.
+pub fn resolve_manifests(
+    manifests: &[Manifest],
+) -> Result<(Bundles, HashMap<String, PathBuf>), RusdooError> {
+    let order = crate::graph::dependency_order(manifests)?;
     let by_name: HashMap<&str, &Manifest> =
         manifests.iter().map(|m| (m.name.as_str(), m)).collect();
     let installed: Vec<&Manifest> = order

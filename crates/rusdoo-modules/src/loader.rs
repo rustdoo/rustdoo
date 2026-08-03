@@ -3,7 +3,7 @@
 
 use crate::manifest::{parse_manifest, Manifest};
 use rusdoo_core::RusdooError;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -47,4 +47,47 @@ pub fn discover_addons(paths: &[&Path]) -> Result<Vec<Manifest>, RusdooError> {
     }
     manifests.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(manifests)
+}
+
+/// The addons a server runs, out of everything found on disk: the named
+/// modules plus every module they depend on, transitively — Odoo's `-i`.
+///
+/// Being on disk is not being installed. Odoo installs a chosen set, and
+/// what that set leaves out is absent from the client's bundles, from the
+/// schema and from the menus. A server that installs all 652 addons of
+/// the reference tree is not a faithful one, and it does not even boot a
+/// browser: `uom` contributes ES6 to `web.assets_backend` without
+/// depending on `web`, so it lands ahead of the module loader.
+///
+/// An unknown name is an error rather than a warning: a typo in the list
+/// is otherwise a module that is mysteriously not there.
+pub fn select(manifests: Vec<Manifest>, wanted: &[String]) -> Result<Vec<Manifest>, RusdooError> {
+    let by_name: HashMap<&str, &Manifest> =
+        manifests.iter().map(|m| (m.name.as_str(), m)).collect();
+    // base is not optional: it is where res.users lives, so a database
+    // without it has nobody to log in as. Odoo installs it too, named or
+    // not, whenever it is on disk.
+    let mut queue: Vec<&str> = wanted.iter().map(String::as_str).collect();
+    if by_name.contains_key("base") {
+        queue.push("base");
+    }
+    let mut keep: HashSet<&str> = HashSet::new();
+    while let Some(name) = queue.pop() {
+        let Some(manifest) = by_name.get(name) else {
+            return Err(RusdooError::Validation(format!(
+                "module {name} is in the install set but not on any addons path"
+            )));
+        };
+        if !keep.insert(manifest.name.as_str()) {
+            continue;
+        }
+        for dep in &manifest.depends {
+            queue.push(dep.as_str());
+        }
+    }
+    let keep: HashSet<String> = keep.into_iter().map(str::to_string).collect();
+    Ok(manifests
+        .into_iter()
+        .filter(|manifest| keep.contains(&manifest.name))
+        .collect())
 }

@@ -1,6 +1,7 @@
 //! rusdoo — the server binary, port of `odoo-bin`.
 
 use rusdoo_http::dispatch::OrmService;
+use rusdoo_modules::manifest::Manifest;
 use rusdoo_orm::registry::Registry;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -44,19 +45,28 @@ async fn main() -> anyhow::Result<()> {
     let roots: Vec<&std::path::Path> = addons_paths.iter().map(PathBuf::as_path).collect();
     let has_addons = !roots.is_empty();
 
+    // The tree is read once, here, and every step below works off this
+    // list — a reference clone has 652 manifests, and parsing them four
+    // times is four times the boot.
+    let manifests = if has_addons {
+        install_set(rusdoo_modules::loader::discover_addons(&roots)?)?
+    } else {
+        Vec::new()
+    };
+
     // A module is code plus data: the models of the addons present on
     // disk are registered here, in dependency order, before their data
     // files are allowed to speak about them.
-    let mut registry = code_registry(&roots)?;
+    let mut registry = code_registry(&manifests)?;
     // the methods those same modules attach to their models
-    let mut methods = code_methods(&roots)?;
+    let mut methods = code_methods(&manifests)?;
     // and the addons whose models are Python rather than a crate. Every
     // boot, not only `--init`: a model is code, and code is not installed
     // into the database — a server restarted without `--init` would
     // otherwise serve half its addons.
     if has_addons {
-        let declared = rusdoo_modules::installer::register_python_models(
-            &roots,
+        let declared = rusdoo_modules::installer::register_python_models_of(
+            &manifests,
             &mut registry,
             &mut methods,
         )?;
@@ -69,18 +79,18 @@ async fn main() -> anyhow::Result<()> {
     // it is resolved on every boot — a server restarted without --init
     // still serves its client.
     if has_addons {
-        let (bundles, asset_roots) = rusdoo_modules::assets::resolve_installed(&roots)?;
+        let (bundles, asset_roots) = rusdoo_modules::assets::resolve_manifests(&manifests)?;
         tracing::info!("{} client bundle(s) resolved", bundles.names().count());
         assets = rusdoo_http::assets::AssetHub::new(bundles, asset_roots);
     }
 
     let mut translations = rusdoo_orm::translations::Translations::new();
     if std::env::args().any(|arg| arg == "--init") {
-        use rusdoo_modules::installer::{install_modules, XmlIds};
+        use rusdoo_modules::installer::{install_manifests, XmlIds};
         let mut xml_ids = XmlIds::load(&pool).await?;
         if has_addons {
             let report =
-                install_modules(&pool, &mut registry, &roots, &mut xml_ids).await?;
+                install_manifests(&pool, &mut registry, &manifests, &mut xml_ids).await?;
             translations = report.translations.clone();
             tracing::info!(
                 "installed {} module(s), {} client bundle(s)",
@@ -179,12 +189,42 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
 }
 
 /// Build the registry out of the code modules whose addon is installed.
+/// The addons this server runs, out of everything on disk: `RUSDOO_INSTALL`
+/// names them, comma-separated, like Odoo's `-i`, and their dependencies
+/// come along. Unset installs every addon found, which is what a
+/// single-purpose deployment and every test here expect.
+///
+/// Naming a set is not a convenience: pointed at the reference clone,
+/// installing all 652 addons serves a client bundle that starts with an
+/// addon `web` never depended on, and the browser stops at the first
+/// `odoo.define`.
+fn install_set(discovered: Vec<Manifest>) -> anyhow::Result<Vec<Manifest>> {
+    let Ok(list) = std::env::var("RUSDOO_INSTALL") else {
+        return Ok(discovered);
+    };
+    let wanted: Vec<String> = list
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect();
+    if wanted.is_empty() {
+        return Ok(discovered);
+    }
+    let selected = rusdoo_modules::loader::select(discovered, &wanted)?;
+    tracing::info!(
+        "install set: {} module(s) from RUSDOO_INSTALL and their dependencies",
+        selected.len()
+    );
+    Ok(selected)
+}
+
 /// Without an addons directory only `base` is registered — enough for a
 /// server to answer, and honest about what it has.
-fn code_registry(addons_paths: &[&std::path::Path]) -> anyhow::Result<Registry> {
+fn code_registry(manifests: &[Manifest]) -> anyhow::Result<Registry> {
     let mut registry = Registry::new();
     let providers = code_modules();
-    for name in installed_code_modules(addons_paths)? {
+    for name in installed_code_modules(manifests)? {
         let extend = providers
             .iter()
             .find(|(module, _)| *module == name)
@@ -199,13 +239,12 @@ fn code_registry(addons_paths: &[&std::path::Path]) -> anyhow::Result<Registry> 
 /// The compiled-in modules whose addon is on disk, in dependency order.
 /// `base` is always among them: a server without it has no user to log
 /// in as.
-fn installed_code_modules(addons_paths: &[&std::path::Path]) -> anyhow::Result<Vec<&'static str>> {
+fn installed_code_modules(manifests: &[Manifest]) -> anyhow::Result<Vec<&'static str>> {
     let providers = code_modules();
-    if addons_paths.is_empty() {
+    if manifests.is_empty() {
         return Ok(vec!["base"]);
     }
-    let manifests = rusdoo_modules::loader::discover_addons(addons_paths)?;
-    let order = rusdoo_modules::graph::dependency_order(&manifests)?;
+    let order = rusdoo_modules::graph::dependency_order(manifests)?;
     let mut wanted: Vec<&'static str> = order
         .iter()
         .filter_map(|name| {
@@ -223,13 +262,11 @@ fn installed_code_modules(addons_paths: &[&std::path::Path]) -> anyhow::Result<V
 
 /// The model methods of the installed code modules — the business
 /// actions a client calls by name (`action_confirm`, …).
-fn code_methods(
-    addons_paths: &[&std::path::Path],
-) -> anyhow::Result<rusdoo_orm::methods::MethodRegistry> {
+fn code_methods(manifests: &[Manifest]) -> anyhow::Result<rusdoo_orm::methods::MethodRegistry> {
     let mut methods = rusdoo_orm::methods::MethodRegistry::new();
     // the framework's own scheduled work, before any module's
     rusdoo_base::extend_methods(&mut methods)?;
-    let installed = installed_code_modules(addons_paths)?;
+    let installed = installed_code_modules(manifests)?;
     if installed.contains(&"account") {
         rusdoo_account::extend_methods(&mut methods)?;
     }
