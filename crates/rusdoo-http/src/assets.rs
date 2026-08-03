@@ -339,7 +339,7 @@ fn compile_sass(
         // a loud comment: Sass keeps it, and every style of output keeps
         // it, which is what makes it usable as a marker
         source.push_str(&format!("/*!{}*/\n", file.path));
-        source.push_str(&content);
+        source.push_str(&close_include_statements(&content));
         source.push('\n');
     }
 
@@ -349,6 +349,43 @@ fn compile_sass(
     }
     let css = grass::from_string(source, &options).map_err(|error| error.to_string())?;
     Ok(split_by_marker(&css))
+}
+
+/// Put back the semicolon a `@include` statement is missing.
+///
+/// libsass accepts `@include mixin($arg)` with nothing after it; this
+/// compiler does not, and eight lines across Odoo's own stylesheets are
+/// written that way. Refusing them would be correct and useless — the
+/// same trade the JS transpiler makes by copying Odoo's regular
+/// expressions instead of improving on them. Odoo is the compatibility
+/// target, and its leniency is part of what has to be matched.
+///
+/// Narrow on purpose. A line only qualifies when it is an `@include`
+/// with balanced parentheses, nothing after the closing one, and no
+/// brace of its own — and even then, not when the next line opens a
+/// block, because `@include framed` followed by `{` is a mixin taking
+/// content and a semicolon would cut it off from its own body.
+fn close_include_statements(source: &str) -> String {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut out = String::with_capacity(source.len());
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        let looks_unterminated = trimmed.starts_with("@include ")
+            && trimmed.ends_with(')')
+            && !trimmed.contains('{')
+            && !trimmed.contains('}')
+            && !trimmed.contains(';');
+        let opens_a_block = lines[index + 1..]
+            .iter()
+            .find(|next| !next.trim().is_empty())
+            .is_some_and(|next| next.trim_start().starts_with('{'));
+        out.push_str(line);
+        if looks_unterminated && !opens_a_block {
+            out.push(';');
+        }
+        out.push('\n');
+    }
+    out
 }
 
 /// Where an `@import` inside the bundle's Sass may be looked up.

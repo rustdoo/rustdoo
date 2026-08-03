@@ -435,3 +435,61 @@ async fn a_bundle_transpiles_modules_and_leaves_the_rest_alone() {
         "and was not wrapped: {body}"
     );
 }
+
+/// A `@include` whose semicolon somebody forgot still compiles.
+///
+/// Not indulgence: libsass accepts it, Odoo is built on libsass, and
+/// eight lines of Odoo's own stylesheets are written that way. A port
+/// that refused them would be correct and useless — the same trade the
+/// JS transpiler makes by copying Odoo's regexes rather than improving
+/// on them.
+#[tokio::test]
+async fn a_missing_semicolon_after_an_include_does_not_fail_the_bundle() {
+    let fixture = Fixture::new("scss-lenient");
+    let manifest_source = r#"{
+        'name': 'Lenient',
+        'assets': {'web.assets_backend': ['lenient/static/src/theme.scss']},
+    }"#;
+    let addon = fixture.root.join("lenient");
+    fixture.write("lenient/__manifest__.py", manifest_source);
+    fixture.write(
+        "lenient/static/src/theme.scss",
+        // the first @include is missing its `;`, exactly as Odoo's
+        // `iframe_wrapper_field.scss` is; the second takes a block and
+        // must not have one inserted
+        r#"@mixin tint($c) { color: $c; }
+@mixin framed { border: 1px solid; @content; }
+
+.o_a {
+    @include tint(#336699)
+}
+
+.o_b {
+    @include framed
+    {
+        padding: 2px;
+    }
+}
+"#,
+    );
+
+    let mut manifest = parse_manifest(manifest_source, "lenient").expect("manifest");
+    manifest.path = addon.clone();
+    let bundles = resolve_bundles(&[&manifest]).expect("bundles resolve");
+    let roots: HashMap<String, PathBuf> = [("lenient".to_string(), addon)].into_iter().collect();
+    let url = std::env::var("RUSDOO_TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:rusdoo@localhost:55432/postgres".into());
+    let service = OrmService::insecure(
+        Arc::new(Registry::new()),
+        rusdoo_orm::db::lazy_pool(&url).unwrap(),
+    )
+    .with_assets(AssetHub::new(bundles, roots));
+
+    let (status, _, body) = get(router(service), "/web/assets/web.assets_backend.css").await;
+    assert_eq!(status, StatusCode::OK, "the bundle compiled: {body}");
+    assert!(body.contains("#336699"), "the mixin ran: {body}");
+    assert!(
+        body.contains("padding: 2px"),
+        "and the block form still took its block: {body}"
+    );
+}
