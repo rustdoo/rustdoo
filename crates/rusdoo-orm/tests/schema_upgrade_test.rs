@@ -47,8 +47,9 @@ fn after(table: &str, required: bool) -> Registry {
 }
 
 async fn pool() -> Option<PgPool> {
-    let url = std::env::var("RUSDOO_TEST_DATABASE_URL").ok()?;
-    Some(rusdoo_orm::db::connect(&url).await.expect("test database"))
+    // um schema desta execução: estes testes criam tabelas direto,
+    // e sem isso duas execuções mexem nas mesmas
+    rusdoo_testing::pool_in("rusdoo_schema_upgrad_pool")
 }
 
 #[tokio::test]

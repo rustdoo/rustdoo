@@ -96,7 +96,7 @@ async fn a_message_is_posted_and_comes_back_newest_first_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_chatter_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_chatter_test")).await;
     let partner = a_partner(&service, "Ana").await;
     let other = a_partner(&service, "Bia").await;
 
@@ -148,7 +148,7 @@ async fn an_empty_message_is_refused_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_chatter_empty_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_chatter_empty_test")).await;
     let partner = a_partner(&service, "Ana").await;
     for body in [json!(""), json!("   "), Value::Null] {
         let answer = call(
@@ -174,7 +174,7 @@ async fn a_body_is_stored_as_written_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_chatter_body_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_chatter_body_test")).await;
     let partner = a_partner(&service, "Ana").await;
     // the client renders a body as text, so the server keeps what was
     // typed instead of "sanitizing" it into something nobody wrote
@@ -200,7 +200,7 @@ async fn a_thread_reads_one_record_at_a_time_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_chatter_many_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_chatter_many_test")).await;
     let one = a_partner(&service, "Ana").await;
     let two = a_partner(&service, "Bia").await;
     // posting "on both" would have to invent which record it is about

@@ -2,7 +2,6 @@
 //! without RUSDOO_TEST_DATABASE_URL set they skip (with a note on stderr).
 
 use rusdoo_orm::crud::SearchOptions;
-use rusdoo_orm::db::connect;
 use rusdoo_orm::domain::{parse_domain, Domain};
 use rusdoo_orm::fields::{Field, FieldType};
 use rusdoo_orm::model::{Model, ModelMeta};
@@ -26,12 +25,9 @@ fn test_model() -> Model {
 }
 
 async fn test_pool() -> Option<PgPool> {
-    let url = std::env::var("RUSDOO_TEST_DATABASE_URL").ok()?;
-    Some(
-        connect(&url)
-            .await
-            .expect("failed to connect to test database"),
-    )
+    // um schema desta execução: estes testes criam tabelas
+    // direto, e sem isso duas execuções mexem nas mesmas
+    rusdoo_testing::pool_in("rusdoo_db_test_test_pool")
 }
 
 #[tokio::test]

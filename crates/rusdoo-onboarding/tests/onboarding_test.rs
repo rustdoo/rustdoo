@@ -170,7 +170,7 @@ async fn a_panel_is_done_only_when_the_last_step_is_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (registry, pool) = fixture(&url, "rusdoo_onboarding_lifecycle").await;
+    let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_onboarding_lifecycle")).await;
     let company = registry
         .create(&pool, "res.company", vec![("name", json!("Acme"))])
         .await
@@ -262,7 +262,7 @@ async fn a_step_already_done_is_not_done_again_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (registry, pool) = fixture(&url, "rusdoo_onboarding_idempotent").await;
+    let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_onboarding_idempotent")).await;
     let company = registry
         .create(&pool, "res.company", vec![("name", json!("Acme"))])
         .await
@@ -331,7 +331,7 @@ async fn each_company_walks_its_own_checklist_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (registry, pool) = fixture(&url, "rusdoo_onboarding_companies").await;
+    let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_onboarding_companies")).await;
     let acme = registry
         .create(&pool, "res.company", vec![("name", json!("Acme"))])
         .await
@@ -409,7 +409,7 @@ async fn closing_the_panel_is_remembered_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (registry, pool) = fixture(&url, "rusdoo_onboarding_closing").await;
+    let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_onboarding_closing")).await;
     let company = registry
         .create(&pool, "res.company", vec![("name", json!("Acme"))])
         .await
@@ -482,7 +482,7 @@ async fn what_the_models_refuse_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (registry, pool) = fixture(&url, "rusdoo_onboarding_refusals").await;
+    let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_onboarding_refusals")).await;
 
     // uma rota com espaço não vira `/onboarding/<rota>`
     let error = registry

@@ -101,7 +101,7 @@ async fn a_password_is_hashed_on_create_and_on_write_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (service, pool) = fixture(&url, "rusdoo_credentials_test").await;
+    let (service, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_credentials_test")).await;
 
     let created = call(
         router(service.clone()),
@@ -150,7 +150,7 @@ async fn an_empty_password_leaves_the_stored_one_alone_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (service, pool) = fixture(&url, "rusdoo_credentials_empty_test").await;
+    let (service, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_credentials_empty_test")).await;
     let created = call(
         router(service.clone()),
         json!({"model": "res.users", "method": "create",
@@ -182,7 +182,7 @@ async fn the_hash_is_never_readable_over_rpc_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (service, _pool) = fixture(&url, "rusdoo_credentials_read_test").await;
+    let (service, _pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_credentials_read_test")).await;
     call(
         router(service.clone()),
         json!({"model": "res.users", "method": "create",
@@ -207,7 +207,7 @@ async fn id_may_be_asked_for_like_any_other_field_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (service, _pool) = fixture(&url, "rusdoo_credentials_id_test").await;
+    let (service, _pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_credentials_id_test")).await;
     call(
         router(service.clone()),
         json!({"model": "res.groups", "method": "create",

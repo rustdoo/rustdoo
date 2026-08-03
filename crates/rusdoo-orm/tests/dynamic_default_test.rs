@@ -90,7 +90,7 @@ async fn fixture(schema: &str) -> Option<(Registry, PgPool)> {
 
 #[tokio::test]
 async fn a_dynamic_default_runs_at_create_time_live() {
-    let schema = "rusdoo_case_dyn_default";
+    let schema = rusdoo_testing::schema_for("rusdoo_case_dyn_default");
     let Some((reg, pool)) = fixture(schema).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
@@ -163,7 +163,7 @@ async fn a_dynamic_default_runs_at_create_time_live() {
 /// registro está prestes a ser guardado ao lado.
 #[tokio::test]
 async fn a_default_sees_what_the_same_call_just_wrote_live() {
-    let schema = "rusdoo_case_dyn_default_tx";
+    let schema = rusdoo_testing::schema_for("rusdoo_case_dyn_default_tx");
     let Some((reg, pool)) = fixture(schema).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;

@@ -12,6 +12,7 @@ rusdoo-orm = { path = "../rusdoo-orm" }
 rusdoo-account = { path = "../rusdoo-account" }
 
 [dev-dependencies]
+rusdoo-testing = { path = "../rusdoo-testing" }
 sqlx.workspace = true
 tokio.workspace = true
 rusdoo-base = { path = "../rusdoo-base" }

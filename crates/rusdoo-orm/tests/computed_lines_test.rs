@@ -112,8 +112,7 @@ fn order_registry(suffix: &str) -> Registry {
 /// Each test builds its own tables: the suite runs them in parallel and
 /// concurrent DDL on the same names deadlocks in the catalog.
 async fn fixture(suffix: &str) -> Option<(Registry, PgPool)> {
-    let url = std::env::var("RUSDOO_TEST_DATABASE_URL").ok()?;
-    let pool = rusdoo_orm::db::connect(&url).await.expect("test database");
+    let pool = rusdoo_testing::pool_in("rusdoo_computed_line_fixture").expect("test database");
     let reg = order_registry(suffix);
     for table in [
         format!("rusdoo_test_cl_{suffix}_line"),

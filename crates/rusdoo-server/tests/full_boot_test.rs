@@ -20,9 +20,12 @@ async fn schema_pool(url: &str) -> sqlx::PgPool {
         .max_connections(4)
         .after_connect(|conn, _meta| {
             Box::pin(async move {
+                let schema = rusdoo_testing::schema_for("rusdoo_full_boot");
                 sqlx::Executor::execute(
                     conn,
-                    "CREATE SCHEMA IF NOT EXISTS rusdoo_full_boot; SET search_path TO rusdoo_full_boot",
+                    &format!(
+                        "CREATE SCHEMA IF NOT EXISTS {schema}; SET search_path TO {schema}"
+                    ) as &str,
                 )
                 .await?;
                 Ok(())
@@ -31,12 +34,12 @@ async fn schema_pool(url: &str) -> sqlx::PgPool {
         .connect_lazy(url)
         .unwrap();
     // a previous run must not decide this one's answers
-    sqlx::query("DROP SCHEMA IF EXISTS rusdoo_full_boot CASCADE")
+    sqlx::query(&format!("DROP SCHEMA IF EXISTS {} CASCADE", rusdoo_testing::schema_for("rusdoo_full_boot")) as &str)
         .execute(&pool)
         .await
         .unwrap();
     // the pool's own hook may have recreated it on the way here
-    sqlx::query("CREATE SCHEMA IF NOT EXISTS rusdoo_full_boot")
+    sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS {}", rusdoo_testing::schema_for("rusdoo_full_boot")) as &str)
         .execute(&pool)
         .await
         .unwrap();

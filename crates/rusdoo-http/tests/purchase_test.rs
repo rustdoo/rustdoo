@@ -175,7 +175,7 @@ async fn a_purchase_order_produces_a_receipt_and_a_bill_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_purchase_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_purchase_test")).await;
     let order = a_confirmed_order(&service).await;
 
     let rows = call(
@@ -246,7 +246,7 @@ async fn an_unconfirmed_purchase_produces_nothing_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_purchase_draft_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_purchase_draft_test")).await;
     let supplier = create(&service, "res.partner", json!({"name": "Fornecedor"})).await;
     let order = create(
         &service,

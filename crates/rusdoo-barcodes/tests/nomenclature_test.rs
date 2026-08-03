@@ -105,7 +105,7 @@ async fn a_rule(
 
 #[tokio::test]
 async fn a_scanned_code_comes_back_classified_live() {
-    let Some((registry, pool, methods)) = fixture("rusdoo_barcodes_parse").await else {
+    let Some((registry, pool, methods)) = fixture(rusdoo_testing::schema_for("rusdoo_barcodes_parse")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -137,7 +137,7 @@ async fn a_scanned_code_comes_back_classified_live() {
 
 #[tokio::test]
 async fn the_rule_with_the_lower_sequence_wins_live() {
-    let Some((registry, pool, methods)) = fixture("rusdoo_barcodes_sequence").await else {
+    let Some((registry, pool, methods)) = fixture(rusdoo_testing::schema_for("rusdoo_barcodes_sequence")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -181,7 +181,7 @@ async fn the_rule_with_the_lower_sequence_wins_live() {
 
 #[tokio::test]
 async fn a_rule_the_server_could_not_apply_is_never_written_live() {
-    let Some((registry, pool, _methods)) = fixture("rusdoo_barcodes_pattern").await else {
+    let Some((registry, pool, _methods)) = fixture(rusdoo_testing::schema_for("rusdoo_barcodes_pattern")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -228,7 +228,7 @@ async fn a_rule_the_server_could_not_apply_is_never_written_live() {
 
 #[tokio::test]
 async fn an_rfid_uri_answers_with_the_product_and_the_lot_live() {
-    let Some((registry, pool, methods)) = fixture("rusdoo_barcodes_uri").await else {
+    let Some((registry, pool, methods)) = fixture(rusdoo_testing::schema_for("rusdoo_barcodes_uri")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };

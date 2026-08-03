@@ -90,7 +90,7 @@ async fn call(
 
 #[tokio::test]
 async fn a_quantity_travels_the_whole_reference_chain_live() {
-    let Some((registry, methods, pool)) = fixture("rusdoo_uom_convert").await else {
+    let Some((registry, methods, pool)) = fixture(rusdoo_testing::schema_for("rusdoo_uom_convert")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -158,7 +158,7 @@ async fn a_quantity_travels_the_whole_reference_chain_live() {
 
 #[tokio::test]
 async fn converting_across_categories_is_refused_live() {
-    let Some((registry, methods, pool)) = fixture("rusdoo_uom_categories").await else {
+    let Some((registry, methods, pool)) = fixture(rusdoo_testing::schema_for("rusdoo_uom_categories")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -217,7 +217,7 @@ async fn converting_across_categories_is_refused_live() {
 
 #[tokio::test]
 async fn the_absolute_factor_follows_an_edit_up_the_chain_live() {
-    let Some((registry, _methods, pool)) = fixture("rusdoo_uom_factor").await else {
+    let Some((registry, _methods, pool)) = fixture(rusdoo_testing::schema_for("rusdoo_uom_factor")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -250,7 +250,7 @@ async fn the_absolute_factor_follows_an_edit_up_the_chain_live() {
 
 #[tokio::test]
 async fn a_price_converts_the_other_way_round_live() {
-    let Some((registry, methods, pool)) = fixture("rusdoo_uom_price").await else {
+    let Some((registry, methods, pool)) = fixture(rusdoo_testing::schema_for("rusdoo_uom_price")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -287,7 +287,7 @@ async fn a_price_converts_the_other_way_round_live() {
 
 #[tokio::test]
 async fn a_unit_that_cannot_convert_is_never_saved_live() {
-    let Some((registry, _methods, pool)) = fixture("rusdoo_uom_rules").await else {
+    let Some((registry, _methods, pool)) = fixture(rusdoo_testing::schema_for("rusdoo_uom_rules")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -355,7 +355,7 @@ async fn a_unit_that_cannot_convert_is_never_saved_live() {
 
 #[tokio::test]
 async fn the_ordering_sequence_follows_the_factor_live() {
-    let Some((registry, _methods, pool)) = fixture("rusdoo_uom_sequence").await else {
+    let Some((registry, _methods, pool)) = fixture(rusdoo_testing::schema_for("rusdoo_uom_sequence")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };

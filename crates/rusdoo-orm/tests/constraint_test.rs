@@ -56,8 +56,7 @@ fn registry(suffix: &str) -> Registry {
 }
 
 async fn fixture(suffix: &str) -> Option<(Registry, PgPool)> {
-    let url = std::env::var("RUSDOO_TEST_DATABASE_URL").ok()?;
-    let pool = rusdoo_orm::db::connect(&url).await.expect("test database");
+    let pool = rusdoo_testing::pool_in("rusdoo_constraint_te_fixture").expect("test database");
     let reg = registry(suffix);
     sqlx::query(&format!(
         r#"DROP TABLE IF EXISTS "rusdoo_test_constraint_{suffix}""#

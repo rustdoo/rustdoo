@@ -544,11 +544,11 @@ fn count_sql_counts_in_the_database() {
 /// scramble every sorted list the client draws.
 #[tokio::test]
 async fn read_answers_in_the_order_the_ids_were_given_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_orm_test_read_answers_in_the_order_the_ids_").unwrap();
     let mut reg = rusdoo_orm::registry::Registry::new();
     reg.register(Model::new(
         ModelMeta {

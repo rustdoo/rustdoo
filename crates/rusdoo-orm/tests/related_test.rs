@@ -129,8 +129,9 @@ fn a_related_field_cannot_be_written_or_ordered_by() {
 }
 
 async fn test_pool() -> Option<PgPool> {
-    let url = std::env::var("RUSDOO_TEST_DATABASE_URL").ok()?;
-    Some(rusdoo_orm::db::connect(&url).await.expect("test database"))
+    // um schema desta execução: estes testes criam tabelas
+    // direto, e sem isso duas execuções mexem nas mesmas
+    rusdoo_testing::pool_in("rusdoo_related_test_test_pool")
 }
 
 #[tokio::test]

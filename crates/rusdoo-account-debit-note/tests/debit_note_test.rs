@@ -195,7 +195,7 @@ async fn fixture(schema: &'static str) -> Option<Fixture> {
 
 #[tokio::test]
 async fn a_posted_invoice_becomes_a_debit_note_live() {
-    let Some(fx) = fixture("rusdoo_account_debit_note_flow").await else {
+    let Some(fx) = fixture(rusdoo_testing::schema_for("rusdoo_account_debit_note_flow")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -277,7 +277,7 @@ async fn a_posted_invoice_becomes_a_debit_note_live() {
 
 #[tokio::test]
 async fn a_debit_note_without_copied_lines_is_born_empty_live() {
-    let Some(fx) = fixture("rusdoo_account_debit_note_empty").await else {
+    let Some(fx) = fixture(rusdoo_testing::schema_for("rusdoo_account_debit_note_empty")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -312,7 +312,7 @@ async fn a_debit_note_without_copied_lines_is_born_empty_live() {
 
 #[tokio::test]
 async fn a_draft_invoice_is_not_debited_live() {
-    let Some(fx) = fixture("rusdoo_account_debit_note_draft").await else {
+    let Some(fx) = fixture(rusdoo_testing::schema_for("rusdoo_account_debit_note_draft")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -354,7 +354,7 @@ async fn a_draft_invoice_is_not_debited_live() {
 
 #[tokio::test]
 async fn a_debit_note_is_not_debited_again_live() {
-    let Some(fx) = fixture("rusdoo_account_debit_note_chain").await else {
+    let Some(fx) = fixture(rusdoo_testing::schema_for("rusdoo_account_debit_note_chain")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -386,7 +386,7 @@ async fn a_debit_note_is_not_debited_again_live() {
 
 #[tokio::test]
 async fn a_plain_entry_is_not_debited_live() {
-    let Some(fx) = fixture("rusdoo_account_debit_note_entry").await else {
+    let Some(fx) = fixture(rusdoo_testing::schema_for("rusdoo_account_debit_note_entry")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -419,7 +419,7 @@ async fn a_plain_entry_is_not_debited_live() {
 
 #[tokio::test]
 async fn a_batch_of_invoices_is_debited_at_once_live() {
-    let Some(fx) = fixture("rusdoo_account_debit_note_batch").await else {
+    let Some(fx) = fixture(rusdoo_testing::schema_for("rusdoo_account_debit_note_batch")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -452,7 +452,7 @@ async fn a_batch_of_invoices_is_debited_at_once_live() {
 
 #[tokio::test]
 async fn a_cancelled_invoice_between_the_dialog_and_the_button_is_refused_live() {
-    let Some(fx) = fixture("rusdoo_account_debit_note_race").await else {
+    let Some(fx) = fixture(rusdoo_testing::schema_for("rusdoo_account_debit_note_race")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };

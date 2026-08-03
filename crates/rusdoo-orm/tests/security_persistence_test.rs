@@ -42,7 +42,7 @@ async fn grants_survive_a_restart_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = pool(&url, "rusdoo_acl_persist_test");
+    let pool = pool(&url, rusdoo_testing::schema_for("rusdoo_acl_persist_test"));
     reset(&pool).await;
 
     AccessControl::persist_module(
@@ -94,7 +94,7 @@ async fn reinstalling_a_module_replaces_only_its_own_grants_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = pool(&url, "rusdoo_acl_replace_test");
+    let pool = pool(&url, rusdoo_testing::schema_for("rusdoo_acl_replace_test"));
     reset(&pool).await;
 
     AccessControl::persist_module(
@@ -138,7 +138,7 @@ async fn rules_survive_a_restart_with_their_domain_and_groups_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = pool(&url, "rusdoo_rule_persist_test");
+    let pool = pool(&url, rusdoo_testing::schema_for("rusdoo_rule_persist_test"));
     reset(&pool).await;
 
     RecordRules::persist_module(

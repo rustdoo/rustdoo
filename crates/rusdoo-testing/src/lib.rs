@@ -34,6 +34,96 @@ use std::sync::Arc;
 /// A test with no database is skipped, never silently passed.
 pub const DATABASE_ENV: &str = "RUSDOO_TEST_DATABASE_URL";
 
+/// The schema a case owns, made unique to this *run* and not only to
+/// this test.
+///
+/// A fixed name is enough to keep two tests apart inside one run. It is
+/// not enough to keep two runs apart: the second one drops and recreates
+/// the schema the first is in the middle of using, and the failures land
+/// on whichever test was unlucky — which reads as flakiness in the code
+/// under test rather than as what it is. Two copies of the suite against
+/// one database is not an exotic setup; it is what happens the moment
+/// anyone runs the tests in two worktrees.
+///
+/// The process id is what makes it unique. It is short, it is already
+/// unique among live processes, and it makes an abandoned schema say
+/// which run left it behind.
+///
+/// The name is leaked on purpose, so it can be a `&'static str` like the
+/// literals it replaces. A test binary lives for one run and leaks a
+/// handful of short strings; the alternative is threading a `String`
+/// through every fixture helper in the suite, which buys nothing.
+pub fn schema_for(case: &str) -> &'static str {
+    Box::leak(format!("{case}_{}", std::process::id()).into_boxed_str())
+}
+
+/// Drop the schemas left behind by runs that are over.
+///
+/// Every case schema carries the process id of the run that made it, and
+/// a test that panics never reaches its own cleanup. Without a sweep the
+/// test database grows by a few dozen schemas per run, forever — which
+/// is not a failure anyone sees until a `\dn` takes a second to answer.
+///
+/// A schema is only dropped when its process is *gone*: dropping a live
+/// run's schema would be far worse than keeping a dead one's. That check
+/// reads `/proc`, so on anything but Linux this does nothing rather than
+/// guessing — a sweep that cannot tell live from dead must not sweep.
+pub async fn sweep_stale_schemas(pool: &PgPool) {
+    if !std::path::Path::new("/proc/self").exists() {
+        return;
+    }
+    let found: Result<Vec<String>, _> = sqlx::query_scalar(
+        "SELECT schema_name FROM information_schema.schemata
+         WHERE schema_name ~ '^rusdoo_.*_[0-9]+$'",
+    )
+    .fetch_all(pool)
+    .await;
+    let Ok(schemas) = found else { return };
+    let mut swept = 0usize;
+    for schema in schemas {
+        let Some(pid) = schema.rsplit('_').next().and_then(|p| p.parse::<u32>().ok()) else {
+            continue;
+        };
+        if pid == std::process::id() || std::path::Path::new(&format!("/proc/{pid}")).exists() {
+            continue;
+        }
+        if sqlx::query(&format!("DROP SCHEMA IF EXISTS {schema} CASCADE"))
+            .execute(pool)
+            .await
+            .is_ok()
+        {
+            swept += 1;
+        }
+    }
+    if swept > 0 {
+        eprintln!("varridos {swept} schema(s) de execuções encerradas");
+    }
+}
+
+/// A pool whose every connection works inside a schema of this run's
+/// own, for the tests that build their tables directly.
+///
+/// The ones that do not use it share `public`, and share it *across
+/// runs*: two copies of the suite then create and drop the same table
+/// while the other is reading it. Unique table names are enough to keep
+/// two tests apart; nothing keeps two runs apart but a schema.
+pub fn pool_in(schema: &str) -> Option<PgPool> {
+    let url = std::env::var(DATABASE_ENV).ok()?;
+    let schema = schema_for(schema).to_string();
+    Some(pool_for(&url, schema))
+}
+
+/// The sweep, run once per test process.
+///
+/// Once, not per case: a hundred cases in one binary would otherwise
+/// scan the catalogue a hundred times to find the same nothing.
+async fn sweep_once(pool: &PgPool) {
+    static DONE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if DONE.set(()).is_ok() {
+        sweep_stale_schemas(pool).await;
+    }
+}
+
 /// What a module does to a registry, and to the method table.
 type Extend = fn(&mut Registry) -> Result<(), RusdooError>;
 type ExtendMethods = fn(&mut MethodRegistry) -> Result<(), RusdooError>;
@@ -118,9 +208,10 @@ impl TransactionCase {
             eprintln!("skipped: {DATABASE_ENV} not set");
             return None;
         };
-        let schema = format!("rusdoo_case_{name}");
+        let schema = schema_for(&format!("rusdoo_case_{name}")).to_string();
         let pool = pool_for(&url, schema.clone());
 
+        sweep_once(&pool).await;
         // a schema left behind by a run that panicked is not a reason to
         // fail today's run: it is dropped, not reused
         sqlx::query(&format!("DROP SCHEMA IF EXISTS {schema} CASCADE"))

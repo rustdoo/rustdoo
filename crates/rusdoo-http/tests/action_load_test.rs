@@ -164,7 +164,7 @@ async fn action_loads_by_external_id_with_its_views_and_domain_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_action_by_id").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_action_by_id")).await;
     let (status, body) = load(router(service.clone()), json!("test.act_partners")).await;
     assert_eq!(status, StatusCode::OK);
     let result = &body["result"];
@@ -188,7 +188,7 @@ async fn an_action_without_a_view_mode_opens_list_then_form_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_action_default_mode").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_action_default_mode")).await;
     let (_, body) = load(router(service), json!(2)).await;
     assert_eq!(body["result"]["view_mode"], "list,form");
     assert_eq!(body["result"]["domain"], json!([]));
@@ -200,7 +200,7 @@ async fn an_unreadable_domain_refuses_the_action_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_action_bad_domain").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_action_bad_domain")).await;
     // a python-expression domain would silently open the model unscoped
     let (_, body) = load(router(service), json!("test.act_broken")).await;
     assert!(body.get("result").is_none(), "must not answer: {body}");
@@ -219,7 +219,7 @@ async fn unknown_actions_are_errors_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_action_unknown").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_action_unknown")).await;
     for reference in [json!("test.nope"), json!(9999), json!("semponto"), json!(true)] {
         let (_, body) = load(router(service.clone()), reference.clone()).await;
         assert!(
@@ -239,7 +239,7 @@ async fn a_missing_default_view_is_omitted_not_an_error_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_action_views").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_action_views")).await;
     // the fixture's ir.ui.view table is empty
     let body = json!({"jsonrpc": "2.0", "id": 1, "method": "call",
                       "params": {"model": "res.partner", "method": "get_views", "args": [],

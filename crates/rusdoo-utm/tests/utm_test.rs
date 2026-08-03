@@ -136,7 +136,7 @@ async fn fixture(schema: &'static str) -> Option<Fixture> {
 
 #[tokio::test]
 async fn the_same_medium_name_twice_gets_a_counter_live() {
-    let Some(fx) = fixture("rusdoo_utm_medium").await else {
+    let Some(fx) = fixture(rusdoo_testing::schema_for("rusdoo_utm_medium")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -191,7 +191,7 @@ async fn the_same_medium_name_twice_gets_a_counter_live() {
 
 #[tokio::test]
 async fn a_link_reuses_the_source_that_is_already_there_live() {
-    let Some(fx) = fixture("rusdoo_utm_source").await else {
+    let Some(fx) = fixture(rusdoo_testing::schema_for("rusdoo_utm_source")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -229,7 +229,7 @@ async fn a_link_reuses_the_source_that_is_already_there_live() {
 
 #[tokio::test]
 async fn a_campaign_is_born_with_an_identifier_a_stage_and_an_owner_live() {
-    let Some(fx) = fixture("rusdoo_utm_campaign").await else {
+    let Some(fx) = fixture(rusdoo_testing::schema_for("rusdoo_utm_campaign")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -324,7 +324,7 @@ async fn a_campaign_is_born_with_an_identifier_a_stage_and_an_owner_live() {
 
 #[tokio::test]
 async fn a_record_without_a_real_name_is_refused_live() {
-    let Some(fx) = fixture("rusdoo_utm_blank").await else {
+    let Some(fx) = fixture(rusdoo_testing::schema_for("rusdoo_utm_blank")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -374,7 +374,7 @@ async fn a_record_without_a_real_name_is_refused_live() {
 
 #[tokio::test]
 async fn a_campaign_carries_its_tags_live() {
-    let Some(fx) = fixture("rusdoo_utm_tags").await else {
+    let Some(fx) = fixture(rusdoo_testing::schema_for("rusdoo_utm_tags")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };

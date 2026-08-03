@@ -172,7 +172,7 @@ async fn suggestions(reg: &Registry, pool: &PgPool, rule: i64) -> Vec<Map<String
 
 #[tokio::test]
 async fn a_varredura_separa_so_o_que_a_regra_descreve_live() {
-    let Some((reg, pool, methods)) = fixture("rusdoo_data_recycle_scan").await else {
+    let Some((reg, pool, methods)) = fixture(rusdoo_testing::schema_for("rusdoo_data_recycle_scan")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -225,7 +225,7 @@ async fn a_varredura_separa_so_o_que_a_regra_descreve_live() {
 
 #[tokio::test]
 async fn validar_apaga_o_alvo_e_a_sugestao_live() {
-    let Some((reg, pool, methods)) = fixture("rusdoo_data_recycle_validate").await else {
+    let Some((reg, pool, methods)) = fixture(rusdoo_testing::schema_for("rusdoo_data_recycle_validate")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -272,7 +272,7 @@ async fn validar_apaga_o_alvo_e_a_sugestao_live() {
 
 #[tokio::test]
 async fn descartar_tira_o_registro_da_fila_para_sempre_live() {
-    let Some((reg, pool, methods)) = fixture("rusdoo_data_recycle_discard").await else {
+    let Some((reg, pool, methods)) = fixture(rusdoo_testing::schema_for("rusdoo_data_recycle_discard")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -330,7 +330,7 @@ async fn descartar_tira_o_registro_da_fila_para_sempre_live() {
 
 #[tokio::test]
 async fn o_modo_automatico_arquiva_sem_perguntar_live() {
-    let Some((reg, pool, methods)) = fixture("rusdoo_data_recycle_auto").await else {
+    let Some((reg, pool, methods)) = fixture(rusdoo_testing::schema_for("rusdoo_data_recycle_auto")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -365,7 +365,7 @@ async fn o_modo_automatico_arquiva_sem_perguntar_live() {
 
 #[tokio::test]
 async fn o_cron_roda_as_regras_ativas_e_ignora_a_que_quebra_live() {
-    let Some((reg, pool, methods)) = fixture("rusdoo_data_recycle_cron").await else {
+    let Some((reg, pool, methods)) = fixture(rusdoo_testing::schema_for("rusdoo_data_recycle_cron")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -403,7 +403,7 @@ async fn o_cron_roda_as_regras_ativas_e_ignora_a_que_quebra_live() {
 
 #[tokio::test]
 async fn arquivar_o_que_nao_arquiva_e_recusado_live() {
-    let Some((reg, pool, methods)) = fixture("rusdoo_data_recycle_archive").await else {
+    let Some((reg, pool, methods)) = fixture(rusdoo_testing::schema_for("rusdoo_data_recycle_archive")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -442,7 +442,7 @@ async fn arquivar_o_que_nao_arquiva_e_recusado_live() {
 
 #[tokio::test]
 async fn uma_regra_perigosa_ou_mal_escrita_nao_e_salva_live() {
-    let Some((reg, pool, _methods)) = fixture("rusdoo_data_recycle_rules").await else {
+    let Some((reg, pool, _methods)) = fixture(rusdoo_testing::schema_for("rusdoo_data_recycle_rules")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
@@ -498,7 +498,7 @@ async fn uma_regra_perigosa_ou_mal_escrita_nao_e_salva_live() {
 
 #[tokio::test]
 async fn um_alvo_que_sumiu_sozinho_nao_derruba_a_validacao_live() {
-    let Some((reg, pool, methods)) = fixture("rusdoo_data_recycle_gone").await else {
+    let Some((reg, pool, methods)) = fixture(rusdoo_testing::schema_for("rusdoo_data_recycle_gone")).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };

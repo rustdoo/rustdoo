@@ -254,12 +254,9 @@ fn grouping_needs_at_least_one_groupby() {
 }
 
 async fn test_pool() -> Option<PgPool> {
-    let url = std::env::var("RUSDOO_TEST_DATABASE_URL").ok()?;
-    Some(
-        rusdoo_orm::db::connect(&url)
-            .await
-            .expect("failed to connect to test database"),
-    )
+    // um schema desta execução: estes testes criam tabelas
+    // direto, e sem isso duas execuções mexem nas mesmas
+    rusdoo_testing::pool_in("rusdoo_group_test_test_pool")
 }
 
 #[tokio::test]

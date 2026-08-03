@@ -51,7 +51,7 @@ async fn drop_schema(pool: &PgPool, schema: &str) {
 
 #[tokio::test]
 async fn a_parameter_is_read_written_and_forgotten_live() {
-    let schema = "rusdoo_case_config";
+    let schema = rusdoo_testing::schema_for("rusdoo_case_config");
     let Some((reg, pool)) = fixture(schema).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
@@ -104,7 +104,7 @@ async fn a_parameter_is_read_written_and_forgotten_live() {
 
 #[tokio::test]
 async fn the_database_refuses_a_second_parameter_with_the_same_key_live() {
-    let schema = "rusdoo_case_config_uniq";
+    let schema = rusdoo_testing::schema_for("rusdoo_case_config_uniq");
     let Some((reg, pool)) = fixture(schema).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
@@ -137,7 +137,7 @@ async fn the_database_refuses_a_second_parameter_with_the_same_key_live() {
 /// A razão de a unicidade estar no banco e não numa checagem em Rust.
 #[tokio::test]
 async fn concurrent_writers_cannot_both_create_the_same_key_live() {
-    let schema = "rusdoo_case_config_race";
+    let schema = rusdoo_testing::schema_for("rusdoo_case_config_race");
     let Some((reg, pool)) = fixture(schema).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
@@ -204,7 +204,7 @@ async fn concurrent_writers_cannot_both_create_the_same_key_live() {
 /// está lá — é o caso normal, não a exceção.
 #[tokio::test]
 async fn adding_a_constraint_that_already_exists_is_a_no_op_live() {
-    let schema = "rusdoo_case_config_idempotent";
+    let schema = rusdoo_testing::schema_for("rusdoo_case_config_idempotent");
     let Some((reg, pool)) = fixture(schema).await else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;

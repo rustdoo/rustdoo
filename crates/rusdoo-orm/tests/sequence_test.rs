@@ -49,8 +49,7 @@ fn registry(suffix: &str) -> Registry {
 }
 
 async fn fixture(suffix: &str) -> Option<(Registry, PgPool)> {
-    let url = std::env::var("RUSDOO_TEST_DATABASE_URL").ok()?;
-    let pool = rusdoo_orm::db::connect(&url).await.expect("test database");
+    let pool = rusdoo_testing::pool_in("rusdoo_sequence_test_fixture").expect("test database");
     let reg = registry(suffix);
     for table in [
         format!("rusdoo_test_doc_{suffix}"),

@@ -132,7 +132,7 @@ async fn a_salesperson_belongs_to_one_team_at_a_time_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (registry, pool) = fixture(&url, "rusdoo_sales_team_membership").await;
+    let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_sales_team_membership")).await;
     let north = a_team(&registry, &pool, "Norte").await;
     let south = a_team(&registry, &pool, "Sul").await;
     let ana = a_user(&registry, &pool, "ana", "Ana").await;
@@ -187,7 +187,7 @@ async fn the_membership_multi_parameter_lets_a_salesperson_serve_two_teams_live(
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (registry, pool) = fixture(&url, "rusdoo_sales_team_multi").await;
+    let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_sales_team_multi")).await;
     registry
         .get("ir.config_parameter")
         .unwrap()
@@ -240,7 +240,7 @@ async fn adding_the_same_salesperson_twice_is_refused_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (registry, pool) = fixture(&url, "rusdoo_sales_team_duplicate").await;
+    let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_sales_team_duplicate")).await;
     let team = a_team(&registry, &pool, "Norte").await;
     let beto = a_user(&registry, &pool, "beto", "Beto").await;
 
@@ -279,7 +279,7 @@ async fn removing_a_salesperson_who_is_not_in_the_team_is_refused_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (registry, pool) = fixture(&url, "rusdoo_sales_team_removal").await;
+    let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_sales_team_removal")).await;
     let north = a_team(&registry, &pool, "Norte").await;
     let south = a_team(&registry, &pool, "Sul").await;
     let ana = a_user(&registry, &pool, "ana", "Ana").await;
@@ -336,7 +336,7 @@ async fn a_membership_carries_the_salespersons_details_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (registry, pool) = fixture(&url, "rusdoo_sales_team_details").await;
+    let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_sales_team_details")).await;
     let team = a_team(&registry, &pool, "Norte").await;
     let ana = a_user(&registry, &pool, "ana", "Ana").await;
     let membership = call(
@@ -369,7 +369,7 @@ async fn a_favourite_team_is_a_link_the_caller_toggles_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (registry, pool) = fixture(&url, "rusdoo_sales_team_favourite").await;
+    let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_sales_team_favourite")).await;
     let team = a_team(&registry, &pool, "Norte").await;
     let ana = a_user(&registry, &pool, "ana", "Ana").await;
     let beto = a_user(&registry, &pool, "beto", "Beto").await;
@@ -425,7 +425,7 @@ async fn a_team_without_a_name_or_with_an_impossible_colour_is_refused_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (registry, pool) = fixture(&url, "rusdoo_sales_team_constraints").await;
+    let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_sales_team_constraints")).await;
 
     // a blank name passes NOT NULL and still leaves an unusable card
     let error = registry

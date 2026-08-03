@@ -189,7 +189,7 @@ async fn a_report_prints_the_record_and_its_lines_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (service, order) = fixture(&url, "rusdoo_report_test").await;
+    let (service, order) = fixture(&url, rusdoo_testing::schema_for("rusdoo_report_test")).await;
     // render directly first, so a failure says why instead of arriving
     // as the route's generic error page
     let rendered = service
@@ -225,7 +225,7 @@ async fn an_unknown_report_or_record_does_not_leak_why_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (service, order) = fixture(&url, "rusdoo_report_missing_test").await;
+    let (service, order) = fixture(&url, rusdoo_testing::schema_for("rusdoo_report_missing_test")).await;
     for uri in [
         format!("/report/html/test.nope/{order}"),
         format!("/report/html/test.doc_report/{}", order + 5000),
@@ -245,7 +245,7 @@ async fn a_report_is_never_cached_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (service, order) = fixture(&url, "rusdoo_report_cache_test").await;
+    let (service, order) = fixture(&url, rusdoo_testing::schema_for("rusdoo_report_cache_test")).await;
     let response = router(service)
         .oneshot(
             Request::get(format!("/report/html/test.doc_report/{order}"))

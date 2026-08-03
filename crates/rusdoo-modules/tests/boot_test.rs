@@ -80,7 +80,7 @@ async fn boots_fixture_addons_in_dependency_order() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = schema_pool(&url, "rusdoo_boot_order").await;
+    let pool = schema_pool(&url, rusdoo_testing::schema_for("rusdoo_boot_order")).await;
     for table in ["rusdoo_test_bootpartner", "rusdoo_test_bootco"] {
         sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{table}""#))
             .execute(&pool)
@@ -162,7 +162,7 @@ async fn addon_defined_models_are_registered_and_loaded() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = schema_pool(&url, "rusdoo_boot_models").await;
+    let pool = schema_pool(&url, rusdoo_testing::schema_for("rusdoo_boot_models")).await;
     sqlx::query(r#"DROP TABLE IF EXISTS "x_lib_livro""#)
         .execute(&pool)
         .await
@@ -214,7 +214,7 @@ async fn ir_model_access_csv_loads_into_acl() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = schema_pool(&url, "rusdoo_boot_acl").await;
+    let pool = schema_pool(&url, rusdoo_testing::schema_for("rusdoo_boot_acl")).await;
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {
@@ -328,7 +328,7 @@ async fn command_link_loads_m2m_end_to_end() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = schema_pool(&url, "rusdoo_boot_m2m").await;
+    let pool = schema_pool(&url, rusdoo_testing::schema_for("rusdoo_boot_m2m")).await;
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {

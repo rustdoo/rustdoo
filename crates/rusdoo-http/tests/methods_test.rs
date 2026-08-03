@@ -141,7 +141,7 @@ async fn an_action_moves_the_order_and_refuses_the_moves_that_make_no_sense_live
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (service, _pool) = fixture(&url, "rusdoo_methods_test").await;
+    let (service, _pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_methods_test")).await;
     let app = router(service.clone());
     let order = an_order(&app, "SO-M1").await;
     assert_eq!(state_of(router(service.clone()), order).await, "draft");
@@ -191,7 +191,7 @@ async fn a_method_without_ids_says_so_instead_of_touching_everything_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (service, _pool) = fixture(&url, "rusdoo_methods_noids_test").await;
+    let (service, _pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_methods_noids_test")).await;
     let app = router(service.clone());
     let order = an_order(&app, "SO-M2").await;
     let answer = call(
@@ -210,7 +210,7 @@ async fn the_acl_uses_the_operation_the_method_declared_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let (insecure, _pool) = fixture(&url, "rusdoo_methods_acl_test").await;
+    let (insecure, _pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_methods_acl_test")).await;
     let app = router(insecure.clone());
     let order = an_order(&app, "SO-M3").await;
 

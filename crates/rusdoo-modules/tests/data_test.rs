@@ -113,11 +113,11 @@ fn real_base_country_states_csv_parses() {
 
 #[tokio::test]
 async fn load_records_applies_refs_and_respects_noupdate() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_data_test_load_records_applies_refs_and_resp").unwrap();
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {
@@ -226,11 +226,11 @@ async fn load_records_applies_refs_and_respects_noupdate() {
 
 #[tokio::test]
 async fn unresolved_ref_is_a_clear_error() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_data_test_unresolved_ref_is_a_clear_error").unwrap();
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {
@@ -303,11 +303,11 @@ fn text_content_is_verbatim_like_odoo() {
 
 #[tokio::test]
 async fn failed_load_rolls_back_the_whole_file() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_data_test_failed_load_rolls_back_the_whole_f").unwrap();
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {
@@ -349,7 +349,7 @@ async fn failed_load_rolls_back_the_whole_file() {
         .await
         .unwrap_err();
 
-    assert!(err.to_string().contains("ghost.nope"));
+    assert!(err.to_string().contains("ghost.nope"), "erro inesperado: {err}");
     // the whole file rolled back: no rows, no published external ids
     let count: i64 = sqlx::query_scalar(r#"SELECT COUNT(*) FROM "rusdoo_test_rbco""#)
         .fetch_one(&pool)

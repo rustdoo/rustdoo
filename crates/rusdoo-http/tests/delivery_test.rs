@@ -199,7 +199,7 @@ async fn a_confirmed_order_produces_a_delivery_of_its_goods_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_delivery_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_delivery_test")).await;
     let order = a_confirmed_order(&service, "SO-DEL").await;
 
     let answer = call(
@@ -280,7 +280,7 @@ async fn an_order_of_services_only_has_nothing_to_deliver_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_delivery_service_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_delivery_service_test")).await;
     let partner = create(&service, "res.partner", json!({"name": "Cliente"})).await;
     let consulting = create(
         &service,
@@ -321,7 +321,7 @@ async fn a_picking_without_moves_is_not_confirmed_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_delivery_empty_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_delivery_empty_test")).await;
     let picking = create(&service, "stock.picking", json!({"name": "WH/OUT/0001"})).await;
     let answer = call(
         router(service),

@@ -172,7 +172,7 @@ async fn a_confirmed_order_becomes_an_invoice_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_invoicing_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_invoicing_test")).await;
     let order = a_confirmed_order(&service, "SO-INV").await;
 
     let answer = call(
@@ -236,7 +236,7 @@ async fn an_unconfirmed_order_is_not_billed_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_invoicing_draft_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_invoicing_draft_test")).await;
     let partner = call(
         router(service.clone()),
         json!({"model": "res.partner", "method": "create",
@@ -298,7 +298,7 @@ async fn an_invoice_without_lines_is_not_posted_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_invoicing_empty_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_invoicing_empty_test")).await;
     let partner = call(
         router(service.clone()),
         json!({"model": "res.partner", "method": "create",
@@ -334,7 +334,7 @@ async fn a_line_that_sells_nothing_is_refused_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let service = fixture(&url, "rusdoo_invoicing_constraint_test").await;
+    let service = fixture(&url, rusdoo_testing::schema_for("rusdoo_invoicing_constraint_test")).await;
     let partner = call(
         router(service.clone()),
         json!({"model": "res.partner", "method": "create",

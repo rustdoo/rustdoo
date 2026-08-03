@@ -121,7 +121,7 @@ async fn a_file_is_stored_and_served_back_live() {
         return;
     };
     let store = filestore("roundtrip");
-    let (service, partner) = fixture(&url, "rusdoo_attachment_test", &store).await;
+    let (service, partner) = fixture(&url, rusdoo_testing::schema_for("rusdoo_attachment_test"), &store).await;
 
     let answer = upload(
         router(service.clone()),
@@ -192,7 +192,7 @@ async fn a_file_name_never_becomes_a_path_live() {
         return;
     };
     let store = filestore("traversal");
-    let (service, partner) = fixture(&url, "rusdoo_attachment_path_test", &store).await;
+    let (service, partner) = fixture(&url, rusdoo_testing::schema_for("rusdoo_attachment_path_test"), &store).await;
     let answer = upload(
         router(service),
         "res.partner",
@@ -224,7 +224,7 @@ async fn an_upload_without_a_record_is_refused_live() {
         return;
     };
     let store = filestore("norecord");
-    let (service, partner) = fixture(&url, "rusdoo_attachment_norecord_test", &store).await;
+    let (service, partner) = fixture(&url, rusdoo_testing::schema_for("rusdoo_attachment_norecord_test"), &store).await;
 
     // a model nobody registered
     let answer = upload(
@@ -256,7 +256,7 @@ async fn a_missing_attachment_is_a_404_live() {
         return;
     };
     let store = filestore("missing");
-    let (service, _partner) = fixture(&url, "rusdoo_attachment_missing_test", &store).await;
+    let (service, _partner) = fixture(&url, rusdoo_testing::schema_for("rusdoo_attachment_missing_test"), &store).await;
     let response = router(service)
         .oneshot(Request::get("/web/content/9999").body(Body::empty()).unwrap())
         .await

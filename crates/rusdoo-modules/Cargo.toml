@@ -16,4 +16,5 @@ csv.workspace = true
 sqlx.workspace = true
 
 [dev-dependencies]
+rusdoo-testing = { path = "../rusdoo-testing" }
 tokio.workspace = true

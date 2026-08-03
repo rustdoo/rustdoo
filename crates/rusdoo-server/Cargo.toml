@@ -36,3 +36,4 @@ rusdoo-modules = { path = "../rusdoo-modules" }
 sqlx.workspace = true
 
 [dev-dependencies]
+rusdoo-testing = { path = "../rusdoo-testing" }

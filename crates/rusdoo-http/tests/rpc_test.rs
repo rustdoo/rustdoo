@@ -164,12 +164,12 @@ async fn unknown_service_is_method_not_found() {
 
 #[tokio::test]
 async fn call_kw_crud_roundtrip_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
     // Arrange: fresh table + service over a real pool
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_call_kw_crud_roundtrip").unwrap();
     sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_rpc_partner""#)
         .execute(&pool)
         .await
@@ -300,11 +300,11 @@ async fn rpc_full(
 
 #[tokio::test]
 async fn session_auth_flow_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_session_auth_flow").unwrap();
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {
@@ -409,11 +409,11 @@ async fn session_auth_flow_live() {
 
 #[tokio::test]
 async fn password_field_is_never_readable_over_rpc() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_password_field_is_never_readable_o").unwrap();
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {
@@ -459,11 +459,11 @@ async fn password_field_is_never_readable_over_rpc() {
 async fn access_control_enforced_live() {
     use rusdoo_orm::access::{AccessControl, Operation};
 
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_access_control_enforced").unwrap();
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {
@@ -641,9 +641,9 @@ async fn action_and_menu_navigation_live() {
         .max_connections(2)
         .after_connect(|conn, _meta| {
             Box::pin(async move {
-                sqlx::Executor::execute(&mut *conn, "CREATE SCHEMA IF NOT EXISTS rusdoo_nav_test")
+                sqlx::Executor::execute(&mut *conn, &format!("CREATE SCHEMA IF NOT EXISTS {}", rusdoo_testing::schema_for("rusdoo_nav_test")) as &str)
                     .await?;
-                sqlx::Executor::execute(&mut *conn, "SET search_path TO rusdoo_nav_test").await?;
+                sqlx::Executor::execute(&mut *conn, &format!("SET search_path TO {}", rusdoo_testing::schema_for("rusdoo_nav_test")) as &str).await?;
                 Ok(())
             })
         })
@@ -976,11 +976,11 @@ async fn web_spec_wider_than_the_node_cap_is_refused() {
 async fn web_read_nested_acl_and_exposure_enforced_live() {
     use rusdoo_orm::access::{AccessControl, Operation};
 
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_web_read_nested_acl_and_exposure_e").unwrap();
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {
@@ -1227,11 +1227,11 @@ async fn web_read_nested_acl_and_exposure_enforced_live() {
 
 #[tokio::test]
 async fn web_read_shapes_records_by_specification_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_web_read_shapes_records_by_specifi").unwrap();
     for t in [
         "rusdoo_test_web_pc_rel",
         "rusdoo_test_web_partner",
@@ -1389,11 +1389,11 @@ async fn web_read_shapes_records_by_specification_live() {
 
 #[tokio::test]
 async fn web_search_read_returns_length_and_records_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_web_search_read_returns_length_and").unwrap();
     sqlx::query(r#"DROP TABLE IF EXISTS "rusdoo_test_wsr_partner""#)
         .execute(&pool)
         .await
@@ -1525,12 +1525,12 @@ async fn name_search_service(pool: sqlx::PgPool, table: &str) -> (OrmService, Ve
 
 #[tokio::test]
 async fn name_search_returns_id_name_pairs_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
-    let (service, ids) = name_search_service(pool, "rusdoo_test_ns_partner").await;
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_name_search_returns_id_name_pairs").unwrap();
+    let (service, ids) = name_search_service(pool, rusdoo_testing::schema_for("rusdoo_test_ns_partner")).await;
     let (ana, anastacia, bob) = (ids[0], ids[1], ids[2]);
 
     // default ilike: substring, case-insensitive, [id, display_name] pairs
@@ -1606,12 +1606,12 @@ async fn name_search_returns_id_name_pairs_live() {
 
 #[tokio::test]
 async fn web_name_search_shapes_by_specification_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
-    let (service, ids) = name_search_service(pool, "rusdoo_test_wns_partner").await;
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_web_name_search_shapes_by_specific").unwrap();
+    let (service, ids) = name_search_service(pool, rusdoo_testing::schema_for("rusdoo_test_wns_partner")).await;
     let bob = ids[2];
 
     // display_name-only spec: the compact {id, display_name} shape
@@ -1695,11 +1695,11 @@ fn save_registry(prefix: &str) -> Registry {
 
 #[tokio::test]
 async fn web_save_creates_then_writes_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_web_save_creates_then_writes").unwrap();
     let reg = save_registry("rusdoo_test_ws");
     for t in ["rusdoo_test_ws_line", "rusdoo_test_ws_order"] {
         sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
@@ -1824,11 +1824,11 @@ async fn web_save_creates_then_writes_live() {
 async fn web_save_and_commands_enforce_access_live() {
     use rusdoo_orm::access::{AccessControl, Operation};
 
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_web_save_and_commands_enforce_acce").unwrap();
     let mut reg = save_registry("rusdoo_test_wsa");
     reg.register(Model::new(
         ModelMeta {
@@ -2110,11 +2110,11 @@ fn group_registry(prefix: &str) -> Registry {
 
 #[tokio::test]
 async fn read_group_shapes_groups_for_the_web_client_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_read_group_shapes_groups_for_the_w").unwrap();
     let reg = group_registry("rusdoo_test_rg");
     for t in ["rusdoo_test_rg_sale", "rusdoo_test_rg_country"] {
         sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
@@ -2271,11 +2271,11 @@ async fn read_group_shapes_groups_for_the_web_client_live() {
 
 #[tokio::test]
 async fn read_group_refuses_what_it_cannot_answer_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_read_group_refuses_what_it_cannot_").unwrap();
     // own tables: the sibling grouping test drops and recreates its own
     let reg = group_registry("rusdoo_test_rgx");
     for t in ["rusdoo_test_rgx_sale", "rusdoo_test_rgx_country"] {
@@ -2431,11 +2431,11 @@ async fn default_get_serves_declared_and_context_defaults() {
 
 #[tokio::test]
 async fn active_test_context_controls_archived_records_live() {
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_active_test_context_controls_archi").unwrap();
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {
@@ -2534,9 +2534,9 @@ async fn webclient_boot_endpoints_live() {
         .max_connections(2)
         .after_connect(|conn, _meta| {
             Box::pin(async move {
-                sqlx::Executor::execute(&mut *conn, "CREATE SCHEMA IF NOT EXISTS rusdoo_boot_test")
+                sqlx::Executor::execute(&mut *conn, &format!("CREATE SCHEMA IF NOT EXISTS {}", rusdoo_testing::schema_for("rusdoo_boot_test")) as &str)
                     .await?;
-                sqlx::Executor::execute(&mut *conn, "SET search_path TO rusdoo_boot_test").await?;
+                sqlx::Executor::execute(&mut *conn, &format!("SET search_path TO {}", rusdoo_testing::schema_for("rusdoo_boot_test")) as &str).await?;
                 Ok(())
             })
         })
@@ -2842,10 +2842,10 @@ async fn get_views_returns_arch_and_fields_live() {
             Box::pin(async move {
                 sqlx::Executor::execute(
                     &mut *conn,
-                    "CREATE SCHEMA IF NOT EXISTS rusdoo_views_test",
+                    &format!("CREATE SCHEMA IF NOT EXISTS {}", rusdoo_testing::schema_for("rusdoo_views_test")) as &str,
                 )
                 .await?;
-                sqlx::Executor::execute(&mut *conn, "SET search_path TO rusdoo_views_test").await?;
+                sqlx::Executor::execute(&mut *conn, &format!("SET search_path TO {}", rusdoo_testing::schema_for("rusdoo_views_test")) as &str).await?;
                 Ok(())
             })
         })
@@ -3070,11 +3070,11 @@ async fn record_rules_scope_every_path_live() {
     use rusdoo_orm::access::{AccessControl, Operation};
     use rusdoo_orm::rules::{RecordRules, Rule};
 
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_record_rules_scope_every_path").unwrap();
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {
@@ -3342,11 +3342,11 @@ async fn create_rules_are_enforced_in_the_insert_transaction_live() {
     use rusdoo_orm::access::{AccessControl, Operation};
     use rusdoo_orm::rules::{RecordRules, Rule};
 
-    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    let pool = rusdoo_orm::db::connect(&url).await.unwrap();
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_create_rules_are_enforced_in_the_i").unwrap();
     let mut reg = Registry::new();
     reg.register(Model::new(
         ModelMeta {
