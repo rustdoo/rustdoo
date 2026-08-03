@@ -109,7 +109,7 @@ async fn the_dialog_cancels_the_order_and_says_why_live() {
     assert!(answer["error"]["message"]
         .as_str()
         .unwrap_or_default()
-        .contains("por que"));
+        .contains("say why"));
     assert_eq!(state_of(&service, order).await, "sale");
 
     // with a reason: the order is cancelled, the dialog says it is done,

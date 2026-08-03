@@ -117,12 +117,12 @@ fn filter_is_a_domain(record: &Map<String, Value>) -> Result<(), String> {
     }
     let terms: Vec<Value> = serde_json::from_str(&raw).map_err(|error| {
         format!(
-            "o filtro precisa ser uma lista JSON de condições, como \
+            "the filter must be a JSON list of conditions, such as \
              [[\"state\", \"=\", \"cancel\"]]: {error}"
         )
     })?;
     parse_domain(&Value::Array(terms))
-        .map_err(|error| format!("o filtro não é válido: {error}"))?;
+        .map_err(|error| format!("the filter is not valid: {error}"))?;
     Ok(())
 }
 
@@ -137,8 +137,8 @@ fn rule_selects_something(record: &Map<String, Value>) -> Result<(), String> {
     let no_age = text(record, "time_field_name").trim().is_empty();
     if no_filter && no_age {
         return Err(
-            "a regra precisa de um filtro ou de um campo de idade: sem nenhum dos \
-                    dois ela casaria com todos os registros do modelo"
+            "the rule needs a filter or an age field: with neither it would \
+                    match every record of the model"
                 .into(),
         );
     }
@@ -154,7 +154,7 @@ fn age_is_a_real_interval(record: &Map<String, Value>) -> Result<(), String> {
     let delta = int(record, "time_field_delta");
     if delta <= 0 {
         return Err(format!(
-            "o intervalo de idade é {delta}: precisa ser maior que zero (1 mês, 30 dias, …)"
+            "the age interval is {delta}: it must be greater than zero (1 month, 30 days, …)"
         ));
     }
     Ok(())
@@ -194,7 +194,7 @@ fn recycle_rule() -> Model {
                 "recycle_mode",
                 FieldType::Selection(vec![
                     ("manual".into(), "Manual".into()),
-                    ("automatic".into(), "Automático".into()),
+                    ("automatic".into(), "Automatic".into()),
                 ]),
             )
             .required()
@@ -217,10 +217,10 @@ fn recycle_rule() -> Model {
             Field::new(
                 "time_field_delta_unit",
                 FieldType::Selection(vec![
-                    ("days".into(), "Dias".into()),
-                    ("weeks".into(), "Semanas".into()),
-                    ("months".into(), "Meses".into()),
-                    ("years".into(), "Anos".into()),
+                    ("days".into(), "Days".into()),
+                    ("weeks".into(), "Weeks".into()),
+                    ("months".into(), "Months".into()),
+                    ("years".into(), "Years".into()),
                 ]),
             )
             .default_value(json!("months")),
@@ -243,14 +243,14 @@ fn recycle_rule() -> Model {
             Field::new("last_scan", FieldType::Datetime),
         ],
     )
-    .constrained("filtro válido", &["domain"], filter_is_a_domain)
+    .constrained("valid filter", &["domain"], filter_is_a_domain)
     .constrained(
-        "regra que seleciona alguma coisa",
+        "a rule that selects something",
         &["domain", "time_field_name"],
         rule_selects_something,
     )
     .constrained(
-        "idade válida",
+        "valid age",
         &["time_field_name", "time_field_delta"],
         age_is_a_real_interval,
     )
@@ -298,7 +298,7 @@ fn cutoff_for(
 ) -> Result<String, RusdooError> {
     let moment = subtract(now, unit, delta).ok_or_else(|| {
         RusdooError::Validation(format!(
-            "não dá para voltar {delta} {unit:?} a partir de {now}: revise o intervalo de idade"
+            "cannot go back {delta} {unit:?} from {now}: review the age interval"
         ))
     })?;
     Ok(match ty {
@@ -306,7 +306,7 @@ fn cutoff_for(
         FieldType::Datetime => moment.format("%Y-%m-%d %H:%M:%S").to_string(),
         other => {
             return Err(RusdooError::Validation(format!(
-                "o campo de idade precisa ser uma data ou data/hora, e não {other:?}"
+                "the age field must be a date or a datetime, not {other:?}"
             )))
         }
     })
@@ -339,14 +339,14 @@ fn rule_domain(
     };
     let mut terms: Vec<Value> = serde_json::from_str(&raw).map_err(|error| {
         RusdooError::Validation(format!(
-            "o filtro da regra não é uma lista JSON de condições: {error}"
+            "the rule's filter is not a JSON list of conditions: {error}"
         ))
     })?;
     let field_name = text(rule, "time_field_name");
     if !field_name.trim().is_empty() {
         let field = target.field(&field_name).ok_or_else(|| {
             RusdooError::Validation(format!(
-                "o campo de idade {field_name:?} não existe em {}",
+                "age field {field_name:?} does not exist on {}",
                 target.meta.name
             ))
         })?;
@@ -385,13 +385,13 @@ async fn scan_rule(ctx: &MethodCtx<'_>, rule_id: i64) -> Result<usize, RusdooErr
         .await?;
     let rule = rules
         .first()
-        .ok_or_else(|| RusdooError::Validation(format!("a regra {rule_id} não existe")))?;
+        .ok_or_else(|| RusdooError::Validation(format!("rule {rule_id} does not exist")))?;
     let rule_name = text(rule, "name");
     let target_name = text(rule, "res_model_name");
     let target = ctx.registry.get(&target_name).ok_or_else(|| {
         RusdooError::Validation(format!(
-            "a regra {rule_name:?} aponta o modelo {target_name:?}, que não está registrado: \
-             corrija o nome técnico do modelo"
+            "rule {rule_name:?} points at model {target_name:?}, which is not registered: \
+             fix the model's technical name"
         ))
     })?;
     let action = text(rule, "recycle_action");
@@ -399,8 +399,8 @@ async fn scan_rule(ctx: &MethodCtx<'_>, rule_id: i64) -> Result<usize, RusdooErr
     // porque é aqui que se enxerga o registro de modelos
     if action == ARCHIVE && target.field("active").is_none() {
         return Err(RusdooError::Validation(format!(
-            "o modelo {target_name} não tem registros arquiváveis: mude a ação da regra \
-             {rule_name:?} para excluir"
+            "model {target_name} has no archivable records: change the action of rule \
+             {rule_name:?} to delete"
         )));
     }
 
@@ -527,7 +527,7 @@ fn action_recycle_records<'a>(
     Box::pin(async move {
         if ctx.ids.is_empty() {
             return Err(RusdooError::Validation(
-                "a ação precisa de pelo menos uma regra".into(),
+                "the action needs at least one rule".into(),
             ));
         }
         let mut applied = 0;
@@ -595,7 +595,7 @@ fn cron_recycle_records<'a>(
             match apply_open_suggestions(&ctx, rule_id).await {
                 Ok(done) => applied += done,
                 Err(error) => {
-                    tracing::error!("data_recycle: a regra {rule_id} não pôde aplicar: {error}")
+                    tracing::error!("data_recycle: rule {rule_id} could not run: {error}")
                 }
             }
         }
@@ -613,7 +613,7 @@ fn action_validate<'a>(
     Box::pin(async move {
         if ctx.ids.is_empty() {
             return Err(RusdooError::Validation(
-                "escolha pelo menos um registro para validar".into(),
+                "choose at least one record to validate".into(),
             ));
         }
         let ids = ctx.ids.clone();
@@ -692,7 +692,7 @@ async fn validate_suggestions(ctx: &MethodCtx<'_>, ids: &[i64]) -> Result<usize,
                 .await?;
         } else {
             let model = ctx.registry.get(&model_name).ok_or_else(|| {
-                RusdooError::Validation(format!("o modelo {model_name} não está registrado"))
+                RusdooError::Validation(format!("model {model_name} is not registered"))
             })?;
             model.unlink(ctx.pool, &alive).await?;
         }
@@ -701,7 +701,7 @@ async fn validate_suggestions(ctx: &MethodCtx<'_>, ids: &[i64]) -> Result<usize,
     let record_model = ctx
         .registry
         .get(RECORD)
-        .ok_or_else(|| RusdooError::Validation(format!("o modelo {RECORD} não está registrado")))?;
+        .ok_or_else(|| RusdooError::Validation(format!("model {RECORD} is not registered")))?;
     record_model.unlink(ctx.pool, ids).await?;
     Ok(rows.len())
 }
@@ -744,7 +744,7 @@ fn action_discard<'a>(
     Box::pin(async move {
         if ctx.ids.is_empty() {
             return Err(RusdooError::Validation(
-                "escolha pelo menos um registro para descartar".into(),
+                "choose at least one record to discard".into(),
             ));
         }
         ctx.registry
@@ -777,7 +777,7 @@ mod tests {
     fn moment() -> NaiveDateTime {
         NaiveDate::from_ymd_opt(2026, 3, 31)
             .and_then(|day| day.and_hms_opt(14, 30, 0))
-            .expect("uma data válida")
+            .expect("a valid date")
     }
 
     #[test]
@@ -805,15 +805,15 @@ mod tests {
     #[test]
     fn um_campo_que_nao_e_data_nao_serve_de_idade() {
         let error = cutoff_for(&FieldType::Integer, "days", 1, moment())
-            .expect_err("um inteiro não é uma data");
+            .expect_err("an integer is not a date");
         assert!(
-            error.to_string().contains("precisa ser uma data"),
+            error.to_string().contains("must be a date"),
             "{error}"
         );
         // e uma unidade que ninguém definiu não vira silenciosamente dias
         let error = cutoff_for(&FieldType::Date, "quinzenas", 1, moment())
-            .expect_err("unidade desconhecida");
-        assert!(error.to_string().contains("revise o intervalo"), "{error}");
+            .expect_err("an unknown unit is not silently days");
+        assert!(error.to_string().contains("review the age interval"), "{error}");
     }
 
     #[test]
@@ -833,7 +833,7 @@ mod tests {
 
         let domain = rule_domain(&rule, &target, moment()).unwrap();
         let Domain::And(parts) = domain else {
-            panic!("o filtro e a idade têm que valer os dois: {domain:?}");
+            panic!("the filter and the age must both hold: {domain:?}");
         };
         assert_eq!(parts.len(), 2);
         assert!(parts[0].mentions("subject"));
@@ -861,8 +861,8 @@ mod tests {
         let mut rule = Map::new();
         rule.insert("domain".into(), json!("[]"));
         rule.insert("time_field_name".into(), json!(""));
-        let reason = rule_selects_something(&rule).expect_err("sem filtro e sem idade");
-        assert!(reason.contains("todos os registros"), "{reason}");
+        let reason = rule_selects_something(&rule).expect_err("no filter and no age");
+        assert!(reason.contains("match every record"), "{reason}");
 
         // basta um dos dois para a regra ser aceitável
         rule.insert("time_field_name".into(), json!("create_date"));
@@ -876,13 +876,13 @@ mod tests {
     fn um_filtro_que_o_banco_nao_entende_nao_e_salvo() {
         let mut rule = Map::new();
         rule.insert("domain".into(), json!("state = cancel"));
-        let reason = filter_is_a_domain(&rule).expect_err("isso não é JSON");
-        assert!(reason.contains("lista JSON"), "{reason}");
+        let reason = filter_is_a_domain(&rule).expect_err("that is not JSON");
+        assert!(reason.contains("JSON list"), "{reason}");
 
         // JSON válido, domínio inválido: um operador que não existe
         rule.insert("domain".into(), json!(r#"[["state", "~=", "cancel"]]"#));
         let reason = filter_is_a_domain(&rule).expect_err("operador desconhecido");
-        assert!(reason.contains("não é válido"), "{reason}");
+        assert!(reason.contains("is not valid"), "{reason}");
 
         rule.insert("domain".into(), json!(r#"[["state", "=", "cancel"]]"#));
         assert!(filter_is_a_domain(&rule).is_ok());
@@ -893,8 +893,8 @@ mod tests {
         let mut rule = Map::new();
         rule.insert("time_field_name".into(), json!("create_date"));
         rule.insert("time_field_delta".into(), json!(0));
-        let reason = age_is_a_real_interval(&rule).expect_err("zero não é intervalo");
-        assert!(reason.contains("maior que zero"), "{reason}");
+        let reason = age_is_a_real_interval(&rule).expect_err("zero is not an interval");
+        assert!(reason.contains("greater than zero"), "{reason}");
 
         // sem campo de idade, o intervalo não é olhado
         rule.insert("time_field_name".into(), json!(""));
@@ -918,7 +918,7 @@ mod tests {
         let mut reg = rusdoo_base::registry().expect("a base registra");
         extend(&mut reg).expect("o addon registra");
         for name in [RULE, RECORD] {
-            assert!(reg.get(name).is_some(), "{name} precisa estar registrado");
+            assert!(reg.get(name).is_some(), "{name} must be registered");
         }
         // o contador é derivado: nenhum cliente escreve nele
         let count = reg
@@ -931,7 +931,7 @@ mod tests {
     #[test]
     fn a_regra_tem_o_botao_e_o_job_e_a_sugestao_tem_os_dois_dela() {
         let mut methods = MethodRegistry::new();
-        extend_methods(&mut methods).expect("os métodos registram");
+        extend_methods(&mut methods).expect("the methods register");
         assert_eq!(
             methods.names_for(RULE),
             vec!["action_recycle_records", "cron_recycle_records"]

@@ -83,10 +83,10 @@ fn nomenclature() -> Model {
             Field::new(
                 "upc_ean_conv",
                 FieldType::Selection(vec![
-                    ("none".into(), "Nunca".into()),
+                    ("none".into(), "Never".into()),
                     ("ean2upc".into(), "EAN-13 para UPC-A".into()),
                     ("upc2ean".into(), "UPC-A para EAN-13".into()),
-                    ("always".into(), "Sempre".into()),
+                    ("always".into(), "Always".into()),
                 ]),
             )
             .required()
@@ -119,7 +119,7 @@ fn rule() -> Model {
             Field::new(
                 "encoding",
                 FieldType::Selection(vec![
-                    ("any".into(), "Qualquer".into()),
+                    ("any".into(), "Any".into()),
                     ("ean13".into(), "EAN-13".into()),
                     ("ean8".into(), "EAN-8".into()),
                     ("upca".into(), "UPC-A".into()),
@@ -131,7 +131,7 @@ fn rule() -> Model {
                 "type",
                 FieldType::Selection(vec![
                     ("alias".into(), "Alias".into()),
-                    ("product".into(), "Produto".into()),
+                    ("product".into(), "Product".into()),
                 ]),
             )
             .required()
@@ -140,7 +140,7 @@ fn rule() -> Model {
             char("alias").required().default_value(json!("0")),
         ],
     )
-    .constrained("padrão utilizável", &["pattern"], pattern_is_usable)
+    .constrained("usable pattern", &["pattern"], pattern_is_usable)
 }
 
 /// `parse_barcode` — o que este código lido é?
@@ -156,7 +156,7 @@ fn parse_barcode<'a>(
     Box::pin(async move {
         let [nomenclature] = ctx.ids[..] else {
             return Err(RusdooError::Validation(
-                "leia o código com uma nomenclatura de cada vez".into(),
+                "scan with one nomenclature at a time".into(),
             ));
         };
         // os argumentos do método vêm depois do conjunto de registros
@@ -165,7 +165,7 @@ fn parse_barcode<'a>(
             .first()
             .or_else(|| kwargs.get("barcode"))
             .and_then(Value::as_str)
-            .ok_or_else(|| RusdooError::Validation("informe o código lido".into()))?;
+            .ok_or_else(|| RusdooError::Validation("give the barcode that was scanned".into()))?;
 
         // uma URI de RFID não passa pelas regras: ela já diz o que carrega
         if let Some(parts) = decode::parse_uri(barcode) {
@@ -229,7 +229,7 @@ mod tests {
         let mut reg = rusdoo_base::registry().unwrap();
         extend(&mut reg).unwrap();
         for name in ["barcode.nomenclature", "barcode.rule"] {
-            assert!(reg.get(name).is_some(), "{name} precisa estar registrado");
+            assert!(reg.get(name).is_some(), "{name} must be registered");
         }
         // uma regra sem padrão não filtra nada
         let pattern = reg.get("barcode.rule").unwrap().field("pattern").unwrap();

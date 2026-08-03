@@ -41,11 +41,11 @@ impl OrmService {
     ) -> Result<String, RpcError> {
         let (module, name) = xml_id
             .split_once('.')
-            .ok_or_else(|| RpcError::invalid_params("o id externo do relatório é módulo.nome"))?;
+            .ok_or_else(|| RpcError::invalid_params("a report's external id is module.name"))?;
         let report_id = self
             .resolve_report_id(module, name)
             .await
-            .ok_or_else(|| RpcError::invalid_params(format!("relatório {xml_id} não existe")))?;
+            .ok_or_else(|| RpcError::invalid_params(format!("report {xml_id} does not exist")))?;
         let reports = self
             .registry
             .read(
@@ -57,17 +57,17 @@ impl OrmService {
             .await?;
         let report = reports
             .first()
-            .ok_or_else(|| RpcError::invalid_params("o relatório sumiu"))?;
+            .ok_or_else(|| RpcError::invalid_params("the report is gone"))?;
         let model = report
             .get("model")
             .and_then(Value::as_str)
             .filter(|model| !model.is_empty())
-            .ok_or_else(|| RpcError::invalid_params("o relatório não diz sobre qual modelo é"))?;
+            .ok_or_else(|| RpcError::invalid_params("the report does not say which model it is about"))?;
         let template = report
             .get("report_name")
             .and_then(Value::as_str)
             .filter(|name| !name.is_empty())
-            .ok_or_else(|| RpcError::invalid_params("o relatório não nomeia um template"))?;
+            .ok_or_else(|| RpcError::invalid_params("the report names no template"))?;
 
         if let Some(session) = session {
             self.check_access(model, "read", session)?;
@@ -125,7 +125,7 @@ impl OrmService {
         let mut record = rows
             .into_iter()
             .next()
-            .ok_or_else(|| RpcError::invalid_params(format!("registro {res_id} não existe")))?;
+            .ok_or_else(|| RpcError::invalid_params(format!("record {res_id} does not exist")))?;
 
         for field in m.fields() {
             humanize_field(field, &mut record);

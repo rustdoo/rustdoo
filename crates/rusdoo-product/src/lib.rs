@@ -23,14 +23,14 @@ pub fn extend(reg: &mut Registry) -> Result<(), RusdooError> {
 
 /// A price below zero is not a discount, it is a typo.
 fn prices_are_not_negative(record: &Map<String, Value>) -> Result<(), String> {
-    for (field, label) in [("list_price", "preço de venda"), ("standard_price", "custo")] {
+    for (field, label) in [("list_price", "sales price"), ("standard_price", "custo")] {
         let value = record
             .get(field)
             .and_then(Value::as_f64)
             .or_else(|| record.get(field).and_then(Value::as_i64).map(|n| n as f64))
             .unwrap_or(0.0);
         if value < 0.0 {
-            return Err(format!("o {label} não pode ser negativo"));
+            return Err(format!("the {label} cannot be negative"));
         }
     }
     Ok(())
@@ -57,8 +57,8 @@ fn product() -> Model {
             Field::new(
                 "type",
                 FieldType::Selection(vec![
-                    ("consu".into(), "Produto".into()),
-                    ("service".into(), "Serviço".into()),
+                    ("consu".into(), "Product".into()),
+                    ("service".into(), "Service".into()),
                 ]),
             )
             .default_value(json!("consu")),
@@ -70,7 +70,7 @@ fn product() -> Model {
         ],
     )
     .constrained(
-        "preços não negativos",
+        "non-negative prices",
         &["list_price", "standard_price"],
         prices_are_not_negative,
     )

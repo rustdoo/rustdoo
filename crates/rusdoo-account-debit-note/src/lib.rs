@@ -176,18 +176,18 @@ fn refuse_undebitable(row: &Map<String, Value>) -> Result<(), RusdooError> {
     let state = row.get("state").and_then(Value::as_str).unwrap_or("draft");
     if state != "posted" {
         return Err(RusdooError::Validation(format!(
-            "a fatura {name} está em {state:?}: lance a fatura antes de emitir a nota de débito"
+            "invoice {name} is {state:?}: post it before issuing the debit note"
         )));
     }
     if row.get("debit_origin_id").and_then(first_id).is_some() {
         return Err(RusdooError::Validation(format!(
-            "{name} já é uma nota de débito: debite a fatura de origem, não a nota"
+            "{name} is already a debit note: debit the source invoice, not the note"
         )));
     }
     let move_type = row.get("move_type").and_then(Value::as_str).unwrap_or("");
     if !DEBITABLE.contains(&move_type) {
         return Err(RusdooError::Validation(format!(
-            "{name} é do tipo {move_type:?}: só fatura de cliente ou de fornecedor vira nota de débito"
+            "{name} is of type {move_type:?}: only a customer or vendor invoice becomes a debit note"
         )));
     }
     Ok(())
@@ -207,7 +207,7 @@ fn action_debit_note<'a>(
     Box::pin(async move {
         if ctx.ids.is_empty() {
             return Err(RusdooError::Validation(
-                "escolha ao menos uma fatura para debitar".into(),
+                "choose at least one invoice to debit".into(),
             ));
         }
         let moves = ctx
@@ -236,7 +236,7 @@ fn action_debit_note<'a>(
             .await?;
         Ok(json!({
             "type": "ir.actions.act_window",
-            "name": "Nota de débito",
+            "name": "Debit note",
             "res_model": "account.debit.note",
             "res_id": wizard,
             "views": [[false, "form"]],
@@ -255,12 +255,12 @@ fn action_view_debit_notes<'a>(
     Box::pin(async move {
         let [move_id] = ctx.ids[..] else {
             return Err(RusdooError::Validation(
-                "veja as notas de uma fatura de cada vez".into(),
+                "view the notes of one invoice at a time".into(),
             ));
         };
         Ok(json!({
             "type": "ir.actions.act_window",
-            "name": "Notas de débito",
+            "name": "Debit notes",
             "res_model": "account.move",
             "view_mode": "list,form",
             "domain": [["debit_origin_id", "=", move_id]],
@@ -277,7 +277,7 @@ fn create_debit<'a>(
 ) -> MethodFuture<'a> {
     Box::pin(async move {
         let [wizard_id] = ctx.ids[..] else {
-            return Err(RusdooError::Validation("o assistente sumiu".into()));
+            return Err(RusdooError::Validation("the wizard is gone".into()));
         };
         let rows = ctx
             .registry
@@ -290,7 +290,7 @@ fn create_debit<'a>(
             .await?;
         let wizard = rows
             .first()
-            .ok_or_else(|| RusdooError::Validation("o assistente sumiu".into()))?;
+            .ok_or_else(|| RusdooError::Validation("the wizard is gone".into()))?;
         let move_ids: Vec<i64> = wizard
             .get("move_ids")
             .and_then(Value::as_array)
@@ -298,7 +298,7 @@ fn create_debit<'a>(
             .unwrap_or_default();
         if move_ids.is_empty() {
             return Err(RusdooError::Validation(
-                "o assistente não aponta nenhuma fatura: não há o que debitar".into(),
+                "the wizard points at no invoice: there is nothing to debit".into(),
             ));
         }
         // a data da nota é a do assistente, não a da fatura debitada: a
@@ -307,7 +307,7 @@ fn create_debit<'a>(
             .get("date")
             .and_then(Value::as_str)
             .map(str::to_string)
-            .ok_or_else(|| RusdooError::Validation("diga em que data a nota é emitida".into()))?;
+            .ok_or_else(|| RusdooError::Validation("say which date the note is issued on".into()))?;
         let reason = wizard
             .get("reason")
             .and_then(Value::as_str)
@@ -340,7 +340,7 @@ fn create_debit<'a>(
         // leitura, e o lote sairia menor do que quem clicou pediu
         if moves.len() != move_ids.len() {
             return Err(RusdooError::Validation(
-                "uma das faturas escolhidas não existe mais: reabra o assistente".into(),
+                "one of the chosen invoices is gone: reopen the wizard".into(),
             ));
         }
         // tudo conferido antes de criar qualquer coisa: um lote que para
@@ -359,7 +359,7 @@ fn create_debit<'a>(
         if let [only] = created[..] {
             return Ok(json!({
                 "type": "ir.actions.act_window",
-                "name": "Nota de débito",
+                "name": "Debit note",
                 "res_model": "account.move",
                 "res_id": only,
                 "views": [[false, "form"]],
@@ -368,7 +368,7 @@ fn create_debit<'a>(
         }
         Ok(json!({
             "type": "ir.actions.act_window",
-            "name": "Notas de débito",
+            "name": "Debit notes",
             "res_model": "account.move",
             "view_mode": "list,form",
             "domain": [["id", "in", created]],
@@ -391,7 +391,7 @@ async fn emit_note(
     let origin_id = origin
         .get("id")
         .and_then(Value::as_i64)
-        .ok_or_else(|| RusdooError::Validation("a fatura de origem sumiu".into()))?;
+        .ok_or_else(|| RusdooError::Validation("the source invoice is gone".into()))?;
     let name = origin.get("name").and_then(Value::as_str).unwrap_or("");
     // o motivo entra na referência junto do número da origem: é o que
     // aparece no extrato do cliente, e sozinho o número não explica nada
@@ -410,7 +410,7 @@ async fn emit_note(
     let move_type = origin
         .get("move_type")
         .cloned()
-        .ok_or_else(|| RusdooError::Validation(format!("a fatura {name} não tem tipo")))?;
+        .ok_or_else(|| RusdooError::Validation(format!("invoice {name} has no type")))?;
     let mut values: Vec<(&str, Value)> = vec![
         ("move_type", move_type),
         (
@@ -496,8 +496,8 @@ mod tests {
     fn a_draft_invoice_may_not_be_debited() {
         let mut record = posted_invoice();
         record.insert("state".into(), json!("draft"));
-        let error = refuse_undebitable(&record).expect_err("um rascunho não se debita");
-        assert!(error.to_string().contains("lance a fatura antes"));
+        let error = refuse_undebitable(&record).expect_err("a draft is not debited");
+        assert!(error.to_string().contains("post it before"));
     }
 
     #[test]
@@ -505,16 +505,16 @@ mod tests {
         let mut record = posted_invoice();
         // como o many2one volta da leitura: [id, nome]
         record.insert("debit_origin_id".into(), json!([7, "FAT/00001"]));
-        let error = refuse_undebitable(&record).expect_err("uma nota não se debita");
-        assert!(error.to_string().contains("já é uma nota de débito"));
+        let error = refuse_undebitable(&record).expect_err("a note is not debited");
+        assert!(error.to_string().contains("already a debit note"));
     }
 
     #[test]
     fn a_plain_entry_may_not_be_debited() {
         let mut record = posted_invoice();
         record.insert("move_type".into(), json!("entry"));
-        let error = refuse_undebitable(&record).expect_err("um lançamento não se debita");
-        assert!(error.to_string().contains("fatura de cliente"));
+        let error = refuse_undebitable(&record).expect_err("an entry is not debited");
+        assert!(error.to_string().contains("customer or vendor invoice"));
     }
 
     #[test]
@@ -539,9 +539,9 @@ mod tests {
         // a extensão adiciona; o que o módulo `account` trouxe continua lá
         assert!(mv.field("amount_total").unwrap().stored);
         assert_eq!(mv.constraints().len(), 1, "a regra do vencimento sobrevive");
-        assert_eq!(mv.meta.table, "account_move", "e a tabela é a mesma");
+        assert_eq!(mv.meta.table, "account_move", "and the table is the same");
 
         let wizard = reg.get("account.debit.note").unwrap();
-        assert!(wizard.is_transient(), "o assistente não é dado guardado");
+        assert!(wizard.is_transient(), "a wizard is not stored data");
     }
 }

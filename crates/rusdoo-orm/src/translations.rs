@@ -78,8 +78,8 @@ mod tests {
     fn a_later_module_can_correct_an_earlier_one() {
         let mut t = Translations::new();
         t.extend("pt_BR", [("Name".to_string(), "Nome".to_string())]);
-        t.extend("pt_BR", [("Name".to_string(), "Razão social".to_string())]);
-        assert_eq!(t.get("pt_BR", "Name"), "Razão social");
+        t.extend("pt_BR", [("Name".to_string(), "Company name".to_string())]);
+        assert_eq!(t.get("pt_BR", "Name"), "Company name");
         assert_eq!(t.langs(), vec!["pt_BR"]);
     }
 }

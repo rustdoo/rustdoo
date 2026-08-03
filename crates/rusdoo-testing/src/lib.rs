@@ -96,7 +96,7 @@ pub async fn sweep_stale_schemas(pool: &PgPool) {
         }
     }
     if swept > 0 {
-        eprintln!("varridos {swept} schema(s) de execuções encerradas");
+        eprintln!("swept {swept} schema(s) from finished runs");
     }
 }
 
@@ -231,10 +231,10 @@ impl TransactionCase {
             let module = available
                 .iter()
                 .find(|module| module.name == *name)
-                .unwrap_or_else(|| panic!("módulo desconhecido no teste: {name}"));
-            (module.extend)(&mut registry).expect("registrando os modelos do módulo");
+                .unwrap_or_else(|| panic!("unknown module in the test: {name}"));
+            (module.extend)(&mut registry).expect("registering the module's models");
             if let Some(extend_methods) = module.methods {
-                extend_methods(&mut methods).expect("registrando os métodos do módulo");
+                extend_methods(&mut methods).expect("registering the module's methods");
             }
             sequences.extend(module.sequences.iter().copied());
         }
@@ -244,7 +244,7 @@ impl TransactionCase {
         registry
             .init_tables(&pool)
             .await
-            .expect("criando as tabelas dos modelos");
+            .expect("creating the models' tables");
         // the superuser exists, like it does after a real boot: every
         // call a case makes is made *as* uid 1, and a record stamped
         // with an author who is not in the table is a reference the
@@ -257,12 +257,12 @@ impl TransactionCase {
             )
             .execute(&pool)
             .await
-            .expect("criando o superusuário do caso");
+            .expect("creating the case's superuser");
             // the serial has to move past the row that was given an id
             sqlx::query(r#"SELECT setval('res_users_id_seq', GREATEST(1, (SELECT MAX("id") FROM "res_users")))"#)
                 .execute(&pool)
                 .await
-                .expect("avançando a sequência de res.users");
+                .expect("moving the res.users sequence forward");
         }
         // and the sequences the addons' data files would have loaded,
         // without which a numbered document cannot be created at all
@@ -280,7 +280,7 @@ impl TransactionCase {
                     ],
                 )
                 .await
-                .expect("carregando a sequência do módulo");
+                .expect("loading the module's sequence");
         }
 
         Some(TransactionCase {
@@ -319,7 +319,7 @@ impl TransactionCase {
             .execute(&self.pool)
             .await
         {
-            tracing::warn!("não foi possível limpar {}: {error}", self.schema);
+            tracing::warn!("{} could not be cleaned up: {error}", self.schema);
         }
     }
 }
@@ -360,7 +360,7 @@ mod tests {
         assert!(case.models().get("res.partner").is_some());
         assert!(
             case.models().get("stock.picking").is_none(),
-            "um caso instala o que pediu, não o mundo"
+            "a case installs what it asked for, not the world"
         );
         // the sequence of the module is loaded, so a document can be born
         // with a number
@@ -397,6 +397,6 @@ mod tests {
         .fetch_optional(&pool)
         .await
         .unwrap();
-        assert_eq!(left, None, "o caso não deixa resíduo");
+        assert_eq!(left, None, "the case leaves no residue");
     }
 }

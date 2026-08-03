@@ -126,7 +126,7 @@ async fn active_test_off_shows_the_archived_records_live() {
     .await["result"]
         .as_i64()
         .unwrap();
-    assert_eq!(visible, 1, "arquivados ficam de fora por padrão");
+    assert_eq!(visible, 1, "archived records stay out by default");
 
     // e as formas que o Python trataria como falso desligam todas
     for off in [json!(false), json!(0), json!("")] {

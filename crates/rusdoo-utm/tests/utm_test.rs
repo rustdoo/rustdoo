@@ -224,7 +224,7 @@ async fn a_link_reuses_the_source_that_is_already_there_live() {
         .call("utm.source", "find_or_create", vec![json!("   ")])
         .await
         .expect_err("sem nome não há o que procurar nem o que criar");
-    assert!(refused.contains("diga o nome"), "{refused}");
+    assert!(refused.contains("say the name"), "{refused}");
 }
 
 #[tokio::test]
@@ -238,7 +238,7 @@ async fn a_campaign_is_born_with_an_identifier_a_stage_and_an_owner_live() {
         .call("utm.campaign", "name_create", vec![json!("Black Friday")])
         .await
         .expect_err("faltou o estágio");
-    assert!(refused.contains("crie um antes"), "{refused}");
+    assert!(refused.contains("create one before"), "{refused}");
 
     // os estágios entram fora de ordem: o primeiro é o de menor sequência
     for (name, sequence) in [("Em andamento", 20), ("Novo", 10)] {
@@ -335,7 +335,7 @@ async fn a_record_without_a_real_name_is_refused_live() {
             .create(&fx.pool, model, vec![("name", json!("   "))])
             .await
             .expect_err("um nome em branco não identifica nada");
-        assert!(error.to_string().contains("em branco"), "{model}: {error}");
+        assert!(error.to_string().contains("cannot be left blank"), "{model}: {error}");
     }
 
     let stage = fx
@@ -356,7 +356,7 @@ async fn a_record_without_a_real_name_is_refused_live() {
         )
         .await
         .expect_err("a campanha sem nome também é recusada");
-    assert!(error.to_string().contains("dê um nome"), "{error}");
+    assert!(error.to_string().contains("give the campaign a name"), "{error}");
 
     // e nada disso ficou para trás
     let left = fx

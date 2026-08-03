@@ -138,7 +138,7 @@ impl Registry {
                 let crate::fields::FieldType::Many2one { comodel } = &field.ty else {
                     if field.ondelete.is_some() {
                         return Err(RusdooError::Validation(format!(
-                            "{}.{}: ondelete só existe em many2one",
+                            "{}.{}: ondelete only exists on a many2one",
                             model.meta.name, field.name
                         )));
                     }
@@ -148,8 +148,8 @@ impl Registry {
                     // um comodelo de outro módulo que não está instalado:
                     // a referência fica sem chave, e o log diz qual
                     tracing::warn!(
-                        "{}.{}: o comodelo {comodel} não está registrado, \
-                         a referência fica sem chave estrangeira",
+                        "{}.{}: comodel {comodel} is not registered, \
+                         the reference is left without a foreign key",
                         model.meta.name,
                         field.name
                     );
@@ -226,8 +226,8 @@ async fn add_foreign_key(
     );
     if let Err(error) = sqlx::query(&sql).execute(pool).await {
         tracing::warn!(
-            "{}: a chave estrangeira de {column:?} não pôde ser criada ({error}) — \
-             há linhas apontando para registros que não existem",
+            "{}: the foreign key on {column:?} could not be created ({error}) — \
+             there are rows pointing at records that do not exist",
             model.meta.name
         );
     }

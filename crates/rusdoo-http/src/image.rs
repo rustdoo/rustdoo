@@ -52,7 +52,7 @@ async fn image(
 ) -> Response {
     let session = crate::routes::session_of(&service, &headers);
     if service.require_auth && session.is_none() {
-        return (StatusCode::UNAUTHORIZED, "faça login").into_response();
+        return (StatusCode::UNAUTHORIZED, "log in").into_response();
     }
     let uid = session
         .as_ref()
@@ -67,21 +67,21 @@ async fn image(
     };
     match meta.field(&field) {
         Some(f) if matches!(f.ty, FieldType::Binary) && f.exposed => {}
-        _ => return (StatusCode::NOT_FOUND, "campo não é uma imagem").into_response(),
+        _ => return (StatusCode::NOT_FOUND, "field is not an image").into_response(),
     }
     if let Err(error) = service
         .check_records(uid, &model, Operation::Read, &[id])
         .await
     {
         tracing::debug!("imagem {model}/{id}/{field}: {}", error.message);
-        return (StatusCode::NOT_FOUND, "registro não encontrado").into_response();
+        return (StatusCode::NOT_FOUND, "record not found").into_response();
     }
 
     let rows = match meta.read(service.pool_ref(), &[id], &[field.as_str()]).await {
         Ok(rows) => rows,
         Err(error) => {
             tracing::warn!("imagem {model}/{id}/{field}: {error}");
-            return (StatusCode::NOT_FOUND, "registro não encontrado").into_response();
+            return (StatusCode::NOT_FOUND, "record not found").into_response();
         }
     };
     let encoded = rows
@@ -95,7 +95,7 @@ async fn image(
     };
     use base64::Engine;
     let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded) else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, "conteúdo ilegível").into_response();
+        return (StatusCode::INTERNAL_SERVER_ERROR, "unreadable content").into_response();
     };
 
     let mime = sniff(&bytes);

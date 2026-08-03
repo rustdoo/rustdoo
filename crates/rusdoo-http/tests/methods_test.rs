@@ -166,7 +166,7 @@ async fn an_action_moves_the_order_and_refuses_the_moves_that_make_no_sense_live
     assert!(answer["error"]["message"]
         .as_str()
         .unwrap_or_default()
-        .contains("não pode ir para"));
+        .contains("cannot go to"));
 
     // cancel, then back to a quotation
     call(

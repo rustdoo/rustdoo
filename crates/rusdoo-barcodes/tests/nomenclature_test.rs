@@ -188,11 +188,11 @@ async fn a_rule_the_server_could_not_apply_is_never_written_live() {
     let nomenclature = a_nomenclature(&registry, &pool, "Recusas").await;
 
     for (pattern, reason) in [
-        ("......{}..", "chaves vazias"),
-        ("......{DN}", "N seguido de D"),
-        ("....{NN}{DD}", "mais de um par"),
+        ("......{}..", "empty braces"),
+        ("......{DN}", "N followed by D"),
+        ("....{NN}{DD}", "more than one pair"),
         ("*", "'.*'"),
-        ("**>>>{ND}", "expressão regular"),
+        ("**>>>{ND}", "regular expression"),
     ] {
         let error = a_rule(&registry, &pool, nomenclature, "ean8", pattern, 10)
             .await

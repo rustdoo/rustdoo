@@ -70,7 +70,7 @@ impl OrmService {
             bytes,
         } = upload;
         if bytes.is_empty() {
-            return Err(RpcError::invalid_params("o arquivo está vazio"));
+            return Err(RpcError::invalid_params("the file is empty"));
         }
         if bytes.len() > MAX_UPLOAD_BYTES {
             return Err(RpcError::invalid_params(format!(
@@ -111,7 +111,7 @@ impl OrmService {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| {
                 RpcError::from(rusdoo_core::RusdooError::Validation(format!(
-                    "não foi possível preparar o filestore: {error}"
+                    "the filestore could not be prepared: {error}"
                 )))
             })?;
         }
@@ -124,7 +124,7 @@ impl OrmService {
                 .unlink(&self.pool, &[id])
                 .await;
             return Err(RpcError::from(rusdoo_core::RusdooError::Validation(
-                format!("não foi possível gravar o arquivo: {error}"),
+                format!("the file could not be written: {error}"),
             )));
         }
         self.registry
@@ -164,7 +164,7 @@ impl OrmService {
             .await?;
         let row = rows
             .first()
-            .ok_or_else(|| RpcError::invalid_params(format!("anexo {id} não existe")))?;
+            .ok_or_else(|| RpcError::invalid_params(format!("attachment {id} does not exist")))?;
         let res_model = row
             .get("res_model")
             .and_then(Value::as_str)
@@ -180,7 +180,7 @@ impl OrmService {
         }
         let bytes = std::fs::read(self.filestore.join(id.to_string())).map_err(|error| {
             RpcError::from(rusdoo_core::RusdooError::Validation(format!(
-                "os bytes do anexo {id} não estão no filestore: {error}"
+                "the bytes of attachment {id} are not in the filestore: {error}"
             )))
         })?;
         let name = row
@@ -267,7 +267,7 @@ async fn upload(
         let Ok(bytes) = field.bytes().await else {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({"error": "não foi possível ler o arquivo enviado"})),
+                Json(json!({"error": "the uploaded file could not be read"})),
             )
                 .into_response();
         };
@@ -281,7 +281,7 @@ async fn upload(
     let (Some(res_id), false) = (res_id, model.is_empty()) else {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({"error": "o upload precisa dizer model e id"})),
+            Json(json!({"error": "the upload must say model and id"})),
         )
             .into_response();
     };
@@ -329,7 +329,7 @@ async fn download(
 ) -> Response {
     let session = crate::routes::session_of(&service, &headers);
     if service.require_auth && session.is_none() {
-        return (StatusCode::UNAUTHORIZED, "faça login para baixar").into_response();
+        return (StatusCode::UNAUTHORIZED, "log in to download").into_response();
     }
     let uid = session
         .as_ref()
@@ -356,7 +356,7 @@ async fn download(
             .into_response(),
         Err(error) => {
             tracing::warn!("anexo {id}: {}", error.message);
-            (StatusCode::NOT_FOUND, "anexo não encontrado").into_response()
+            (StatusCode::NOT_FOUND, "attachment not found").into_response()
         }
     }
 }
@@ -372,7 +372,7 @@ mod tests {
         // a name with a separator keeps only its last segment, quotes
         // and control characters go, and nothing empty survives
         assert_eq!(clean_name("nota\"; rm -rf /.pdf"), ".pdf");
-        assert_eq!(clean_name("relatório \"final\".pdf"), "relatório final.pdf");
+        assert_eq!(clean_name("report \"final\".pdf"), "report final.pdf");
         assert_eq!(clean_name("linha\nquebrada.txt"), "linhaquebrada.txt");
         assert_eq!(clean_name("   "), "arquivo");
         assert_eq!(clean_name(""), "arquivo");

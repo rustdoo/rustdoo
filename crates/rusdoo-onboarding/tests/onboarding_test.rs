@@ -320,7 +320,7 @@ async fn a_step_already_done_is_not_done_again_live() {
     .await
     .expect_err("um clique, um passo");
     assert!(
-        error.to_string().contains("um passo de cada vez"),
+        error.to_string().contains("one step at a time"),
         "{error}"
     );
 }
@@ -496,9 +496,9 @@ async fn what_the_models_refuse_live() {
         )
         .await
         .expect_err("uma rota de duas palavras");
-    assert!(error.to_string().contains("uma palavra só"), "{error}");
+    assert!(error.to_string().contains("a single word"), "{error}");
 
-    // um passo sem ação de abertura não pode ser pendurado num painel
+    // um passo sem opening action não pode ser pendurado num painel
     let orphan = registry
         .create(
             &pool,
@@ -527,7 +527,7 @@ async fn what_the_models_refuse_live() {
         )
         .await
         .expect_err("um botão que não abre nada");
-    assert!(error.to_string().contains("ação de abertura"), "{error}");
+    assert!(error.to_string().contains("opening action"), "{error}");
 
     // e o vínculo não ficou para trás
     let rows = registry

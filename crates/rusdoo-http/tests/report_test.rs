@@ -209,7 +209,7 @@ async fn a_report_prints_the_record_and_its_lines_live() {
     assert!(html.contains("Ana"), "{html}");
     // a selection prints its label: a document that says `draft` is not
     // a document anyone sends to a customer
-    assert!(html.contains("Orçamento"), "{html}");
+    assert!(html.contains("Quotation"), "{html}");
     assert!(!html.contains(">draft<"), "{html}");
     // both lines, with money at its precision
     assert!(html.contains("Mesa"), "{html}");
@@ -235,7 +235,7 @@ async fn an_unknown_report_or_record_does_not_leak_why_live() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}");
         // the page says it failed without echoing the request back
         assert!(!html.contains("nope"), "{uri}: {html}");
-        assert!(html.contains("não foi possível"), "{uri}: {html}");
+        assert!(html.contains("could not"), "{uri}: {html}");
     }
 }
 

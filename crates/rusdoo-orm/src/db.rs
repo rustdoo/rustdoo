@@ -124,12 +124,12 @@ impl Model {
                         .map(|column| format!(".{column}"))
                         .unwrap_or_default();
                     format!(
-                        "{}{column} aponta para um registro que não existe",
+                        "{}{column} points at a record that does not exist",
                         self.meta.name
                     )
                 }
                 Wrote::Deletion => {
-                    "há registros que dependem deste: apague-os ou desvincule-os primeiro".into()
+                    "records depend on this one: delete them or unlink them first".into()
                 }
             });
         }
@@ -304,7 +304,7 @@ impl Model {
             };
             if let Err(error) = sqlx::query(&statement).execute(pool).await {
                 tracing::warn!(
-                    "{}: a coluna {:?} não pôde ser convertida para {wanted} ({error})",
+                    "{}: column {:?} could not be converted to {wanted} ({error})",
                     self.meta.name,
                     field.name
                 );
@@ -752,8 +752,8 @@ impl Registry {
                 // not-null violation from the database
                 if field.required {
                     return Err(RusdooError::Validation(format!(
-                        "{}.{} é numerado pela sequência {code:?}, que não existe: \
-                         instale o módulo que a define",
+                        "{}.{} is numbered by sequence {code:?}, which does not exist: \
+                         install the module that defines it",
                         model.meta.name, field.name
                     )));
                 }

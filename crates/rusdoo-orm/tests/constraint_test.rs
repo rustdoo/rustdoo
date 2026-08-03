@@ -18,7 +18,7 @@ fn number(record: &Map<String, Value>, name: &str) -> f64 {
 /// A quantity nobody can sell.
 fn positive_qty(record: &Map<String, Value>) -> Result<(), String> {
     if number(record, "qty") <= 0.0 {
-        return Err("a quantidade precisa ser maior que zero".into());
+        return Err("the quantity must be greater than zero".into());
     }
     Ok(())
 }
@@ -87,7 +87,7 @@ async fn a_create_that_breaks_a_rule_leaves_nothing_behind_live() {
         .await
         .expect_err("a rule refused it");
     assert!(
-        error.to_string().contains("maior que zero"),
+        error.to_string().contains("greater than zero"),
         "the reason reaches the caller: {error}"
     );
 
@@ -134,7 +134,7 @@ async fn a_write_that_breaks_a_rule_is_rolled_back_live() {
         )
         .await
         .expect_err("a rule refused it");
-    assert!(error.to_string().contains("maior que zero"), "{error}");
+    assert!(error.to_string().contains("greater than zero"), "{error}");
 
     // neither the quantity nor the name moved: the whole write went back
     let rows = reg
@@ -206,7 +206,7 @@ async fn every_record_of_a_batch_is_checked_live() {
         .write(&pool, "rusdoo.test.line", &ids, vec![("qty", json!(0))])
         .await
         .expect_err("all three are refused");
-    assert!(error.to_string().contains("maior que zero"), "{error}");
+    assert!(error.to_string().contains("greater than zero"), "{error}");
     let rows = reg
         .read(&pool, "rusdoo.test.line", &ids, &["qty"])
         .await

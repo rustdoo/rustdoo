@@ -109,17 +109,17 @@ fn uom() -> Model {
         ],
     )
     .constrained(
-        "fator de conversão utilizável",
+        "usable conversion factor",
         &["relative_factor", "relative_uom_id"],
         factor_is_usable,
     )
     .constrained(
-        "arredondamento utilizável",
+        "usable rounding",
         &["rounding"],
         rounding_is_usable,
     )
     .constrained(
-        "referência não circular",
+        "non-circular reference",
         &["relative_uom_id"],
         is_not_its_own_reference,
     )
@@ -171,14 +171,14 @@ fn factor_is_usable(record: &Map<String, Value>) -> Result<(), String> {
     let relative = number(record, "relative_factor");
     if relative <= 0.0 {
         return Err(format!(
-            "o fator de conversão de uma unidade precisa ser maior que zero (recebi {relative})"
+            "a unit's conversion factor must be greater than zero (got {relative})"
         ));
     }
     if first_id(record.get("relative_uom_id").unwrap_or(&Value::Null)).is_none() && relative != 1.0
     {
         return Err(format!(
-            "uma unidade sem unidade de referência é a própria referência da sua categoria e \
-             precisa ter fator 1: informe a unidade de referência ou volte o fator de {relative} \
+            "a unit with no reference unit is its category's own reference and \
+             precisa ter fator 1: informe a reference unit ou volte o fator de {relative} \
              para 1"
         ));
     }
@@ -191,8 +191,8 @@ fn rounding_is_usable(record: &Map<String, Value>) -> Result<(), String> {
     let rounding = number(record, "rounding");
     if rounding <= 0.0 {
         return Err(format!(
-            "a precisão de arredondamento precisa ser maior que zero (recebi {rounding}); use \
-             0.01 para duas casas ou 1 para unidades inteiras"
+            "the rounding precision must be greater than zero (got {rounding}); use \
+             0.01 for two decimals or 1 for whole units"
         ));
     }
     Ok(())
@@ -206,8 +206,8 @@ fn is_not_its_own_reference(record: &Map<String, Value>) -> Result<(), String> {
     let reference = first_id(record.get("relative_uom_id").unwrap_or(&Value::Null));
     if id.is_some() && id == reference {
         return Err(
-            "uma unidade não pode ser a sua própria unidade de referência: escolha outra unidade \
-             ou deixe o campo vazio"
+            "a unit cannot be its own reference unit: pick another unit \
+             or leave the field empty"
                 .into(),
         );
     }
@@ -234,7 +234,7 @@ impl RoundingMethod {
             "DOWN" => Ok(RoundingMethod::Down),
             "HALF-UP" | "HALF_UP" => Ok(RoundingMethod::HalfUp),
             other => Err(RusdooError::Validation(format!(
-                "arredondamento {other:?} não existe: use \"UP\", \"DOWN\" ou \"HALF-UP\""
+                "rounding {other:?} does not exist: use \"UP\", \"DOWN\" ou \"HALF-UP\""
             ))),
         }
     }
@@ -315,7 +315,7 @@ async fn facts(ctx: &MethodCtx<'_>, id: i64) -> Result<UnitFacts, RusdooError> {
         .await?;
     let row = rows
         .first()
-        .ok_or_else(|| RusdooError::Validation(format!("a unidade de medida {id} não existe")))?;
+        .ok_or_else(|| RusdooError::Validation(format!("unit of measure {id} does not exist")))?;
     Ok(UnitFacts {
         name: row
             .get("name")
@@ -342,7 +342,7 @@ async fn reference_root(ctx: &MethodCtx<'_>, start: i64) -> Result<(i64, String)
             )
             .await?;
         let row = rows.first().ok_or_else(|| {
-            RusdooError::Validation(format!("a unidade de medida {current} não existe"))
+            RusdooError::Validation(format!("unit of measure {current} does not exist"))
         })?;
         let name = row
             .get("name")
@@ -355,8 +355,8 @@ async fn reference_root(ctx: &MethodCtx<'_>, start: i64) -> Result<(i64, String)
         }
     }
     Err(RusdooError::Validation(format!(
-        "a unidade de medida {start} está numa cadeia de referência circular: conserte a unidade \
-         de referência antes de converter"
+        "unit of measure {start} is in a circular reference chain: fix the reference \
+         unit before converting"
     )))
 }
 
@@ -375,8 +375,8 @@ async fn ensure_same_reference(
         return Ok(());
     }
     Err(RusdooError::Validation(format!(
-        "não dá para converter {} em {}: {} se mede em {from_root_name} e {} em {to_root_name}, \
-         que são categorias diferentes",
+        "cannot convert {} into {}: {} is measured in {from_root_name} and {} in {to_root_name}, \
+         which are different categories",
         from.1, to.1, from.1, to.1
     )))
 }
@@ -386,7 +386,7 @@ fn only_id(ctx: &MethodCtx<'_>) -> Result<i64, RusdooError> {
     match ctx.ids[..] {
         [id] => Ok(id),
         _ => Err(RusdooError::Validation(
-            "converta a partir de uma unidade de medida de cada vez".into(),
+            "convert from one unit of measure at a time".into(),
         )),
     }
 }
@@ -401,7 +401,7 @@ fn target_id(args: &[Value], kwargs: &Map<String, Value>) -> Result<i64, RusdooE
         .and_then(Value::as_i64)
         .ok_or_else(|| {
             RusdooError::Validation(
-                "diga para qual unidade de medida converter (segundo argumento, ou \"to_uom_id\")"
+                "say which unit of measure to convert into (second argument, or \"to_uom_id\")"
                     .into(),
             )
         })
@@ -413,7 +413,7 @@ fn amount(args: &[Value], kwargs: &Map<String, Value>, name: &str) -> Result<f64
         .and_then(as_number)
         .ok_or_else(|| {
             RusdooError::Validation(format!(
-                "diga qual {name} converter (primeiro argumento, ou {name:?})"
+                "say which {name} to convert (first argument, or {name:?})"
             ))
         })
 }
@@ -587,7 +587,7 @@ mod tests {
         let mut orphan = Map::new();
         orphan.insert("relative_factor".into(), json!(12));
         let refusal = factor_is_usable(&orphan).expect_err("refused");
-        assert!(refusal.contains("unidade de referência"), "{refusal}");
+        assert!(refusal.contains("reference unit"), "{refusal}");
 
         let mut child = Map::new();
         child.insert("relative_factor".into(), json!(12));

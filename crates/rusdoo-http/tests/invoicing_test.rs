@@ -211,7 +211,7 @@ async fn a_confirmed_order_becomes_an_invoice_live() {
     assert!(answer["error"]["message"]
         .as_str()
         .unwrap_or_default()
-        .contains("já foi faturado"));
+        .contains("already invoiced"));
 
     // and the invoice posts, once
     let answer = call(
@@ -266,7 +266,7 @@ async fn an_unconfirmed_order_is_not_billed_live() {
     assert!(answer["error"]["message"]
         .as_str()
         .unwrap_or_default()
-        .contains("não está confirmado"));
+        .contains("is not confirmed"));
 
     // an order with no lines has nothing to bill either
     let empty = call(
@@ -325,7 +325,7 @@ async fn an_invoice_without_lines_is_not_posted_live() {
     assert!(answer["error"]["message"]
         .as_str()
         .unwrap_or_default()
-        .contains("não tem linhas"));
+        .contains("has no lines"));
 }
 
 #[tokio::test]

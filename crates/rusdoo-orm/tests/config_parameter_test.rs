@@ -127,7 +127,7 @@ async fn the_database_refuses_a_second_parameter_with_the_same_key_live() {
         .expect_err("a chave é única");
     // e o usuário lê a frase que o modelo declarou, não a do driver
     assert!(
-        error.to_string().contains("já existe um parâmetro"),
+        error.to_string().contains("parameter with that key already exists"),
         "mensagem inesperada: {error}"
     );
 

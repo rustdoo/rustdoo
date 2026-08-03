@@ -141,9 +141,9 @@ fn order() -> Model {
             Field::new(
                 "state",
                 FieldType::Selection(vec![
-                    ("draft".into(), "Cotação".into()),
-                    ("purchase".into(), "Pedido confirmado".into()),
-                    ("cancel".into(), "Cancelado".into()),
+                    ("draft".into(), "Quotation".into()),
+                    ("purchase".into(), "Purchase order".into()),
+                    ("cancel".into(), "Cancelled".into()),
                 ]),
             )
             .default_value(json!("draft")),
@@ -169,10 +169,10 @@ fn order() -> Model {
 /// credit note written in the wrong place.
 fn line_is_buyable(record: &Map<String, Value>) -> Result<(), String> {
     if number(record, "product_qty") <= 0.0 {
-        return Err("a quantidade de uma linha precisa ser maior que zero".into());
+        return Err("a line's quantity must be greater than zero".into());
     }
     if number(record, "price_unit") < 0.0 {
-        return Err("o preço unitário não pode ser negativo".into());
+        return Err("the unit price cannot be negative".into());
     }
     Ok(())
 }
@@ -196,7 +196,7 @@ fn order_line() -> Model {
         ],
     )
     .constrained(
-        "linha comprável",
+        "purchasable line",
         &["product_qty", "price_unit"],
         line_is_buyable,
     )
@@ -205,7 +205,7 @@ fn order_line() -> Model {
 async fn set_state(ctx: &MethodCtx<'_>, from: &[&str], to: &str) -> Result<Value, RusdooError> {
     if ctx.ids.is_empty() {
         return Err(RusdooError::Validation(
-            "a ação precisa de pelo menos um pedido".into(),
+            "the action needs at least one order".into(),
         ));
     }
     let rows = ctx
@@ -217,7 +217,7 @@ async fn set_state(ctx: &MethodCtx<'_>, from: &[&str], to: &str) -> Result<Value
         if !from.contains(&state) {
             let name = row.get("name").and_then(Value::as_str).unwrap_or("");
             return Err(RusdooError::Validation(format!(
-                "o pedido {name} está em {state:?} e não pode ir para {to:?}"
+                "order {name} is {state:?} and cannot go to {to:?}"
             )));
         }
     }
@@ -281,7 +281,7 @@ async fn confirmed_order<'a>(
     let order = orders
         .into_iter()
         .next()
-        .ok_or_else(|| RusdooError::Validation(format!("pedido {order_id} não existe")))?;
+        .ok_or_else(|| RusdooError::Validation(format!("order {order_id} does not exist")))?;
     let name = order
         .get("name")
         .and_then(Value::as_str)
@@ -290,7 +290,7 @@ async fn confirmed_order<'a>(
     let state = order.get("state").and_then(Value::as_str).unwrap_or("draft");
     if state != "purchase" {
         return Err(RusdooError::Validation(format!(
-            "o pedido {name} não está confirmado: confirme antes"
+            "order {name} is not confirmed: confirm it first"
         )));
     }
     let existing = ctx
@@ -304,7 +304,7 @@ async fn confirmed_order<'a>(
         .await?;
     if let Some(id) = existing.first() {
         return Err(RusdooError::Validation(format!(
-            "o pedido {name} já gerou esse documento ({id})"
+            "order {name} already produced that document ({id})"
         )));
     }
     let line_ids: Vec<i64> = order
@@ -314,7 +314,7 @@ async fn confirmed_order<'a>(
         .unwrap_or_default();
     if line_ids.is_empty() {
         return Err(RusdooError::Validation(format!(
-            "o pedido {name} não tem linhas"
+            "order {name} has no lines"
         )));
     }
     let lines = ctx
@@ -424,7 +424,7 @@ fn action_create_receipt<'a>(
             .collect();
         if moves.is_empty() {
             return Err(RusdooError::Validation(format!(
-                "o pedido {name} só tem serviços: não há o que receber"
+                "order {name} has services only: there is nothing to receive"
             )));
         }
         // a receipt is not numbered like a delivery: the field's own

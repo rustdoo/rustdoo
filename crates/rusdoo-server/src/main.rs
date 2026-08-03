@@ -75,9 +75,9 @@ async fn main() -> anyhow::Result<()> {
     if access.is_empty() {
         // fail-closed: with no ACL rules only the superuser reaches models
         tracing::warn!(
-            "nenhuma regra ir.model.access carregada: apenas o superusuário (uid 1) \
-             acessa modelos; usuários comuns ficam bloqueados até as ACLs serem carregadas \
-             (rode com --init sobre addons que tragam ir.model.access.csv)"
+            "no ir.model.access rule loaded: only the superuser (uid 1) reaches \
+             models; ordinary users stay blocked until the ACLs are loaded \
+             (run with --init over addons that ship ir.model.access.csv)"
         );
     }
     let mut service = OrmService::new(Arc::new(registry), pool)
@@ -261,7 +261,7 @@ async fn seed_admin(
                 ],
             )
             .await?;
-        tracing::warn!("usuário admin criado (login: admin / senha: admin) — troque a senha");
+        tracing::warn!("admin user created (login: admin / password: admin) — change the password");
     }
     Ok(())
 }

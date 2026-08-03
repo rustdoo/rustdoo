@@ -143,8 +143,8 @@ fn lang() -> Model {
             Field::new(
                 "direction",
                 FieldType::Selection(vec![
-                    ("ltr".into(), "Da esquerda para a direita".into()),
-                    ("rtl".into(), "Da direita para a esquerda".into()),
+                    ("ltr".into(), "Left-to-Right".into()),
+                    ("rtl".into(), "Right-to-Left".into()),
                 ]),
             )
             .default_value(json!("ltr")),
@@ -157,7 +157,7 @@ fn lang() -> Model {
     .sql_constrained(
         "res_lang_code_uniq",
         r#"UNIQUE ("code")"#,
-        "já existe um idioma com esse código",
+        "a language with that code already exists",
     )
     // Odoo's `_order`: the installed ones first, then by name
     .ordered("active desc, name, id")
@@ -181,7 +181,7 @@ fn config_parameter() -> Model {
     .sql_constrained(
         "ir_config_parameter_key_uniq",
         r#"UNIQUE ("key")"#,
-        "já existe um parâmetro com essa chave",
+        "a parameter with that key already exists",
     )
     .ordered("key, id")
 }
@@ -208,7 +208,7 @@ fn sequence() -> Model {
     .sql_constrained(
         "ir_sequence_code_uniq",
         r#"UNIQUE ("code")"#,
-        "já existe uma sequência com esse código",
+        "a sequence with that code already exists",
     )
     .ordered("name, id")
 }
@@ -265,10 +265,10 @@ fn partner() -> Model {
             Field::new(
                 "type",
                 FieldType::Selection(vec![
-                    ("contact".into(), "Contato".into()),
-                    ("invoice".into(), "Endereço de faturamento".into()),
-                    ("delivery".into(), "Endereço de entrega".into()),
-                    ("other".into(), "Outro".into()),
+                    ("contact".into(), "Contact".into()),
+                    ("invoice".into(), "Invoice address".into()),
+                    ("delivery".into(), "Delivery address".into()),
+                    ("other".into(), "Other".into()),
                 ]),
             )
             .default_value(json!("contact")),
@@ -323,7 +323,7 @@ fn users() -> Model {
     .sql_constrained(
         "res_users_login_uniq",
         r#"UNIQUE ("login")"#,
-        "já existe um usuário com esse login",
+        "a user with that login already exists",
     )
     .ordered("login, id")
 }
@@ -414,10 +414,10 @@ fn cron() -> Model {
             Field::new(
                 "interval_type",
                 FieldType::Selection(vec![
-                    ("minutes".into(), "Minutos".into()),
-                    ("hours".into(), "Horas".into()),
-                    ("days".into(), "Dias".into()),
-                    ("weeks".into(), "Semanas".into()),
+                    ("minutes".into(), "Minutes".into()),
+                    ("hours".into(), "Hours".into()),
+                    ("days".into(), "Days".into()),
+                    ("weeks".into(), "Weeks".into()),
                 ]),
             )
             .default_value(json!("days")),

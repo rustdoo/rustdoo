@@ -131,7 +131,7 @@ async fn malformed_base64_is_refused_with_a_sentence_live() {
     .await;
     let message = answer["error"]["message"].as_str().unwrap_or_default();
     assert!(
-        message.contains("base64 inválido"),
+        message.contains("invalid base64"),
         "a recusa nomeia o problema, não uma função de SQL: {answer}"
     );
 
@@ -147,7 +147,7 @@ async fn malformed_base64_is_refused_with_a_sentence_live() {
         answer["error"]["message"]
             .as_str()
             .unwrap_or_default()
-            .contains("recebe base64"),
+            .contains("takes base64"),
         "{answer}"
     );
 

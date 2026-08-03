@@ -134,7 +134,7 @@ mod tests {
         let ctx = Context::from_value(None);
         assert_eq!(ctx.lang(), "en_US");
         assert_eq!(ctx.tz(), None);
-        assert!(ctx.active_test(), "arquivados ficam de fora por padrão");
+        assert!(ctx.active_test(), "archived records stay out by default");
         assert_eq!(ctx.default_for("partner_id"), None);
         assert!(ctx.allowed_company_ids().is_empty());
     }
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn active_test_is_read_with_pythons_truthiness() {
-        assert!(Context::new().active_test(), "ausente é ligado");
+        assert!(Context::new().active_test(), "absent means on");
         for off in [json!(false), json!(null), json!(0), json!("")] {
             assert!(
                 !Context::new().with("active_test", off.clone()).active_test(),

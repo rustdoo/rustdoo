@@ -115,7 +115,7 @@ fn due_after_issue(record: &Map<String, Value>) -> Result<(), String> {
     if let (Some(issued), Some(due)) = (issued, due) {
         if due < issued {
             return Err(format!(
-                "o vencimento ({due}) é anterior à data da fatura ({issued})"
+                "the due date ({due}) is before the invoice date ({issued})"
             ));
         }
     }
@@ -134,7 +134,7 @@ fn refuse_posted(
             }
             let name = record.get("name").and_then(Value::as_str).unwrap_or("?");
             return Err(RusdooError::Validation(format!(
-                "a fatura {name} está lançada: volte-a a rascunho antes de apagar"
+                "invoice {name} is posted: reset it to draft before deleting it"
             )));
         }
         Ok(())
@@ -155,18 +155,18 @@ fn mv() -> Model {
             Field::new(
                 "move_type",
                 FieldType::Selection(vec![
-                    ("out_invoice".into(), "Fatura de cliente".into()),
-                    ("in_invoice".into(), "Fatura de fornecedor".into()),
-                    ("entry".into(), "Lançamento".into()),
+                    ("out_invoice".into(), "Customer invoice".into()),
+                    ("in_invoice".into(), "Vendor bill".into()),
+                    ("entry".into(), "Entry".into()),
                 ]),
             )
             .default_value(json!("out_invoice")),
             Field::new(
                 "state",
                 FieldType::Selection(vec![
-                    ("draft".into(), "Rascunho".into()),
-                    ("posted".into(), "Lançada".into()),
-                    ("cancel".into(), "Cancelada".into()),
+                    ("draft".into(), "Draft".into()),
+                    ("posted".into(), "Posted".into()),
+                    ("cancel".into(), "Cancelled".into()),
                 ]),
             )
             .default_value(json!("draft")),
@@ -188,7 +188,7 @@ fn mv() -> Model {
         ],
     )
     .constrained(
-        "vencimento após a emissão",
+        "due date after the issue date",
         &["invoice_date", "invoice_date_due"],
         due_after_issue,
     )
@@ -198,7 +198,7 @@ fn mv() -> Model {
     // a fatura mais nova primeiro.
     .ordered("invoice_date desc, name desc, id desc")
     // uma fatura lançada é um documento fiscal: cancela-se, não se apaga
-    .on_unlink("nenhuma fatura lançada", refuse_posted)
+    .on_unlink("no posted invoice", refuse_posted)
 }
 
 /// `account.move.line` — one billed thing, at one price.
@@ -227,7 +227,7 @@ fn move_line() -> Model {
 async fn set_state(ctx: &MethodCtx<'_>, from: &[&str], to: &str) -> Result<Value, RusdooError> {
     if ctx.ids.is_empty() {
         return Err(RusdooError::Validation(
-            "a ação precisa de pelo menos uma fatura".into(),
+            "the action needs at least one invoice".into(),
         ));
     }
     let rows = ctx
@@ -239,7 +239,7 @@ async fn set_state(ctx: &MethodCtx<'_>, from: &[&str], to: &str) -> Result<Value
         if !from.contains(&state) {
             let name = row.get("name").and_then(Value::as_str).unwrap_or("");
             return Err(RusdooError::Validation(format!(
-                "a fatura {name} está em {state:?} e não pode ir para {to:?}"
+                "invoice {name} is {state:?} and cannot go to {to:?}"
             )));
         }
     }
@@ -275,7 +275,7 @@ fn action_post<'a>(
             if empty {
                 let name = row.get("name").and_then(Value::as_str).unwrap_or("");
                 return Err(RusdooError::Validation(format!(
-                    "a fatura {name} não tem linhas: não há o que lançar"
+                    "invoice {name} has no lines: there is nothing to post"
                 )));
             }
         }

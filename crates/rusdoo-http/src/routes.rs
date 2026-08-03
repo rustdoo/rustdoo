@@ -48,17 +48,17 @@ pub fn router(service: OrmService) -> Router {
 /// Browser-visible status page (the web client lands here in Phase 5).
 async fn index() -> Html<&'static str> {
     Html(
-        r#"<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>rusdoo</title>
 <style>body{font-family:system-ui;max-width:640px;margin:4rem auto;padding:0 1rem;line-height:1.6}
 code,pre{background:#f4f4f4;border-radius:4px;padding:2px 6px}pre{padding:12px;overflow-x:auto}</style>
 </head><body>
 <h1>&#129408; rusdoo</h1>
-<p><strong>O servidor está no ar.</strong> Port do Odoo 19 para Rust — Fase 3 em andamento.</p>
+<p><strong>The server is up.</strong> A port of Odoo 19 to Rust.</p>
 <p>Endpoints JSON-RPC 2.0 (POST):</p>
-<ul><li><code>/web/dataset/call_kw</code> — gateway do web client</li>
-<li><code>/jsonrpc</code> — RPC clássico (object/execute_kw)</li></ul>
-<p>Experimente no terminal:</p>
+<ul><li><code>/web/dataset/call_kw</code> — the web client gateway</li>
+<li><code>/jsonrpc</code> — the classic RPC (object/execute_kw)</li></ul>
+<p>Try it from a terminal:</p>
 <pre>curl -s -X POST http://localhost:8069/web/dataset/call_kw   -H 'Content-Type: application/json'   -d '{"jsonrpc":"2.0","id":1,"method":"call","params":{
     "model":"res.partner","method":"search_read","args":[],
     "kwargs":{"fields":["name","email"]}}}'</pre>
@@ -191,7 +191,7 @@ async fn jsonrpc_endpoint(
             return Json(JsonRpcResponse::error(
                 request.id,
                 SESSION_EXPIRED,
-                "acesso negado: credenciais inválidas",
+                "access denied: invalid credentials",
             ));
         }
     }
@@ -388,7 +388,7 @@ async fn authenticate(State(service): State<OrmService>, Json(body): Json<Value>
         None => Json(JsonRpcResponse::error(
             request.id,
             SESSION_EXPIRED,
-            "acesso negado: login ou senha inválidos",
+            "access denied: wrong login or password",
         ))
         .into_response(),
         Some(uid) => {
@@ -444,7 +444,7 @@ async fn render_view_page(
     if service.require_auth && session.is_none() {
         return (
             axum::http::StatusCode::UNAUTHORIZED,
-            Html("<h1>401</h1><p>faça login em /web/session/authenticate</p>".to_string()),
+            Html("<h1>401</h1><p>log in at /web/session/authenticate</p>".to_string()),
         )
             .into_response();
     }
@@ -456,7 +456,7 @@ async fn render_view_page(
             tracing::warn!("render_view {xml_id:?} failed: {}", err.message);
             (
                 axum::http::StatusCode::BAD_REQUEST,
-                Html("<h1>erro</h1><p>não foi possível renderizar a view</p>".to_string()),
+                Html("<h1>error</h1><p>the view could not be rendered</p>".to_string()),
             )
                 .into_response()
         }
@@ -476,7 +476,7 @@ async fn render_report_page(
     if service.require_auth && session.is_none() {
         return (
             StatusCode::UNAUTHORIZED,
-            Html("<h1>401</h1><p>faça login para imprimir</p>".to_string()),
+            Html("<h1>401</h1><p>log in to print</p>".to_string()),
         )
             .into_response();
     }
@@ -492,10 +492,10 @@ async fn render_report_page(
         )
             .into_response(),
         Err(error) => {
-            tracing::warn!("relatório {xml_id}/{res_id} falhou: {}", error.message);
+            tracing::warn!("report {xml_id}/{res_id} failed: {}", error.message);
             (
                 StatusCode::BAD_REQUEST,
-                Html("<h1>erro</h1><p>não foi possível gerar o documento</p>".to_string()),
+                Html("<h1>error</h1><p>the document could not be produced</p>".to_string()),
             )
                 .into_response()
         }
@@ -513,7 +513,7 @@ async fn render_action_page(
     if service.require_auth && session.is_none() {
         return (
             axum::http::StatusCode::UNAUTHORIZED,
-            Html("<h1>401</h1><p>faça login em /web/session/authenticate</p>".to_string()),
+            Html("<h1>401</h1><p>log in at /web/session/authenticate</p>".to_string()),
         )
             .into_response();
     }
@@ -523,7 +523,7 @@ async fn render_action_page(
             tracing::warn!("render_action {xml_id:?} failed: {}", err.message);
             (
                 axum::http::StatusCode::BAD_REQUEST,
-                Html("<h1>erro</h1><p>não foi possível abrir a ação</p>".to_string()),
+                Html("<h1>error</h1><p>the action could not be opened</p>".to_string()),
             )
                 .into_response()
         }
@@ -581,7 +581,7 @@ fn client_shell(service: &OrmService) -> Option<String> {
         .next()
         .is_some();
     let mut shell = String::from(
-        "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\">\
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
          <title>rusdoo</title>",
     );
@@ -619,7 +619,7 @@ async fn web_index(State(service): State<OrmService>, headers: HeaderMap) -> Res
     if service.require_auth && session.is_none() {
         return (
             axum::http::StatusCode::UNAUTHORIZED,
-            Html("<h1>401</h1><p>faça login em /web/session/authenticate</p>".to_string()),
+            Html("<h1>401</h1><p>log in at /web/session/authenticate</p>".to_string()),
         )
             .into_response();
     }
@@ -639,7 +639,7 @@ async fn web_index(State(service): State<OrmService>, headers: HeaderMap) -> Res
                 Ok(_) => {}
                 Err(err) => tracing::warn!("menu_tree failed: {}", err.message),
             }
-            body.push_str("<p>Views disponíveis:</p><ul>");
+            body.push_str("<p>Available views:</p><ul>");
             if views.is_empty() {
                 body.push_str("<li>nenhuma view instalada (rode --init sobre um addon)</li>");
             }
@@ -657,7 +657,7 @@ async fn web_index(State(service): State<OrmService>, headers: HeaderMap) -> Res
             tracing::warn!("web_index failed: {}", err.message);
             (
                 axum::http::StatusCode::BAD_REQUEST,
-                Html("<h1>erro</h1><p>não foi possível listar as views</p>".to_string()),
+                Html("<h1>error</h1><p>the views could not be listed</p>".to_string()),
             )
                 .into_response()
         }

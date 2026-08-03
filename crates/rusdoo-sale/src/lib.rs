@@ -134,7 +134,7 @@ fn action_cancel_wizard<'a>(
     Box::pin(async move {
         let [order_id] = ctx.ids[..] else {
             return Err(RusdooError::Validation(
-                "cancele um pedido de cada vez".into(),
+                "cancel one order at a time".into(),
             ));
         };
         let rows = ctx
@@ -143,12 +143,12 @@ fn action_cancel_wizard<'a>(
             .await?;
         let order = rows
             .first()
-            .ok_or_else(|| RusdooError::Validation(format!("pedido {order_id} não existe")))?;
+            .ok_or_else(|| RusdooError::Validation(format!("order {order_id} does not exist")))?;
         let state = order.get("state").and_then(Value::as_str).unwrap_or("draft");
         if state == "cancel" {
             let name = order.get("name").and_then(Value::as_str).unwrap_or("");
             return Err(RusdooError::Validation(format!(
-                "o pedido {name} já está cancelado"
+                "order {name} is already cancelled"
             )));
         }
         let wizard = ctx
@@ -181,7 +181,7 @@ fn action_confirm_cancel<'a>(
 ) -> MethodFuture<'a> {
     Box::pin(async move {
         let [wizard_id] = ctx.ids[..] else {
-            return Err(RusdooError::Validation("o assistente sumiu".into()));
+            return Err(RusdooError::Validation("the wizard is gone".into()));
         };
         let rows = ctx
             .registry
@@ -194,17 +194,17 @@ fn action_confirm_cancel<'a>(
             .await?;
         let wizard = rows
             .first()
-            .ok_or_else(|| RusdooError::Validation("o assistente sumiu".into()))?;
+            .ok_or_else(|| RusdooError::Validation("the wizard is gone".into()))?;
         let order_id = wizard
             .get("order_id")
             .and_then(first_id)
-            .ok_or_else(|| RusdooError::Validation("o assistente não aponta um pedido".into()))?;
+            .ok_or_else(|| RusdooError::Validation("the wizard points at no order".into()))?;
         let reason = wizard
             .get("reason")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|reason| !reason.is_empty())
-            .ok_or_else(|| RusdooError::Validation("diga por que está cancelando".into()))?;
+            .ok_or_else(|| RusdooError::Validation("say why you are cancelling".into()))?;
 
         let orders = ctx
             .registry
@@ -212,10 +212,10 @@ fn action_confirm_cancel<'a>(
             .await?;
         let order = orders
             .first()
-            .ok_or_else(|| RusdooError::Validation("o pedido sumiu".into()))?;
+            .ok_or_else(|| RusdooError::Validation("the order is gone".into()))?;
         let state = order.get("state").and_then(Value::as_str).unwrap_or("draft");
         if state == "cancel" {
-            return Err(RusdooError::Validation("o pedido já está cancelado".into()));
+            return Err(RusdooError::Validation("the order is already cancelled".into()));
         }
         ctx.registry
             .write_as(
@@ -277,12 +277,12 @@ fn action_create_delivery<'a>(
             .await?;
         let order = orders
             .first()
-            .ok_or_else(|| RusdooError::Validation(format!("pedido {order_id} não existe")))?;
+            .ok_or_else(|| RusdooError::Validation(format!("order {order_id} does not exist")))?;
         let name = order.get("name").and_then(Value::as_str).unwrap_or("");
         let state = order.get("state").and_then(Value::as_str).unwrap_or("draft");
         if state != "sale" {
             return Err(RusdooError::Validation(format!(
-                "o pedido {name} não está confirmado: confirme antes de entregar"
+                "order {name} is not confirmed: confirm it before delivering"
             )));
         }
         let existing = ctx
@@ -296,7 +296,7 @@ fn action_create_delivery<'a>(
             .await?;
         if let Some(picking) = existing.first() {
             return Err(RusdooError::Validation(format!(
-                "o pedido {name} já tem entrega (documento {picking})"
+                "order {name} already has a delivery (document {picking})"
             )));
         }
 
@@ -353,7 +353,7 @@ fn action_create_delivery<'a>(
             .collect();
         if moves.is_empty() {
             return Err(RusdooError::Validation(format!(
-                "o pedido {name} só tem serviços: não há o que entregar"
+                "order {name} has services only: there is nothing to deliver"
             )));
         }
 
@@ -417,12 +417,12 @@ fn action_create_invoice<'a>(
             .await?;
         let order = orders
             .first()
-            .ok_or_else(|| RusdooError::Validation(format!("pedido {order_id} não existe")))?;
+            .ok_or_else(|| RusdooError::Validation(format!("order {order_id} does not exist")))?;
         let name = order.get("name").and_then(Value::as_str).unwrap_or("");
         let state = order.get("state").and_then(Value::as_str).unwrap_or("draft");
         if state != "sale" {
             return Err(RusdooError::Validation(format!(
-                "o pedido {name} não está confirmado: confirme antes de faturar"
+                "order {name} is not confirmed: confirm it before invoicing"
             )));
         }
         // already billed? the origin field is what ties them together
@@ -437,7 +437,7 @@ fn action_create_invoice<'a>(
             .await?;
         if let Some(invoice) = existing.first() {
             return Err(RusdooError::Validation(format!(
-                "o pedido {name} já foi faturado (fatura {invoice})"
+                "order {name} was already invoiced (invoice {invoice})"
             )));
         }
 
@@ -453,7 +453,7 @@ fn action_create_invoice<'a>(
             .unwrap_or_default();
         if line_ids.is_empty() {
             return Err(RusdooError::Validation(format!(
-                "o pedido {name} não tem linhas: não há o que faturar"
+                "order {name} has no lines: there is nothing to invoice"
             )));
         }
         let sold = ctx
@@ -529,7 +529,7 @@ fn first_id(value: &Value) -> Option<i64> {
 async fn set_state(ctx: &MethodCtx<'_>, from: &[&str], to: &str) -> Result<Value, RusdooError> {
     if ctx.ids.is_empty() {
         return Err(RusdooError::Validation(
-            "a ação precisa de pelo menos um pedido".into(),
+            "the action needs at least one order".into(),
         ));
     }
     let rows = ctx
@@ -541,7 +541,7 @@ async fn set_state(ctx: &MethodCtx<'_>, from: &[&str], to: &str) -> Result<Value
         if !from.contains(&state) {
             let name = row.get("name").and_then(Value::as_str).unwrap_or("");
             return Err(RusdooError::Validation(format!(
-                "o pedido {name} está em {state:?} e não pode ir para {to:?}"
+                "order {name} is {state:?} and cannot go to {to:?}"
             )));
         }
     }
@@ -622,7 +622,7 @@ fn refuse_unless_draft_or_cancel(
             }
             let name = record.get("name").and_then(Value::as_str).unwrap_or("?");
             return Err(RusdooError::Validation(format!(
-                "o pedido {name} não está em rascunho: cancele-o antes de apagar"
+                "order {name} is not in draft: cancel it before deleting it"
             )));
         }
         Ok(())
@@ -642,9 +642,9 @@ fn order() -> Model {
             Field::new(
                 "state",
                 FieldType::Selection(vec![
-                    ("draft".into(), "Orçamento".into()),
-                    ("sale".into(), "Pedido confirmado".into()),
-                    ("cancel".into(), "Cancelado".into()),
+                    ("draft".into(), "Quotation".into()),
+                    ("sale".into(), "Sales order".into()),
+                    ("cancel".into(), "Cancelled".into()),
                 ]),
             )
             .default_value(json!("draft")),
@@ -674,10 +674,10 @@ fn order() -> Model {
 /// negative price is a refund written in the wrong place.
 fn line_is_sellable(record: &Map<String, Value>) -> Result<(), String> {
     if number(record, "product_uom_qty") <= 0.0 {
-        return Err("a quantidade de uma linha precisa ser maior que zero".into());
+        return Err("a line's quantity must be greater than zero".into());
     }
     if number(record, "price_unit") < 0.0 {
-        return Err("o preço unitário não pode ser negativo".into());
+        return Err("the unit price cannot be negative".into());
     }
     Ok(())
 }
@@ -701,7 +701,7 @@ fn order_line() -> Model {
         ],
     )
     .constrained(
-        "linha vendável",
+        "sellable line",
         &["product_uom_qty", "price_unit"],
         line_is_sellable,
     )

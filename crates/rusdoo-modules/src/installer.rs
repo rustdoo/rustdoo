@@ -304,7 +304,7 @@ fn load_translations(
         })?;
         let catalogue = crate::po::catalogue(&source);
         tracing::info!(
-            "{}: {} tradução(ões) em {lang}",
+            "{}: {} translation(s) in {lang}",
             manifest.name,
             catalogue.len()
         );

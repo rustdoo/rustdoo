@@ -214,7 +214,7 @@ mod tests {
 
         // oito dígitos, mas o verificador não fecha: foi lido errado
         let parsed = parse_nomenclature(&rules, "12345678");
-        assert_eq!(parsed.kind, "error", "o checksum é o que reprova");
+        assert_eq!(parsed.kind, "error", "the checksum is what rejects it");
 
         // este fecha
         let parsed = parse_nomenclature(&rules, "12345670");
@@ -247,7 +247,7 @@ mod tests {
         let rules = [rule("ean13", "1........{NND}.")];
         let parsed = parse_nomenclature(&rules, "1020034051259");
         assert_eq!(parsed.kind, "product");
-        assert_eq!(parsed.value, json!(12.5), "só o trecho NND é valor");
+        assert_eq!(parsed.value, json!(12.5), "only the NND part is a value");
         // zerar o valor quebraria o verificador; o base_code fecha
         assert_eq!(parsed.base_code, "1020034050009");
         assert!(check_encoding(&parsed.base_code, "ean13"));
@@ -273,7 +273,7 @@ mod tests {
     fn a_nomenclature_without_rules_reads_nothing() {
         let parsed = parse_nomenclature(&[], "12345670");
         assert_eq!(parsed.kind, "error");
-        assert_eq!(parsed.base_code, "12345670", "o código volta como veio");
+        assert_eq!(parsed.base_code, "12345670", "the code comes back as it went in");
     }
 
     #[test]
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn an_sscc_uri_is_a_package() {
         let parts = parse_uri("urn:epc:id:sscc:952656789012.03456").expect("uma URI");
-        assert_eq!(parts.len(), 1, "um volume, não um produto e um lote");
+        assert_eq!(parts.len(), 1, "one volume, not a product and a lot");
         assert_eq!(parts[0].kind, "package");
         assert_eq!(parts[0].value, json!("095265678901234568"));
     }

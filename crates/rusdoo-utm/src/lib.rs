@@ -72,7 +72,7 @@ pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
 /// nada — quem procurar a origem depois não acha coluna nenhuma vazia.
 fn name_is_filled(record: &Map<String, Value>) -> Result<(), String> {
     if is_blank(record, "name") {
-        return Err("o nome não pode ficar em branco".into());
+        return Err("the name cannot be left blank".into());
     }
     Ok(())
 }
@@ -81,7 +81,7 @@ fn name_is_filled(record: &Map<String, Value>) -> Result<(), String> {
 /// derivado dele, e não adianta cobrar o segundo.
 fn title_is_filled(record: &Map<String, Value>) -> Result<(), String> {
     if is_blank(record, "title") {
-        return Err("dê um nome à campanha".into());
+        return Err("give the campaign a name".into());
     }
     Ok(())
 }
@@ -292,7 +292,7 @@ fn wanted_name(args: &[Value], kwargs: &Map<String, Value>) -> Result<String, Ru
         .trim();
     if raw.is_empty() {
         return Err(RusdooError::Validation(
-            "diga o nome do registro a criar".into(),
+            "say the name of the record to create".into(),
         ));
     }
     Ok(raw.to_string())
@@ -325,7 +325,7 @@ async fn create_named(
     from_link: bool,
 ) -> Result<i64, RusdooError> {
     let model = ctx.registry.get(ctx.model).ok_or_else(|| {
-        RusdooError::Validation(format!("modelo desconhecido: {model}", model = ctx.model))
+        RusdooError::Validation(format!("unknown model: {model}", model = ctx.model))
     })?;
     let mut values: Vec<(&str, Value)> = Vec::new();
     if model.field("title").is_some() {
@@ -397,7 +397,7 @@ async fn first_stage(ctx: &MethodCtx<'_>) -> Result<i64, RusdooError> {
         )
         .await?;
     found.first().copied().ok_or_else(|| {
-        RusdooError::Validation("não há estágio nenhum: crie um antes de criar campanhas".into())
+        RusdooError::Validation("there is no stage at all: create one before creating campaigns".into())
     })
 }
 
@@ -458,21 +458,21 @@ mod tests {
             "utm.source",
             "utm.campaign",
         ] {
-            assert!(reg.get(name).is_some(), "{name} precisa estar registrado");
+            assert!(reg.get(name).is_some(), "{name} must be registered");
         }
         // o identificador é materializado: uma lista de campanhas lê coluna
         let campaign = reg.get("utm.campaign").expect("campanha registrada");
         let name = campaign.field("name").expect("campanha tem identificador");
         assert!(name.stored && name.compute.is_some());
         // e é o `title` que alguém digita, então é ele que é obrigatório
-        assert!(campaign.field("title").expect("tem título").required);
-        assert!(!name.required, "o identificador é preenchido pelo recompute");
+        assert!(campaign.field("title").expect("has a title").required);
+        assert!(!name.required, "the identifier is filled by the recompute");
     }
 
     #[test]
     fn the_three_tracked_models_can_be_created_from_a_name() {
         let mut methods = MethodRegistry::new();
-        extend_methods(&mut methods).expect("métodos registram");
+        extend_methods(&mut methods).expect("methods register");
         for model in TRACKING_MODELS {
             assert_eq!(
                 methods.names_for(model),

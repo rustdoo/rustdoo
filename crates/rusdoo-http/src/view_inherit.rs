@@ -45,7 +45,7 @@ impl Position {
             "attributes" => Position::Attributes,
             other => {
                 return Err(RusdooError::Validation(format!(
-                    "position {other:?} não existe: use after, before, inside, replace ou attributes"
+                    "position {other:?} does not exist: use after, before, inside, replace or attributes"
                 )))
             }
         })
@@ -82,7 +82,7 @@ fn parse_patch(patch: &str) -> Result<Vec<Op>, RusdooError> {
         let before = last;
         let event = reader
             .read_event()
-            .map_err(|error| RusdooError::Validation(format!("patch de view inválido: {error}")))?;
+            .map_err(|error| RusdooError::Validation(format!("invalid view patch: {error}")))?;
         last = reader.buffer_position() as usize;
         match event {
             Event::Start(start) => {
@@ -93,7 +93,7 @@ fn parse_patch(patch: &str) -> Result<Vec<Op>, RusdooError> {
                 let (tag, name, position) = locator(&start, patch)?;
                 let Some(position) = position else {
                     return Err(RusdooError::Validation(format!(
-                        "o elemento {tag:?} do patch não diz `position`"
+                        "the patch's {tag:?} element has no `position`"
                     )));
                 };
                 // the instruction's own children, verbatim
@@ -134,7 +134,7 @@ fn parse_patch(patch: &str) -> Result<Vec<Op>, RusdooError> {
     }
     if ops.is_empty() {
         return Err(RusdooError::Validation(
-            "o patch não tem nenhuma instrução com `position`".into(),
+            "the patch has no instruction carrying `position`".into(),
         ));
     }
     Ok(ops)
@@ -154,7 +154,7 @@ fn locator(
     };
     if tag == "xpath" {
         let expr = attribute(start, "expr").ok_or_else(|| {
-            RusdooError::Validation("um <xpath> do patch não diz `expr`".into())
+            RusdooError::Validation("an <xpath> in the patch has no `expr`".into())
         })?;
         let (xtag, xname) = parse_expr(&expr)?;
         let _ = source;
@@ -175,7 +175,7 @@ fn parse_expr(expr: &str) -> Result<(String, Option<String>), RusdooError> {
     };
     if tag.is_empty() || tag.contains('/') {
         return Err(RusdooError::Validation(format!(
-            "expr {expr:?} não é suportado: use //tag ou //tag[@name='x']"
+            "expr {expr:?} is not supported: use //tag or //tag[@name='x']"
         )));
     }
     let Some(rest) = rest else {
@@ -189,7 +189,7 @@ fn parse_expr(expr: &str) -> Result<(String, Option<String>), RusdooError> {
     match name {
         Some(name) => Ok((tag.to_string(), Some(name))),
         None => Err(RusdooError::Validation(format!(
-            "expr {expr:?} não é suportado: só o predicado [@name='...'] existe aqui"
+            "expr {expr:?} is not supported: only the [@name='...'] predicate exists here"
         ))),
     }
 }
@@ -214,7 +214,7 @@ fn skip_to_end(
         let before = reader.buffer_position() as usize;
         match reader
             .read_event()
-            .map_err(|error| RusdooError::Validation(format!("patch de view inválido: {error}")))?
+            .map_err(|error| RusdooError::Validation(format!("invalid view patch: {error}")))?
         {
             Event::Start(inner) if inner.name().as_ref() == name => depth += 1,
             Event::End(inner) if inner.name().as_ref() == name => {
@@ -248,7 +248,7 @@ fn locate(arch: &str, tag: &str, name: Option<&str>) -> Result<Span, RusdooError
         let before = reader.buffer_position() as usize;
         let event = reader
             .read_event()
-            .map_err(|error| RusdooError::Validation(format!("arch inválido: {error}")))?;
+            .map_err(|error| RusdooError::Validation(format!("invalid arch: {error}")))?;
         let after = reader.buffer_position() as usize;
         let (start, empty) = match &event {
             Event::Start(start) => (start.clone(), false),
@@ -279,8 +279,8 @@ fn locate(arch: &str, tag: &str, name: Option<&str>) -> Result<Span, RusdooError
         });
     }
     Err(RusdooError::Validation(match name {
-        Some(name) => format!("o patch procura <{tag} name=\"{name}\"> e o arch não tem"),
-        None => format!("o patch procura <{tag}> e o arch não tem"),
+        Some(name) => format!("o patch procura <{tag} name=\"{name}\"> and the arch has none"),
+        None => format!("the patch looks for <{tag}> and the arch has none"),
     }))
 }
 
@@ -329,7 +329,7 @@ fn patch_attributes(open: &str, content: &str) -> Result<String, RusdooError> {
     loop {
         match reader
             .read_event()
-            .map_err(|error| RusdooError::Validation(format!("patch inválido: {error}")))?
+            .map_err(|error| RusdooError::Validation(format!("invalid patch: {error}")))?
         {
             Event::Start(start) if start.name().as_ref() == b"attribute" => {
                 pending = attribute(&start, "name");
@@ -337,7 +337,7 @@ fn patch_attributes(open: &str, content: &str) -> Result<String, RusdooError> {
             Event::Text(text) => {
                 if let Some(name) = pending.take() {
                     let value = text.decode().map_err(|error| {
-                        RusdooError::Validation(format!("patch inválido: {error}"))
+                        RusdooError::Validation(format!("invalid patch: {error}"))
                     })?;
                     changes.push((name, value.to_string()));
                 }
@@ -363,7 +363,7 @@ fn patch_attributes(open: &str, content: &str) -> Result<String, RusdooError> {
         Ok(Event::Start(start)) | Ok(Event::Empty(start)) => start,
         _ => {
             return Err(RusdooError::Validation(
-                "não foi possível reescrever os atributos do elemento".into(),
+                "the element's attributes could not be rewritten".into(),
             ))
         }
     };
@@ -489,7 +489,7 @@ mod tests {
             FORM,
             r#"<data><field name="inexistente" position="after"><field name="x"/></field></data>"#,
         )
-        .expect_err("um patch que não encontra o alvo não é um patch que não faz nada");
+        .expect_err("a patch that does not find its target is not a patch that does nothing");
         assert!(error.to_string().contains("inexistente"), "{error}");
     }
 

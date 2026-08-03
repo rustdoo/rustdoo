@@ -75,7 +75,7 @@ pub async fn run_due(service: &OrmService) -> usize {
     let jobs = match claim_due(service).await {
         Ok(jobs) => jobs,
         Err(error) => {
-            tracing::error!("ir.cron: não foi possível ler a fila: {error}");
+            tracing::error!("ir.cron: the queue could not be read: {error}");
             return 0;
         }
     };
@@ -83,7 +83,7 @@ pub async fn run_due(service: &OrmService) -> usize {
     for job in jobs {
         if service.method_operation(&job.model, &job.code).is_none() {
             tracing::warn!(
-                "ir.cron {}: {}.{} não é um método registrado",
+                "ir.cron {}: {}.{} is not a registered method",
                 job.name,
                 job.model,
                 job.code

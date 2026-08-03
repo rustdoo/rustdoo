@@ -1,4 +1,4 @@
-//! O padrão de uma regra: uma expressão regular que casa o começo do
+//! O padrão de uma regra: uma regular expression que casa o começo do
 //! código, com um trecho entre chaves onde a balança ou a etiquetadora
 //! escreveram um número.
 //!
@@ -42,7 +42,7 @@ fn numeric_span(pattern: &str) -> Option<(usize, usize)> {
     None
 }
 
-/// A expressão regular que o padrão realmente vira: o trecho numérico
+/// A regular expression que o padrão realmente vira: o trecho numérico
 /// trocado pelos zeros que ele ocupa no código base.
 ///
 /// O casamento é sempre contra o código já zerado, então é este texto —
@@ -137,26 +137,26 @@ pub fn check_pattern(pattern: &str) -> Result<(), String> {
     if braces == 2 {
         if numeric_span(&bare).is_none() {
             return Err(format!(
-                "o padrão {pattern:?} tem chaves com algo que não é N seguido de D; \
-                 escreva os inteiros e depois os decimais, como {{NNNDD}}"
+                "pattern {pattern:?} has braces holding something other than N followed by D; \
+                 write the integers and then the decimals, as in {{NNNDD}}"
             ));
         }
         if bare.contains("{}") {
             return Err(format!(
-                "o padrão {pattern:?} tem chaves vazias; diga quantos dígitos o valor \
-                 ocupa, como {{NNN}}"
+                "pattern {pattern:?} has empty braces; say how many digits the value \
+                 takes, as in {{NNN}}"
             ));
         }
     } else if braces != 0 {
         return Err(format!(
-            "o padrão {pattern:?} tem mais de um par de chaves; uma regra embute um \
-             valor só"
+            "pattern {pattern:?} has more than one pair of braces; a rule embeds one \
+             value only"
         ));
     } else if bare == "*" {
-        return Err("'*' não é um padrão válido; para casar qualquer código escreva '.*'".into());
+        return Err("'*' is not a valid pattern; to match any code write '.*'".into());
     }
     Regex::new(&effective_regex(&bare))
-        .map_err(|_| format!("o padrão {pattern:?} não é uma expressão regular válida"))?;
+        .map_err(|_| format!("pattern {pattern:?} is not a valid regular expression"))?;
     Ok(())
 }
 
@@ -168,8 +168,8 @@ mod tests {
     fn a_pattern_without_braces_only_matches() {
         let hit = match_pattern("12345670", "........");
         assert!(hit.matched);
-        assert_eq!(hit.value, 0.0, "não há valor embutido");
-        assert_eq!(hit.base_code, "12345670", "o código é ele mesmo");
+        assert_eq!(hit.value, 0.0, "there is no inline value");
+        assert_eq!(hit.base_code, "12345670", "the code is itself");
 
         assert!(!match_pattern("16012344", "11......").matched);
     }
@@ -179,7 +179,7 @@ mod tests {
         let hit = match_pattern("12345670", "{NNNNNNNN}");
         assert!(hit.matched);
         assert_eq!(hit.value, 12345670.0);
-        assert_eq!(hit.base_code, "00000000", "sobrou só o zero");
+        assert_eq!(hit.base_code, "00000000", "only the zero is left");
     }
 
     #[test]
@@ -228,20 +228,20 @@ mod tests {
         // chaves vazias: quantos dígitos?
         assert!(check_pattern("......{}..")
             .unwrap_err()
-            .contains("chaves vazias"));
+            .contains("empty braces"));
         // decimal antes do inteiro
         assert!(check_pattern("......{DN}")
             .unwrap_err()
-            .contains("N seguido de D"));
+            .contains("N followed by D"));
         // dois valores numa regra só
         assert!(check_pattern("....{NN}{DD}")
             .unwrap_err()
-            .contains("mais de um par"));
+            .contains("more than one pair"));
         // '*' sozinho é o erro que todo mundo comete
         assert!(check_pattern("*").unwrap_err().contains("'.*'"));
         // e o que nem regex é
         assert!(check_pattern("**>>>{ND}")
             .unwrap_err()
-            .contains("expressão regular"));
+            .contains("regular expression"));
     }
 }

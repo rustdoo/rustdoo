@@ -107,7 +107,7 @@ async fn call(
 ) -> Result<Value, RusdooError> {
     let method = methods
         .get(model, name)
-        .unwrap_or_else(|| panic!("{model}.{name} precisa estar registrado"));
+        .unwrap_or_else(|| panic!("{model}.{name} must be registered"));
     let ctx = MethodCtx::new(reg, pool, 1, model, ids);
     (method.func)(ctx, &[], &Map::new()).await
 }
@@ -435,7 +435,7 @@ async fn arquivar_o_que_nao_arquiva_e_recusado_live() {
     .await
     .expect_err("o modelo não tem como ser arquivado");
     assert!(
-        error.to_string().contains("mude a ação"),
+        error.to_string().contains("change the action"),
         "a mensagem diz o que fazer: {error}"
     );
 }
@@ -455,7 +455,7 @@ async fn uma_regra_perigosa_ou_mal_escrita_nao_e_salva_live() {
         )
         .await
         .expect_err("uma regra que pega tudo");
-    assert!(error.to_string().contains("todos os registros"), "{error}");
+    assert!(error.to_string().contains("match every record"), "{error}");
 
     // um filtro que não é domínio
     let error = reg
@@ -470,7 +470,7 @@ async fn uma_regra_perigosa_ou_mal_escrita_nao_e_salva_live() {
         )
         .await
         .expect_err("isso não é um domínio");
-    assert!(error.to_string().contains("lista JSON"), "{error}");
+    assert!(error.to_string().contains("JSON list"), "{error}");
 
     // idade de zero é "tudo" escrito de outro jeito
     let error = reg
@@ -485,8 +485,8 @@ async fn uma_regra_perigosa_ou_mal_escrita_nao_e_salva_live() {
             ],
         )
         .await
-        .expect_err("zero não é intervalo");
-    assert!(error.to_string().contains("maior que zero"), "{error}");
+        .expect_err("zero is not an interval");
+    assert!(error.to_string().contains("greater than zero"), "{error}");
 
     // e nenhuma delas sobreviveu à recusa
     let saved = reg

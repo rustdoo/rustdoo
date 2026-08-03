@@ -249,5 +249,5 @@ async fn a_required_field_without_its_sequence_says_which_one_live() {
         .expect_err("a numbered document with no sequence is refused");
     let message = error.to_string();
     assert!(message.contains("nao.existe"), "{message}");
-    assert!(message.contains("sequência"), "{message}");
+    assert!(message.contains("sequence"), "{message}");
 }

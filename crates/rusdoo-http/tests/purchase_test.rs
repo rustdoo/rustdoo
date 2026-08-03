@@ -267,6 +267,6 @@ async fn an_unconfirmed_purchase_produces_nothing_live() {
         assert!(answer["error"]["message"]
             .as_str()
             .unwrap_or_default()
-            .contains("não está confirmado"));
+            .contains("is not confirmed"));
     }
 }

@@ -199,7 +199,7 @@ msgid ""
 "Note: products you cannot see are not shown."
 msgstr ""
 "\n"
-"Nota: produtos que você não pode ver não aparecem."
+"Note: products you cannot see are not shown."
 
 #. module: product
 #: model:ir.model.fields,field_description:product.field_product_product__list_price
@@ -216,7 +216,7 @@ msgstr "Cotação \"rascunho\""
         let entries = parse_po(SAMPLE);
         assert!(
             entries.iter().all(|e| !e.msgid.is_empty()),
-            "o cabeçalho tem msgid vazio e não é tradução de nada"
+            "the header has an empty msgid and translates nothing"
         );
     }
 
@@ -225,7 +225,7 @@ msgstr "Cotação \"rascunho\""
         let entries = parse_po(SAMPLE);
         assert!(
             !entries.iter().any(|e| e.msgid == "Sales Price"),
-            "msgstr vazio é 'ninguém traduziu ainda', não 'traduza para vazio'"
+            "an empty msgstr is 'nobody translated it yet', not 'translate to empty'"
         );
     }
 
@@ -239,7 +239,7 @@ msgstr "Cotação \"rascunho\""
         assert_eq!(entry.msgid, "\nNote: products you cannot see are not shown.");
         assert_eq!(
             entry.msgstr,
-            "\nNota: produtos que você não pode ver não aparecem."
+            "\nNote: products you cannot see are not shown."
         );
     }
 

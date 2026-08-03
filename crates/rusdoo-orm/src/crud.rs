@@ -71,14 +71,14 @@ fn check_base64(name: &str, value: Value) -> Result<Value, RusdooError> {
         Value::String(text) => text,
         other => {
             return Err(RusdooError::Validation(format!(
-                "{name}: um campo binário recebe base64, não {other}"
+                "{name}: a binary field takes base64, not {other}"
             )))
         }
     };
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(text)
         .map_err(|error| {
-            RusdooError::Validation(format!("{name}: base64 inválido ({error})"))
+            RusdooError::Validation(format!("{name}: invalid base64 ({error})"))
         })?;
     if decoded.len() > MAX_BINARY_BYTES {
         return Err(RusdooError::Validation(format!(

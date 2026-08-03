@@ -65,9 +65,9 @@ fn meta(name: &str, table: &str) -> ModelMeta {
 /// animação de "acabou de ficar pronto" não volta a cada carregamento.
 fn progress_states() -> FieldType {
     FieldType::Selection(vec![
-        ("not_done".into(), "Pendente".into()),
-        ("just_done".into(), "Acabou de ser feito".into()),
-        ("done".into(), "Feito".into()),
+        ("not_done".into(), "Pending".into()),
+        ("just_done".into(), "Just done".into()),
+        ("done".into(), "Done".into()),
     ])
 }
 
@@ -144,11 +144,11 @@ fn route_name_is_one_word(record: &Map<String, Value>) -> Result<(), String> {
         .trim()
         .to_string();
     if route.is_empty() {
-        return Err("o painel precisa de um nome de rota".into());
+        return Err("the dashboard needs a route name".into());
     }
     if route.split_whitespace().count() > 1 {
         return Err(format!(
-            "o nome de rota {route:?} precisa ser uma palavra só, sem espaços"
+            "route name {route:?} must be a single word, with no spaces"
         ));
     }
     Ok(())
@@ -171,7 +171,7 @@ fn onboarding() -> Model {
                 },
             ),
             char("text_completed")
-                .default_value(json!("Bom trabalho! A configuração está pronta.")),
+                .default_value(json!("Well done! The setup is ready.")),
             // o método que o painel chama ao ser fechado, nomeado pelo
             // módulo que o instalou
             char("panel_close_action_name"),
@@ -188,13 +188,13 @@ fn onboarding() -> Model {
         ],
     )
     .constrained(
-        "rota de uma palavra só",
+        "single-word route",
         &["route_name"],
         route_name_is_one_word,
     )
 }
 
-/// Um passo pendurado num painel sem ação de abertura é um botão que
+/// Um passo pendurado num painel sem opening action é um botão que
 /// não leva a lugar nenhum.
 fn step_on_panel_has_action(record: &Map<String, Value>) -> Result<(), String> {
     let on_panel = record
@@ -208,7 +208,7 @@ fn step_on_panel_has_action(record: &Map<String, Value>) -> Result<(), String> {
     if on_panel && !has_action {
         let title = record.get("title").and_then(Value::as_str).unwrap_or("");
         return Err(format!(
-            "o passo {title:?} está num painel e precisa de uma ação de abertura"
+            "step {title:?} is on a dashboard and needs an opening action"
         ));
     }
     Ok(())
@@ -232,9 +232,9 @@ fn step() -> Model {
             char("description"),
             char("button_text")
                 .required()
-                .default_value(json!("Vamos lá")),
+                .default_value(json!("Let's go")),
             char("done_icon").default_value(json!("fa-star")),
-            char("done_text").default_value(json!("Passo concluído!")),
+            char("done_text").default_value(json!("Step done!")),
             // o método que o passo abre quando se clica nele
             char("panel_step_open_action_name"),
             Field::new(
@@ -251,7 +251,7 @@ fn step() -> Model {
         ],
     )
     .constrained(
-        "passo de painel precisa de ação",
+        "a dashboard step needs an action",
         &["onboarding_ids", "panel_step_open_action_name", "title"],
         step_on_panel_has_action,
     )
@@ -544,7 +544,7 @@ async fn relink_progress_steps(
 ///
 /// Marca um passo de cada vez porque é assim que o painel funciona: um
 /// clique, um passo. Um passo já feito não é marcado de novo — dizer
-/// "já estava feito" é a resposta certa, não um erro.
+/// "it was already done" é a resposta certa, não um erro.
 fn action_set_just_done<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -553,7 +553,7 @@ fn action_set_just_done<'a>(
     Box::pin(async move {
         let [step_id] = ctx.ids[..] else {
             return Err(RusdooError::Validation(
-                "marque um passo de cada vez".into(),
+                "mark one step at a time".into(),
             ));
         };
         let rows = ctx
@@ -567,7 +567,7 @@ fn action_set_just_done<'a>(
             .await?;
         let step = rows
             .first()
-            .ok_or_else(|| RusdooError::Validation(format!("o passo {step_id} não existe")))?;
+            .ok_or_else(|| RusdooError::Validation(format!("step {step_id} does not exist")))?;
         // um passo comum a todas as empresas tem um registro só, sem dono
         let per_company = step
             .get("is_per_company")
@@ -644,7 +644,7 @@ fn action_open_progress<'a>(
 /// O progresso do painel em `ctx.ids`, para a empresa de quem chamou.
 async fn progress_of_single_panel(ctx: &MethodCtx<'_>) -> Result<i64, RusdooError> {
     let [onboarding] = ctx.ids[..] else {
-        return Err(RusdooError::Validation("abra um painel de cada vez".into()));
+        return Err(RusdooError::Validation("open one dashboard at a time".into()));
     };
     let panel = ctx
         .registry
@@ -652,7 +652,7 @@ async fn progress_of_single_panel(ctx: &MethodCtx<'_>) -> Result<i64, RusdooErro
         .await?;
     if panel.is_empty() {
         return Err(RusdooError::Validation(format!(
-            "o painel {onboarding} não existe"
+            "dashboard {onboarding} does not exist"
         )));
     }
     let company = current_company(ctx).await?;
@@ -730,7 +730,7 @@ fn action_step_states<'a>(
     Box::pin(async move {
         let [progress_id] = ctx.ids[..] else {
             return Err(RusdooError::Validation(
-                "leia um progresso de cada vez".into(),
+                "read one progress record at a time".into(),
             ));
         };
         let rows = ctx
@@ -748,13 +748,13 @@ fn action_step_states<'a>(
             )
             .await?;
         let progress = rows.first().ok_or_else(|| {
-            RusdooError::Validation(format!("o progresso {progress_id} não existe"))
+            RusdooError::Validation(format!("progress record {progress_id} does not exist"))
         })?;
         let onboarding = progress
             .get("onboarding_id")
             .and_then(first_id)
             .ok_or_else(|| {
-                RusdooError::Validation("o progresso não aponta para um painel".into())
+                RusdooError::Validation("the progress record points at no dashboard".into())
             })?;
         // a empresa do próprio progresso; quando ele vale para o banco
         // inteiro, os passos por empresa ainda são lidos da empresa de
@@ -876,8 +876,8 @@ mod tests {
         record.insert("route_name".into(), json!("sale"));
         assert!(route_name_is_one_word(&record).is_ok());
         record.insert("route_name".into(), json!("pedido de venda"));
-        let error = route_name_is_one_word(&record).expect_err("duas palavras não viram rota");
-        assert!(error.contains("uma palavra só"), "{error}");
+        let error = route_name_is_one_word(&record).expect_err("two words do not make a route");
+        assert!(error.contains("a single word"), "{error}");
         record.insert("route_name".into(), json!("   "));
         assert!(route_name_is_one_word(&record).is_err());
     }
@@ -889,11 +889,11 @@ mod tests {
         record.insert("onboarding_ids".into(), json!([]));
         assert!(
             step_on_panel_has_action(&record).is_ok(),
-            "fora de um painel o passo não abre nada"
+            "outside a dashboard a step opens nothing"
         );
         record.insert("onboarding_ids".into(), json!([1]));
-        let error = step_on_panel_has_action(&record).expect_err("um botão sem destino");
-        assert!(error.contains("ação de abertura"), "{error}");
+        let error = step_on_panel_has_action(&record).expect_err("a button with no target");
+        assert!(error.contains("opening action"), "{error}");
         record.insert("panel_step_open_action_name".into(), json!("action_open"));
         assert!(step_on_panel_has_action(&record).is_ok());
     }

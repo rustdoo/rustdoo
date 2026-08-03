@@ -307,7 +307,7 @@ async fn a_debit_note_without_copied_lines_is_born_empty_live() {
         .call("account.move", "action_post", vec![note])
         .await
         .expect_err("uma nota vazia não se lança");
-    assert!(error.contains("não tem linhas"), "{error}");
+    assert!(error.contains("has no lines"), "{error}");
 }
 
 #[tokio::test]
@@ -336,8 +336,8 @@ async fn a_draft_invoice_is_not_debited_live() {
     let error = fx
         .call("account.move", "action_debit_note", vec![invoice])
         .await
-        .expect_err("um rascunho não se debita");
-    assert!(error.contains("lance a fatura antes"), "{error}");
+        .expect_err("a draft is not debited");
+    assert!(error.contains("post it before"), "{error}");
     // e nada de assistente ficou para trás
     let wizards = fx
         .registry
@@ -380,8 +380,8 @@ async fn a_debit_note_is_not_debited_again_live() {
     let error = fx
         .call("account.move", "action_debit_note", vec![note])
         .await
-        .expect_err("uma nota não se debita");
-    assert!(error.contains("já é uma nota de débito"), "{error}");
+        .expect_err("a note is not debited");
+    assert!(error.contains("already a debit note"), "{error}");
 }
 
 #[tokio::test]
@@ -413,8 +413,8 @@ async fn a_plain_entry_is_not_debited_live() {
     let error = fx
         .call("account.move", "action_debit_note", vec![entry])
         .await
-        .expect_err("um lançamento não se debita");
-    assert!(error.contains("fatura de cliente"), "{error}");
+        .expect_err("an entry is not debited");
+    assert!(error.contains("customer or vendor invoice"), "{error}");
 }
 
 #[tokio::test]
@@ -472,7 +472,7 @@ async fn a_cancelled_invoice_between_the_dialog_and_the_button_is_refused_live()
         .call("account.debit.note", "create_debit", vec![wizard])
         .await
         .expect_err("não se debita uma fatura cancelada");
-    assert!(error.contains("lance a fatura antes"), "{error}");
+    assert!(error.contains("post it before"), "{error}");
     // e nenhuma nota meio-criada ficou no banco
     let notes = fx
         .registry

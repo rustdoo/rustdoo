@@ -193,7 +193,7 @@ async fn converting_across_categories_is_refused_live() {
     .await
     .expect_err("tonelada não vira dia");
     let message = refusal.to_string();
-    assert!(message.contains("categorias diferentes"), "{message}");
+    assert!(message.contains("different categories"), "{message}");
     assert!(
         message.contains('g') && message.contains("Horas"),
         "{message}"
@@ -212,7 +212,7 @@ async fn converting_across_categories_is_refused_live() {
     )
     .await
     .expect_err("a unidade de destino não existe");
-    assert!(missing.to_string().contains("não existe"), "{missing}");
+    assert!(missing.to_string().contains("does not exist"), "{missing}");
 }
 
 #[tokio::test]
@@ -306,7 +306,7 @@ async fn a_unit_that_cannot_convert_is_never_saved_live() {
         )
         .await
         .expect_err("fator zero não passa");
-    assert!(refusal.to_string().contains("maior que zero"), "{refusal}");
+    assert!(refusal.to_string().contains("greater than zero"), "{refusal}");
 
     // a unit with no reference is the root of its category: it cannot
     // claim to contain twelve of something it does not name
@@ -319,7 +319,7 @@ async fn a_unit_that_cannot_convert_is_never_saved_live() {
         .await
         .expect_err("raiz com fator 12 não passa");
     assert!(
-        refusal.to_string().contains("unidade de referência"),
+        refusal.to_string().contains("reference unit"),
         "{refusal}"
     );
 
@@ -336,7 +336,7 @@ async fn a_unit_that_cannot_convert_is_never_saved_live() {
     assert!(
         refusal
             .to_string()
-            .contains("própria unidade de referência"),
+            .contains("its own reference unit"),
         "{refusal}"
     );
 

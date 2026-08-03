@@ -231,7 +231,7 @@ async fn the_membership_multi_parameter_lets_a_salesperson_serve_two_teams_live(
     )
     .await
     .expect_err("duas vezes na mesma equipe não");
-    assert!(error.to_string().contains("já está na equipe"), "{error}");
+    assert!(error.to_string().contains("is already in team"), "{error}");
 }
 
 #[tokio::test]
@@ -267,7 +267,7 @@ async fn adding_the_same_salesperson_twice_is_refused_live() {
     .await
     .expect_err("he is already there");
     assert!(
-        error.to_string().contains("já está na equipe Norte"),
+        error.to_string().contains("is already in team Norte"),
         "the message names the person and the team: {error}"
     );
     assert_eq!(member_count(&registry, &pool, team).await, 1);
@@ -307,7 +307,7 @@ async fn removing_a_salesperson_who_is_not_in_the_team_is_refused_live() {
     .await
     .expect_err("she is in the other team");
     assert!(
-        error.to_string().contains("não está na equipe Sul"),
+        error.to_string().contains("is not in team Sul"),
         "{error}"
     );
     assert_eq!(
@@ -432,17 +432,17 @@ async fn a_team_without_a_name_or_with_an_impossible_colour_is_refused_live() {
         .create(&pool, "crm.team", vec![("name", json!("   "))])
         .await
         .expect_err("a nameless team is refused");
-    assert!(error.to_string().contains("dê um nome"), "{error}");
+    assert!(error.to_string().contains("give the team or the tag a name"), "{error}");
 
     let error = registry
         .create(
             &pool,
             "crm.tag",
-            vec![("name", json!("Serviços")), ("color", json!(57))],
+            vec![("name", json!("Services")), ("color", json!(57))],
         )
         .await
         .expect_err("57 is not on the board");
-    assert!(error.to_string().contains("de 0 a 11"), "{error}");
+    assert!(error.to_string().contains("from 0 to 11"), "{error}");
 
     // and nothing was left behind by the refused creates
     let teams = registry
@@ -462,5 +462,5 @@ async fn a_team_without_a_name_or_with_an_impossible_colour_is_refused_live() {
         .write(&pool, "crm.team", &[team], vec![("name", json!(""))])
         .await
         .expect_err("the rule applies to a write as well");
-    assert!(error.to_string().contains("dê um nome"), "{error}");
+    assert!(error.to_string().contains("give the team or the tag a name"), "{error}");
 }

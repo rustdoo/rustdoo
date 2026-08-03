@@ -237,7 +237,7 @@ async fn a_confirmed_order_produces_a_delivery_of_its_goods_live() {
     assert!(answer["error"]["message"]
         .as_str()
         .unwrap_or_default()
-        .contains("já tem entrega"));
+        .contains("already has a delivery"));
 
     // confirm, then validate: what was planned becomes what was shipped
     call(
@@ -312,7 +312,7 @@ async fn an_order_of_services_only_has_nothing_to_deliver_live() {
     assert!(answer["error"]["message"]
         .as_str()
         .unwrap_or_default()
-        .contains("só tem serviços"));
+        .contains("services only"));
 }
 
 #[tokio::test]
@@ -333,5 +333,5 @@ async fn a_picking_without_moves_is_not_confirmed_live() {
     assert!(answer["error"]["message"]
         .as_str()
         .unwrap_or_default()
-        .contains("não tem linhas"));
+        .contains("has no lines"));
 }

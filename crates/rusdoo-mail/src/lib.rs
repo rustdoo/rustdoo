@@ -69,8 +69,8 @@ fn message() -> Model {
             Field::new(
                 "message_type",
                 FieldType::Selection(vec![
-                    ("comment".into(), "Comentário".into()),
-                    ("notification".into(), "Notificação".into()),
+                    ("comment".into(), "Comment".into()),
+                    ("notification".into(), "Notification".into()),
                 ]),
             )
             .default_value(json!("comment")),
@@ -131,7 +131,7 @@ fn message_post<'a>(
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|body| !body.is_empty())
-            .ok_or_else(|| RusdooError::Validation("a mensagem está vazia".into()))?;
+            .ok_or_else(|| RusdooError::Validation("the message is empty".into()))?;
         let mut values = vec![
             ("model", json!(ctx.model)),
             ("res_id", json!(res_id)),
@@ -166,7 +166,7 @@ fn message_fetch<'a>(
     Box::pin(async move {
         let [res_id] = ctx.ids[..] else {
             return Err(RusdooError::Validation(
-                "message_fetch lê o histórico de um registro".into(),
+                "message_fetch reads a record's history".into(),
             ));
         };
         let limit = kwargs

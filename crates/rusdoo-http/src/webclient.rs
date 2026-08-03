@@ -24,6 +24,27 @@ const DEFAULT_LANG: &str = "en_US";
 const MAX_FILE_UPLOAD_SIZE: i64 = 128 * 1024 * 1024;
 const ACTIVE_IDS_LIMIT: i64 = 20_000;
 
+/// The arch attributes a user reads, and which therefore translate.
+const TRANSLATED_ATTRS: [&str; 4] = ["string=\"", "sum=\"", "help=\"", "placeholder=\""];
+
+/// The five entities an XML attribute value may carry.
+fn unescape_xml(value: &str) -> String {
+    value
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+fn escape_xml(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 impl OrmService {
     /// `/web/session/get_session_info`: who the client is talking as.
     pub async fn session_info(&self, session: Option<&Session>) -> Value {
@@ -247,11 +268,11 @@ impl OrmService {
             // none omits it: a client that can draw four kinds of view
             // should not be refused the two that exist. Asking for a
             // specific id that is missing stays an error.
-            match self.find_view(model, *view_id, kind).await? {
+            match self.find_view(model, *view_id, kind, lang).await? {
                 Some(view) => {
                     views.insert(kind.clone(), view);
                 }
-                None => tracing::debug!("{model}: sem view {kind} padrão"),
+                None => tracing::debug!("{model}: no default {kind} view"),
             }
         }
         let fields = self.fields_metadata_in(model, &std::collections::HashSet::new(), lang)?;
@@ -276,6 +297,7 @@ impl OrmService {
         model: &str,
         view_id: Option<i64>,
         kind: &str,
+        lang: &str,
     ) -> Result<Option<Value>, RpcError> {
         let row: Option<ViewRow> = match view_id {
             Some(id) => sqlx::query_as(
@@ -320,6 +342,7 @@ impl OrmService {
             )));
         }
         let arch = self.inherited_arch(id, arch.unwrap_or_default()).await?;
+        let arch = self.translate_arch(&arch, lang);
         Ok(Some(json!({
             "id": id,
             "model": model,
@@ -335,6 +358,48 @@ impl OrmService {
     /// not depend on which module happened to install first. A patch
     /// that fails is reported, not skipped: a module asked for a change
     /// to this screen and did not get it.
+    /// The arch with its user-facing attributes translated.
+    ///
+    /// A view's `string="Customer"` is text of the program, like a field
+    /// label: the same for every record, shipped in the module's `.po`.
+    /// Odoo marks these terms `model_terms:ir.ui.view,arch_db:...` and
+    /// translates them on the way out, which is what this does.
+    ///
+    /// Only the attributes a user reads are touched. Rewriting the arch
+    /// as XML would risk changing what the client parses; a replacement
+    /// of the quoted values leaves everything else byte for byte.
+    fn translate_arch(&self, arch: &str, lang: &str) -> String {
+        if self.translations.is_empty() || lang == rusdoo_orm::context::DEFAULT_LANG {
+            return arch.to_string();
+        }
+        let mut out = String::with_capacity(arch.len());
+        let mut rest = arch;
+        // one attribute at a time, whichever comes first
+        loop {
+            let next = TRANSLATED_ATTRS
+                .iter()
+                .filter_map(|attr| rest.find(attr).map(|at| (at, *attr)))
+                .min_by_key(|(at, _)| *at);
+            let Some((at, attr)) = next else {
+                out.push_str(rest);
+                return out;
+            };
+            let value_start = at + attr.len();
+            let Some(end) = rest[value_start..].find('"') else {
+                out.push_str(rest);
+                return out;
+            };
+            let value = &rest[value_start..value_start + end];
+            out.push_str(&rest[..value_start]);
+            // o valor vem escapado no XML e a tradução tem de voltar
+            // escapada, senão um rótulo com `&` quebra o documento
+            let source = unescape_xml(value);
+            let translated = self.translations.get(lang, &source);
+            out.push_str(&escape_xml(translated));
+            rest = &rest[value_start + end..];
+        }
+    }
+
     async fn inherited_arch(&self, base_id: i32, arch: String) -> Result<String, RpcError> {
         let mut result = arch;
         let mut pending = vec![base_id];

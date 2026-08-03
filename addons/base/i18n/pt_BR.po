@@ -70,3 +70,51 @@ msgstr "País"
 #: model:ir.model.fields,field_description:base.field_res_lang__code
 msgid "Code"
 msgstr "Código"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__phone
+msgid "Draft"
+msgstr "Rascunho"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__state
+msgid "Cancelled"
+msgstr "Cancelado"
+
+#. module: base
+#: model:ir.model.fields,field_description:base.field_res_partner__done
+msgid "Done"
+msgstr "Concluída"
+
+#. module: base — rótulos de seleção
+#: model:ir.model.fields.selection,name:base.selection__generic__always
+msgid "Always"
+msgstr "Sempre"
+
+#: model:ir.model.fields.selection,name:base.selection__generic__never
+msgid "Never"
+msgstr "Nunca"
+
+#: model:ir.model.fields.selection,name:base.selection__generic__contact
+msgid "Contact"
+msgstr "Contato"
+
+#: model:ir.model.fields.selection,name:base.selection__generic__customer
+msgid "Customer"
+msgstr "Cliente"
+
+#: model:ir.model.fields.selection,name:base.selection__generic__vendor
+msgid "Vendor"
+msgstr "Fornecedor"
+
+#: model:ir.model.fields.selection,name:base.selection__generic__days
+msgid "Days"
+msgstr "Dias"
+
+#: model:ir.model.fields.selection,name:base.selection__generic__months
+msgid "Months"
+msgstr "Meses"
+
+#: model:ir.model.fields.selection,name:base.selection__res_lang__direction__ltr
+msgid "Left-to-Right"
+msgstr "Da esquerda para a direita"

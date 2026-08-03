@@ -131,7 +131,7 @@ fn member_count(record: &Map<String, Value>) -> Value {
 fn is_named(record: &Map<String, Value>) -> Result<(), String> {
     match record.get("name").and_then(Value::as_str).map(str::trim) {
         Some(name) if !name.is_empty() => Ok(()),
-        _ => Err("dê um nome à equipe ou à etiqueta: um cartão sem nome não é clicável".into()),
+        _ => Err("give the team or the tag a name: a nameless card is not clickable".into()),
     }
 }
 
@@ -140,7 +140,7 @@ fn is_in_palette(record: &Map<String, Value>) -> Result<(), String> {
     let color = record.get("color").and_then(Value::as_i64).unwrap_or(0);
     if !(0..=LAST_COLOR).contains(&color) {
         return Err(format!(
-            "a cor {color} não existe: escolha uma das 12 do quadro, de 0 a {LAST_COLOR}"
+            "colour {color} does not exist: pick one of the kanban's 12, from 0 to {LAST_COLOR}"
         ));
     }
     Ok(())
@@ -244,7 +244,7 @@ fn wanted_user(args: &[Value], kwargs: &Map<String, Value>) -> Result<i64, Rusdo
         .get("user_id")
         .or_else(|| args.first())
         .and_then(Value::as_i64)
-        .ok_or_else(|| RusdooError::Validation("diga quem: passe user_id com o vendedor".into()))
+        .ok_or_else(|| RusdooError::Validation("say who: pass user_id with the salesperson".into()))
 }
 
 /// A record's name, and a clear complaint when the record is not there.
@@ -252,7 +252,7 @@ async fn name_of(ctx: &MethodCtx<'_>, model: &str, id: i64) -> Result<String, Ru
     let rows = ctx.registry.read(ctx.pool, model, &[id], &["name"]).await?;
     let name = rows
         .first()
-        .ok_or_else(|| RusdooError::Validation(format!("{model} {id} não existe")))?
+        .ok_or_else(|| RusdooError::Validation(format!("{model} {id} does not exist")))?
         .get("name")
         .and_then(Value::as_str)
         .unwrap_or_default()
@@ -323,7 +323,7 @@ fn action_add_member<'a>(
     kwargs: &'a Map<String, Value>,
 ) -> MethodFuture<'a> {
     Box::pin(async move {
-        let team = only_one(&ctx.ids, "adicione membros a uma equipe de cada vez")?;
+        let team = only_one(&ctx.ids, "add members to one team at a time")?;
         let user = wanted_user(&ctx.rest, kwargs)?;
         let team_name = name_of(&ctx, "crm.team", team).await?;
         let user_name = name_of(&ctx, "res.users", user).await?;
@@ -334,7 +334,7 @@ fn action_add_member<'a>(
         let memberships = memberships_of(&ctx, user).await?;
         if memberships.iter().any(|(_, current)| *current == team) {
             return Err(RusdooError::Validation(format!(
-                "{user_name} já está na equipe {team_name}"
+                "{user_name} is already in team {team_name}"
             )));
         }
         // leaving the previous team is what the switch turns off: with
@@ -369,7 +369,7 @@ fn action_remove_member<'a>(
     kwargs: &'a Map<String, Value>,
 ) -> MethodFuture<'a> {
     Box::pin(async move {
-        let team = only_one(&ctx.ids, "remova membros de uma equipe de cada vez")?;
+        let team = only_one(&ctx.ids, "remove members from one team at a time")?;
         let user = wanted_user(&ctx.rest, kwargs)?;
         let team_name = name_of(&ctx, "crm.team", team).await?;
         let user_name = name_of(&ctx, "res.users", user).await?;
@@ -380,7 +380,7 @@ fn action_remove_member<'a>(
             .find(|(_, current)| *current == team)
             .map(|(membership, _)| membership)
             .ok_or_else(|| {
-                RusdooError::Validation(format!("{user_name} não está na equipe {team_name}"))
+                RusdooError::Validation(format!("{user_name} is not in team {team_name}"))
             })?;
         leave_team(&ctx, team, membership).await?;
         Ok(json!(true))
@@ -399,14 +399,14 @@ fn action_toggle_favorite<'a>(
     _kwargs: &'a Map<String, Value>,
 ) -> MethodFuture<'a> {
     Box::pin(async move {
-        let team = only_one(&ctx.ids, "marque uma equipe de cada vez")?;
+        let team = only_one(&ctx.ids, "mark one team at a time")?;
         let rows = ctx
             .registry
             .read(ctx.pool, "crm.team", &[team], &["favorite_user_ids"])
             .await?;
         let favorites = rows
             .first()
-            .ok_or_else(|| RusdooError::Validation(format!("equipe {team} não existe")))?
+            .ok_or_else(|| RusdooError::Validation(format!("team {team} does not exist")))?
             .get("favorite_user_ids")
             .and_then(Value::as_array)
             .cloned()
@@ -477,7 +477,7 @@ mod tests {
         }
         record.insert("color".into(), json!(57));
         let error = is_in_palette(&record).expect_err("57 is not a colour");
-        assert!(error.contains("de 0 a 11"), "{error}");
+        assert!(error.contains("from 0 to 11"), "{error}");
     }
 
     #[test]

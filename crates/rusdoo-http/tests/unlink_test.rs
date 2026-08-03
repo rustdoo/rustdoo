@@ -69,7 +69,7 @@ async fn a_confirmed_order_refuses_to_be_deleted_live() {
     let answer = call(&service, "sale.order", "unlink", json!([[order]])).await;
     let message = answer["error"]["message"].as_str().unwrap_or_default();
     assert!(
-        message.contains("não está em rascunho"),
+        message.contains("is not in draft"),
         "o hook recusa e diz por quê: {answer}"
     );
 
@@ -105,7 +105,7 @@ async fn a_referenced_record_cannot_be_deleted_out_from_under_it_live() {
     let answer = call(&service, "res.partner", "unlink", json!([[partner]])).await;
     let message = answer["error"]["message"].as_str().unwrap_or_default();
     assert!(
-        message.contains("dependem deste"),
+        message.contains("records depend on this one"),
         "o banco recusa, e a frase diz de que lado está o problema: {answer}"
     );
     let left = call(&service, "res.partner", "search_count", json!([[]])).await["result"]
@@ -134,7 +134,7 @@ async fn a_reference_to_a_record_that_does_not_exist_is_refused_live() {
     .await;
     let message = answer["error"]["message"].as_str().unwrap_or_default();
     assert!(
-        message.contains("não existe"),
+        message.contains("does not exist"),
         "a referência inventada é recusada: {answer}"
     );
 

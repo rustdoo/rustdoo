@@ -81,10 +81,10 @@ fn location() -> Model {
             Field::new(
                 "usage",
                 FieldType::Selection(vec![
-                    ("internal".into(), "Interna".into()),
-                    ("customer".into(), "Cliente".into()),
-                    ("supplier".into(), "Fornecedor".into()),
-                    ("inventory".into(), "Ajuste de inventário".into()),
+                    ("internal".into(), "Internal".into()),
+                    ("customer".into(), "Customer".into()),
+                    ("supplier".into(), "Vendor".into()),
+                    ("inventory".into(), "Inventory adjustment".into()),
                 ]),
             )
             .default_value(json!("internal")),
@@ -107,19 +107,19 @@ fn picking() -> Model {
             Field::new(
                 "picking_type",
                 FieldType::Selection(vec![
-                    ("outgoing".into(), "Entrega".into()),
-                    ("incoming".into(), "Recebimento".into()),
-                    ("internal".into(), "Transferência interna".into()),
+                    ("outgoing".into(), "Delivery".into()),
+                    ("incoming".into(), "Receipt".into()),
+                    ("internal".into(), "Internal transfer".into()),
                 ]),
             )
             .default_value(json!("outgoing")),
             Field::new(
                 "state",
                 FieldType::Selection(vec![
-                    ("draft".into(), "Rascunho".into()),
-                    ("confirmed".into(), "Confirmada".into()),
-                    ("done".into(), "Concluída".into()),
-                    ("cancel".into(), "Cancelada".into()),
+                    ("draft".into(), "Draft".into()),
+                    ("confirmed".into(), "Confirmed".into()),
+                    ("done".into(), "Done".into()),
+                    ("cancel".into(), "Cancelled".into()),
                 ]),
             )
             .default_value(json!("draft")),
@@ -145,10 +145,10 @@ fn picking() -> Model {
 /// direction, and that is a different document.
 fn quantities_are_positive(record: &Map<String, Value>) -> Result<(), String> {
     if number(record, "product_uom_qty") <= 0.0 {
-        return Err("a quantidade de um movimento precisa ser maior que zero".into());
+        return Err("a move's quantity must be greater than zero".into());
     }
     if number(record, "quantity_done") < 0.0 {
-        return Err("a quantidade feita não pode ser negativa".into());
+        return Err("the done quantity cannot be negative".into());
     }
     Ok(())
 }
@@ -180,7 +180,7 @@ fn mv() -> Model {
 async fn set_state(ctx: &MethodCtx<'_>, from: &[&str], to: &str) -> Result<Value, RusdooError> {
     if ctx.ids.is_empty() {
         return Err(RusdooError::Validation(
-            "a ação precisa de pelo menos um documento".into(),
+            "the action needs at least one document".into(),
         ));
     }
     let rows = ctx
@@ -192,7 +192,7 @@ async fn set_state(ctx: &MethodCtx<'_>, from: &[&str], to: &str) -> Result<Value
         if !from.contains(&state) {
             let name = row.get("name").and_then(Value::as_str).unwrap_or("");
             return Err(RusdooError::Validation(format!(
-                "o documento {name} está em {state:?} e não pode ir para {to:?}"
+                "document {name} is {state:?} and cannot go to {to:?}"
             )));
         }
     }
@@ -226,7 +226,7 @@ fn action_confirm<'a>(
             if empty {
                 let name = row.get("name").and_then(Value::as_str).unwrap_or("");
                 return Err(RusdooError::Validation(format!(
-                    "o documento {name} não tem linhas: não há o que movimentar"
+                    "document {name} has no lines: there is nothing to move"
                 )));
             }
         }
