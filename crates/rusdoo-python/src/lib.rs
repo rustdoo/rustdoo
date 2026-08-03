@@ -26,6 +26,9 @@
 //! "#)?;
 //! ```
 
+pub mod env;
+
+use env::{current, wait};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use rusdoo_core::RusdooError;
@@ -43,6 +46,7 @@ use std::sync::{Mutex, OnceLock};
 const ODOO_INIT: &str = include_str!("../python/odoo/__init__.py");
 const ODOO_FIELDS: &str = include_str!("../python/odoo/fields.py");
 const ODOO_MODELS: &str = include_str!("../python/odoo/models.py");
+const ODOO_API: &str = include_str!("../python/odoo/api.py");
 
 /// What Python declared while a load was running.
 ///
@@ -71,9 +75,190 @@ fn declare_model(spec: &Bound<'_, PyDict>) -> PyResult<()> {
     Ok(())
 }
 
+/// A rusdoo error as the Python exception an addon would catch.
+///
+/// `ValidationError` because that is what an addon expects a refused
+/// write to raise; the shim re-exports Odoo's name for it.
+fn py_err(error: RusdooError) -> PyErr {
+    pyo3::exceptions::PyValueError::new_err(error.to_string())
+}
+
+/// `_rusdoo.read(model, ids, fields)` — a recordset reading its fields.
+#[pyfunction]
+fn read(py: Python<'_>, model: &str, ids: Vec<i64>, fields: Vec<String>) -> PyResult<Py<PyAny>> {
+    let env = current().map_err(py_err)?;
+    let names: Vec<&str> = fields.iter().map(String::as_str).collect();
+    let rows = wait(env.registry.read(&env.pool, model, &ids, &names)).map_err(py_err)?;
+    let json = Value::Array(rows.into_iter().map(Value::Object).collect());
+    depythonize(py, &json)
+}
+
+/// `_rusdoo.search(model, domain, limit, order)` — the ids that match.
+#[pyfunction]
+#[pyo3(signature = (model, domain, limit=None, order=None))]
+fn search(
+    model: &str,
+    domain: &Bound<'_, PyAny>,
+    limit: Option<u64>,
+    order: Option<String>,
+) -> PyResult<Vec<i64>> {
+    let env = current().map_err(py_err)?;
+    let domain = rusdoo_orm::domain::parse_domain(&pythonize(domain)?).map_err(py_err)?;
+    let opts = rusdoo_orm::crud::SearchOptions {
+        limit,
+        order,
+        ..Default::default()
+    };
+    wait(env.registry.search(&env.pool, model, &domain, &opts)).map_err(py_err)
+}
+
+/// `_rusdoo.create(model, values)` — the id of the new record.
+#[pyfunction]
+fn create(model: &str, values: &Bound<'_, PyDict>) -> PyResult<i64> {
+    let env = current().map_err(py_err)?;
+    let values = value_pairs(&pythonize(values.as_any())?)?;
+    let pairs: Vec<(&str, Value)> = values
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.clone()))
+        .collect();
+    wait(
+        env.registry
+            .create_as(&env.pool, env.uid, model, pairs),
+    )
+    .map_err(py_err)
+}
+
+/// `_rusdoo.write(model, ids, values)`.
+#[pyfunction]
+fn write(model: &str, ids: Vec<i64>, values: &Bound<'_, PyDict>) -> PyResult<bool> {
+    let env = current().map_err(py_err)?;
+    let values = value_pairs(&pythonize(values.as_any())?)?;
+    let pairs: Vec<(&str, Value)> = values
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.clone()))
+        .collect();
+    wait(
+        env.registry
+            .write_as(&env.pool, env.uid, model, &ids, pairs),
+    )
+    .map_err(py_err)?;
+    Ok(true)
+}
+
+/// `_rusdoo.unlink(model, ids)`.
+#[pyfunction]
+fn unlink(model: &str, ids: Vec<i64>) -> PyResult<bool> {
+    let env = current().map_err(py_err)?;
+    wait(env.registry.unlink_as(&env.pool, env.uid, model, &ids)).map_err(py_err)?;
+    Ok(true)
+}
+
+/// `_rusdoo.fields_of(model)` — what a recordset may read.
+#[pyfunction]
+fn fields_of(model: &str) -> PyResult<Vec<String>> {
+    let env = current().map_err(py_err)?;
+    let model = env
+        .registry
+        .get(model)
+        .ok_or_else(|| py_err(RusdooError::Validation(format!("unknown model: {model}"))))?;
+    Ok(model
+        .fields()
+        .iter()
+        .filter(|field| field.exposed)
+        .map(|field| field.name.clone())
+        .collect())
+}
+
+/// `_rusdoo.comodel_of(model, field)` — what a relational field points
+/// at, so a dotted `mapped` knows which model it walked into.
+#[pyfunction]
+fn comodel_of(model: &str, field: &str) -> PyResult<String> {
+    let env = current().map_err(py_err)?;
+    let declared = env
+        .registry
+        .get(model)
+        .and_then(|m| m.field(field).cloned())
+        .ok_or_else(|| {
+            py_err(RusdooError::Validation(format!(
+                "{model} has no field {field:?}"
+            )))
+        })?;
+    match &declared.ty {
+        FieldType::Many2one { comodel }
+        | FieldType::One2many { comodel, .. }
+        | FieldType::Many2many { comodel, .. } => Ok(comodel.clone()),
+        other => Err(py_err(RusdooError::Validation(format!(
+            "{model}.{field} is a {other:?}, not a relation: it cannot be walked through"
+        )))),
+    }
+}
+
+/// `_rusdoo.uid()` — who the calls are being made as.
+#[pyfunction]
+fn uid() -> PyResult<i64> {
+    current().map(|env| env.uid).map_err(py_err)
+}
+
+/// The values of a write, as pairs the ORM takes.
+fn value_pairs(values: &Value) -> PyResult<Vec<(String, Value)>> {
+    values
+        .as_object()
+        .map(|map| {
+            map.iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect()
+        })
+        .ok_or_else(|| {
+            pyo3::exceptions::PyTypeError::new_err("values must be a dict of field -> value")
+        })
+}
+
+/// JSON back into Python — what a read hands the recordset.
+fn depythonize(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
+    Ok(match value {
+        Value::Null => py.None(),
+        Value::Bool(flag) => flag.into_pyobject(py)?.to_owned().into_any().unbind(),
+        Value::Number(number) => {
+            if let Some(int) = number.as_i64() {
+                int.into_pyobject(py)?.into_any().unbind()
+            } else {
+                number
+                    .as_f64()
+                    .unwrap_or_default()
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind()
+            }
+        }
+        Value::String(text) => text.into_pyobject(py)?.into_any().unbind(),
+        Value::Array(items) => {
+            let list = PyList::empty(py);
+            for item in items {
+                list.append(depythonize(py, item)?)?;
+            }
+            list.into_any().unbind()
+        }
+        Value::Object(map) => {
+            let dict = PyDict::new(py);
+            for (key, item) in map {
+                dict.set_item(key, depythonize(py, item)?)?;
+            }
+            dict.into_any().unbind()
+        }
+    })
+}
+
 #[pymodule]
 fn _rusdoo(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add_function(wrap_pyfunction!(declare_model, module)?)
+    module.add_function(wrap_pyfunction!(declare_model, module)?)?;
+    module.add_function(wrap_pyfunction!(read, module)?)?;
+    module.add_function(wrap_pyfunction!(search, module)?)?;
+    module.add_function(wrap_pyfunction!(create, module)?)?;
+    module.add_function(wrap_pyfunction!(write, module)?)?;
+    module.add_function(wrap_pyfunction!(unlink, module)?)?;
+    module.add_function(wrap_pyfunction!(fields_of, module)?)?;
+    module.add_function(wrap_pyfunction!(comodel_of, module)?)?;
+    module.add_function(wrap_pyfunction!(uid, module)?)
 }
 
 /// A Python value as JSON — the only shape both sides already agree on.
@@ -137,6 +322,67 @@ pub fn load_python_models(
         loaded.push(name);
     }
     Ok(loaded)
+}
+
+/// Run `code` with an environment reachable from it — what a Python
+/// method needs to touch the database.
+///
+/// The entry point for everything after declarations: give it a
+/// registry, a pool and a uid, and the Python it runs can call
+/// `env['res.partner'].search(...)` and get records.
+pub fn with_environment<T>(
+    registry: std::sync::Arc<Registry>,
+    pool: sqlx::PgPool,
+    uid: i64,
+    body: impl FnOnce() -> T,
+) -> T {
+    let handle = tokio::runtime::Handle::try_current()
+        .unwrap_or_else(|_| RUNTIME.handle().clone());
+    env::with_env(
+        env::Env {
+            registry,
+            pool,
+            uid,
+            handle,
+        },
+        body,
+    )
+}
+
+/// The runtime used when Python is driven from a thread that has none.
+///
+/// A test, a CLI, a migration script: none of them is inside a server's
+/// executor, and blocking on a future still needs somewhere to run it.
+static RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> = std::sync::LazyLock::new(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime for the Python bridge")
+});
+
+/// Evaluate `source` as a module and hand it back, for a caller that
+/// wants to reach into what it defined.
+pub fn run_python<T>(
+    module_name: &str,
+    source: &str,
+    body: impl for<'py> FnOnce(Python<'py>, Bound<'py, PyModule>) -> PyResult<T>,
+) -> Result<T, RusdooError> {
+    let _bridge = BRIDGE
+        .lock()
+        .map_err(|_| RusdooError::Validation("the Python bridge is poisoned".into()))?;
+    Python::attach(|py| {
+        install_shim(py)?;
+        let module = PyModule::from_code(
+            py,
+            &std::ffi::CString::new(source).map_err(|error| {
+                RusdooError::Validation(format!("{module_name}: source has a NUL byte: {error}"))
+            })?,
+            &std::ffi::CString::new(format!("{module_name}.py")).unwrap(),
+            &std::ffi::CString::new(module_name).unwrap(),
+        )
+        .map_err(|error| python_error(py, error))?;
+        body(py, module).map_err(|error| python_error(py, error))
+    })
 }
 
 /// The interpreter side: install the shim, run the addon, take what it
@@ -207,7 +453,14 @@ fn install_shim(py: Python<'_>) -> Result<(), RusdooError> {
         .set_item("odoo", &package)
         .map_err(|e| python_error(py, e))?;
 
-    for (leaf, code) in [("fields", ODOO_FIELDS), ("models", ODOO_MODELS)] {
+    // fields first (models imports it), then models, then api — whose
+    // own import of models is deferred to call time on purpose, so the
+    // three can be installed in one pass
+    for (leaf, code) in [
+        ("fields", ODOO_FIELDS),
+        ("models", ODOO_MODELS),
+        ("api", ODOO_API),
+    ] {
         let name = format!("odoo.{leaf}");
         let module = PyModule::from_code(
             py,

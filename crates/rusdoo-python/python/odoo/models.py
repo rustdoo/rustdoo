@@ -82,3 +82,187 @@ class TransientModel(BaseModel):
 
 class AbstractModel(BaseModel):
     """A mixin: no table of its own."""
+
+
+class RecordSet:
+    """A handle on records of one model — Odoo's `self`.
+
+    Three things and no data: the model, the ids, and the environment.
+    Fields are read when they are asked for, because a recordset is
+    handed around long before anyone touches a value, and reading forty
+    columns for a caller that wanted one is how an ORM gets slow.
+
+    The read is cached for the life of the recordset, not longer: two
+    reads of `self.name` in one method must not be two queries, and a
+    recordset that outlived a write must not answer with what was true
+    before it.
+    """
+
+    __slots__ = ("_name", "_ids", "_env", "_cache")
+
+    def __init__(self, model_name, ids, env):
+        object.__setattr__(self, "_name", model_name)
+        object.__setattr__(self, "_ids", list(ids))
+        object.__setattr__(self, "_env", env)
+        object.__setattr__(self, "_cache", {})
+
+    # -- the shape of a recordset ---------------------------------------
+
+    @property
+    def env(self):
+        return self._env
+
+    @property
+    def ids(self):
+        return list(self._ids)
+
+    @property
+    def id(self):
+        """The single id, as Odoo's `record.id`."""
+        if len(self._ids) != 1:
+            raise ValueError(
+                "expected one record, got %d: use .ids for a set" % len(self._ids)
+            )
+        return self._ids[0]
+
+    def __len__(self):
+        return len(self._ids)
+
+    def __bool__(self):
+        return bool(self._ids)
+
+    def __iter__(self):
+        for one in self._ids:
+            yield RecordSet(self._name, [one], self._env)
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, RecordSet)
+            and other._name == self._name
+            and set(other._ids) == set(self._ids)
+        )
+
+    def __hash__(self):
+        return hash((self._name, tuple(sorted(self._ids))))
+
+    def __repr__(self):
+        return "%s(%s)" % (self._name, ", ".join(str(i) for i in self._ids))
+
+    # -- reading --------------------------------------------------------
+
+    def __getattr__(self, name):
+        # only reached when normal lookup failed, so a method or a
+        # property on the model class always wins over a field
+        if name.startswith("_"):
+            raise AttributeError(name)
+        if name not in _rusdoo.fields_of(self._name):
+            raise AttributeError(
+                "%s has no field %r" % (self._name, name)
+            )
+        if len(self._ids) != 1:
+            raise ValueError(
+                "reading %r wants one record, got %d" % (name, len(self._ids))
+            )
+        return self._read_one()[name]
+
+    def __setattr__(self, name, value):
+        if name.startswith("_"):
+            object.__setattr__(self, name, value)
+            return
+        self.write({name: value})
+
+    def _read_one(self):
+        if not self._cache:
+            names = _rusdoo.fields_of(self._name)
+            rows = _rusdoo.read(self._name, self._ids, names)
+            if not rows:
+                raise ValueError(
+                    "%s record %s is gone" % (self._name, self._ids)
+                )
+            object.__setattr__(self, "_cache", rows[0])
+        return self._cache
+
+    def read(self, fields=None):
+        """The records as dicts, like Odoo's `read`."""
+        names = list(fields) if fields else _rusdoo.fields_of(self._name)
+        return _rusdoo.read(self._name, self._ids, names)
+
+    # -- the calls an addon makes ---------------------------------------
+
+    def browse(self, ids):
+        if isinstance(ids, int):
+            ids = [ids]
+        return RecordSet(self._name, ids, self._env)
+
+    def search(self, domain=None, limit=None, order=None):
+        found = _rusdoo.search(self._name, domain or [], limit, order)
+        return RecordSet(self._name, found, self._env)
+
+    def search_count(self, domain=None):
+        return len(_rusdoo.search(self._name, domain or [], None, None))
+
+    def create(self, values):
+        new_id = _rusdoo.create(self._name, values)
+        return RecordSet(self._name, [new_id], self._env)
+
+    def write(self, values):
+        _rusdoo.write(self._name, self._ids, values)
+        # what was cached described the record before this write
+        object.__setattr__(self, "_cache", {})
+        return True
+
+    def unlink(self):
+        _rusdoo.unlink(self._name, self._ids)
+        object.__setattr__(self, "_ids", [])
+        object.__setattr__(self, "_cache", {})
+        return True
+
+    # -- the set operations addons lean on ------------------------------
+
+    def mapped(self, path):
+        """`records.mapped('name')` — the values, in order.
+
+        A dotted path walks relations, as in Odoo. A relational hop
+        answers a recordset of the comodel, so `order.mapped(
+        'line_ids.product_id')` reads like it does there.
+        """
+        head, _, rest = path.partition(".")
+        values = []
+        for record in self:
+            value = getattr(record, head)
+            values.append(value)
+        if not rest:
+            return values
+        # a relational value comes back as [id, name] or a list of ids
+        return _flatten_relational(self._name, head, values, self._env).mapped(rest)
+
+    def filtered(self, predicate):
+        kept = [r.id for r in self if predicate(r)]
+        return RecordSet(self._name, kept, self._env)
+
+    def sorted(self, key=None, reverse=False):
+        records = sorted(self, key=key, reverse=reverse)
+        return RecordSet(self._name, [r.id for r in records], self._env)
+
+    def exists(self):
+        found = _rusdoo.search(self._name, [["id", "in", self._ids]], None, None)
+        return RecordSet(self._name, found, self._env)
+
+
+def _flatten_relational(model_name, field, values, env):
+    """The comodel recordset behind a relational field's read values."""
+    import _rusdoo as native
+
+    comodel = native.comodel_of(model_name, field)
+    ids = []
+    for value in values:
+        if value in (False, None):
+            continue
+        if isinstance(value, list) and value and isinstance(value[0], int):
+            # a many2one reads as [id, name]; an x2many as a list of ids
+            ids.extend(value[1:] and [value[0]] or value)
+        elif isinstance(value, list):
+            ids.extend(value)
+        elif isinstance(value, int):
+            ids.append(value)
+    return RecordSet(comodel, ids, env)

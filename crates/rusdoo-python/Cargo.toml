@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 rusdoo-core = { path = "../rusdoo-core" }
 rusdoo-orm = { path = "../rusdoo-orm" }
@@ -16,6 +18,4 @@ rusdoo-orm = { path = "../rusdoo-orm" }
 pyo3 = { version = "0.27", features = ["auto-initialize"] }
 
 [dev-dependencies]
-sqlx.workspace = true
-tokio.workspace = true
 rusdoo-testing = { path = "../rusdoo-testing" }

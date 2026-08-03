@@ -277,3 +277,141 @@ async fn records_of_a_python_model_go_through_the_rust_orm_live() {
         .await
         .unwrap();
 }
+
+/// The half that makes a bridge a bridge: Python holding records and
+/// asking the database about them, through `self.env` and a recordset.
+#[tokio::test(flavor = "multi_thread")]
+async fn python_reads_and_writes_records_through_a_recordset_live() {
+    let Some(pool) = rusdoo_testing::pool_in("rusdoo_py_records") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut registry = Registry::new();
+    load_python_models(
+        &mut registry,
+        "shop",
+        r#"
+from odoo import models, fields
+
+
+class Band(models.Model):
+    _name = "music.band"
+    _order = "name, id"
+    name = fields.Char(required=True)
+    member_ids = fields.One2many("music.member", "band_id")
+
+
+class Member(models.Model):
+    _name = "music.member"
+    _order = "name, id"
+    name = fields.Char(required=True)
+    instrument = fields.Char()
+    band_id = fields.Many2one("music.band", required=True)
+"#,
+    )
+    .expect("the addon loads");
+    registry.init_tables(&pool).await.expect("the tables are made");
+
+    let registry = std::sync::Arc::new(registry);
+    // everything below runs as uid 1, the way a call from the client
+    // would run as whoever is logged in
+    let answer: String = rusdoo_python::with_environment(registry.clone(), pool.clone(), 1, || {
+        rusdoo_python::run_python(
+            "script",
+            r#"
+from odoo import api
+
+env = api.Environment()
+
+# create, through the ORM in Rust
+band = env["music.band"].create({"name": "Trio"})
+for who, what in [("Ana", "cello"), ("Bia", "violin"), ("Caio", "viola")]:
+    env["music.member"].create({"name": who, "instrument": what, "band_id": band.id})
+
+# read a field off a single record
+one = env["music.member"].search([["name", "=", "Ana"]])
+first_instrument = one.instrument
+
+# the whole set, in the model's own order
+everyone = env["music.member"].search([])
+names = everyone.mapped("name")
+
+# filtered and sorted, as an addon writes them
+strings = everyone.filtered(lambda r: r.instrument != "violin").mapped("name")
+backwards = everyone.sorted(key=lambda r: r.name, reverse=True).mapped("name")
+
+# writing goes back to the database, and the cache does not lie about it
+one.write({"instrument": "double bass"})
+after_write = one.instrument
+
+# a dotted mapped walks the relation
+band_names = everyone.mapped("band_id.name")
+
+# and unlink really removes
+env["music.member"].search([["name", "=", "Caio"]]).unlink()
+left = env["music.member"].search_count([])
+
+result = {
+    "first_instrument": first_instrument,
+    "names": names,
+    "strings": strings,
+    "backwards": backwards,
+    "after_write": after_write,
+    "band_names": band_names,
+    "left": left,
+    "band_repr": repr(band),
+    "uid": env.uid,
+}
+"#,
+            |_py, module| {
+                use pyo3::prelude::PyAnyMethods;
+                Ok(module.as_any().getattr("result")?.to_string())
+            },
+        )
+        .expect("the script runs")
+    });
+
+    // the shape python built, checked against what the database holds
+    assert!(answer.contains("'first_instrument': 'cello'"), "{answer}");
+    assert!(
+        answer.contains("'names': ['Ana', 'Bia', 'Caio']"),
+        "the model's _order held for a python search: {answer}"
+    );
+    assert!(
+        answer.contains("'strings': ['Ana', 'Caio']"),
+        "filtered ran the predicate against real fields: {answer}"
+    );
+    assert!(
+        answer.contains("'backwards': ['Caio', 'Bia', 'Ana']"),
+        "{answer}"
+    );
+    assert!(
+        answer.contains("'after_write': 'double bass'"),
+        "the write reached the database and the cache was dropped: {answer}"
+    );
+    assert!(
+        answer.contains("'band_names': ['Trio', 'Trio', 'Trio']"),
+        "a dotted mapped walked the many2one: {answer}"
+    );
+    assert!(answer.contains("'left': 2"), "unlink removed one: {answer}");
+    assert!(answer.contains("'uid': 1"), "{answer}");
+
+    // and the database agrees, read from Rust
+    let left = registry
+        .search(
+            &pool,
+            "music.member",
+            &parse_domain(&json!([])).unwrap(),
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(left.len(), 2);
+
+    for table in ["music_member", "music_band"] {
+        sqlx::query(&format!("DROP TABLE IF EXISTS {table} CASCADE"))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+}

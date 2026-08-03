@@ -6,13 +6,18 @@ absent, and an addon that reaches for it gets an `AttributeError` at
 import time rather than a wrong answer at runtime.
 """
 
+from . import api
 from . import fields
 from . import models
-from .models import AbstractModel, BaseModel, Model, TransientModel
+from .api import Environment
+from .models import AbstractModel, BaseModel, Model, RecordSet, TransientModel
 
 __all__ = [
+    "api",
     "fields",
     "models",
+    "Environment",
+    "RecordSet",
     "AbstractModel",
     "BaseModel",
     "Model",
