@@ -1,3 +1,7 @@
+/** @odoo-module ignore **/
+// Não é um módulo ES6: este cliente é IIFE e se instala em
+// `window.rusdoo` ao carregar. Envolvê-lo num `odoo.define` faria
+// o corpo só rodar quando alguém o requisitasse, e ninguém requisita.
 /**
  * O editor de um campo: o input que corresponde ao tipo, e como ler dele
  * o valor que vai para o servidor.

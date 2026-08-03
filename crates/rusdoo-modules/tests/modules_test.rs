@@ -358,6 +358,11 @@ fn measure_real_odoo_js_transpile_coverage() {
         return;
     }
     let (mut transpiled, mut failed, mut leftovers) = (0usize, Vec::new(), Vec::new());
+    // how many came out naming something they need. A transpiler that
+    // silently collected nothing would still pass every other assertion
+    // here — and every module would then load before its dependencies,
+    // which is a race nobody could debug from the browser.
+    let mut with_dependencies = 0usize;
     let mut stack: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -385,6 +390,11 @@ fn measure_real_odoo_js_transpile_coverage() {
             match rusdoo_modules::js_module::transpile(&url, &content) {
                 Ok(out) => {
                     transpiled += 1;
+                    if !out.starts_with(&format!("odoo.define('{}', [],", 
+                        rusdoo_modules::js_module::url_to_module_path(&url).unwrap_or_default()))
+                    {
+                        with_dependencies += 1;
+                    }
                     // a statement the client's loader has no idea what to
                     // do with is the same as a failure, one step later
                     if out.lines().any(|line| {
@@ -410,6 +420,11 @@ fn measure_real_odoo_js_transpile_coverage() {
         "{} file(s) did not transpile, first few: {:?}",
         failed.len(),
         &failed[..failed.len().min(5)]
+    );
+    assert!(
+        with_dependencies * 2 > transpiled,
+        "only {with_dependencies} of {transpiled} modules named a dependency — \
+         the requires are not being collected"
     );
     assert!(
         leftovers.is_empty(),

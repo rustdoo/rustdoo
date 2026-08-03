@@ -363,3 +363,75 @@ async fn broken_scss_does_not_serve_half_a_stylesheet() {
         "a bundle that cannot be built is not served truncated"
     );
 }
+
+/// A file that says it is an ES6 module comes out as one; a file that
+/// says it is not comes out untouched.
+///
+/// The second half is the one worth a test. Odoo's rule is that
+/// everything under `static/src` is a module, and this port's own client
+/// lives there while being plain IIFEs that install themselves on
+/// `window` at load. Wrapped in an `odoo.define`, their bodies would run
+/// only when something required them — and nothing does, so the client
+/// would go blank with no error anywhere.
+#[tokio::test]
+async fn a_bundle_transpiles_modules_and_leaves_the_rest_alone() {
+    let fixture = Fixture::new("transpile");
+    let manifest_source = r#"{
+        'name': 'Mixed',
+        'assets': {'web.assets_backend': [
+            'mixed/static/src/legacy.js',
+            'mixed/static/src/modern.js',
+        ]},
+    }"#;
+    let addon = fixture.root.join("mixed");
+    fixture.write("mixed/__manifest__.py", manifest_source);
+    fixture.write(
+        "mixed/static/src/legacy.js",
+        "/** @odoo-module ignore **/\n(function (app) { app.ready = true; })(window.app = {});",
+    );
+    fixture.write(
+        "mixed/static/src/modern.js",
+        "import { Component } from \"@odoo/owl\";\nexport class Thing extends Component {}\n",
+    );
+
+    let mut manifest = parse_manifest(manifest_source, "mixed").expect("manifest");
+    manifest.path = addon.clone();
+    let bundles = resolve_bundles(&[&manifest]).expect("bundles resolve");
+    let roots: HashMap<String, PathBuf> = [("mixed".to_string(), addon)].into_iter().collect();
+    let url = std::env::var("RUSDOO_TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:rusdoo@localhost:55432/postgres".into());
+    let service = OrmService::insecure(
+        Arc::new(Registry::new()),
+        rusdoo_orm::db::lazy_pool(&url).unwrap(),
+    )
+    .with_assets(AssetHub::new(bundles, roots));
+
+    let (status, _, body) = get(router(service), "/web/assets/web.assets_backend.js").await;
+    assert_eq!(status, StatusCode::OK);
+
+    // the module was wrapped, its import became a require, and its export
+    // became a slot on __exports
+    assert!(
+        body.contains("odoo.define('@mixed/modern', ['@odoo/owl']"),
+        "the module was defined with what it depends on: {body}"
+    );
+    assert!(
+        body.contains("const { Component } = require(\"@odoo/owl\")"),
+        "the import became a require: {body}"
+    );
+    assert!(
+        body.contains("const Thing = __exports.Thing = class Thing"),
+        "the export became a slot: {body}"
+    );
+
+    // and the one that opted out is byte for byte what was on disk —
+    // still an IIFE, still running the moment the bundle loads
+    assert!(
+        body.contains("(function (app) { app.ready = true; })(window.app = {});"),
+        "the IIFE survived: {body}"
+    );
+    assert!(
+        !body.contains("odoo.define('@mixed/legacy'"),
+        "and was not wrapped: {body}"
+    );
+}

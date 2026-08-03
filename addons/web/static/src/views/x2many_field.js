@@ -1,3 +1,7 @@
+/** @odoo-module ignore **/
+// Não é um módulo ES6: este cliente é IIFE e se instala em
+// `window.rusdoo` ao carregar. Envolvê-lo num `odoo.define` faria
+// o corpo só rodar quando alguém o requisitasse, e ninguém requisita.
 /**
  * As linhas de um campo one2many/many2many dentro de um formulário: a
  * tabela editável que faz um pedido ser um pedido.

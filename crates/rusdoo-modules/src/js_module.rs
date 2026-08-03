@@ -453,7 +453,9 @@ fn remove_index(content: &str) -> String {
 }
 
 static RELATIVE_REQUIRE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    compile(&format!(r"(?m) ^[^/*\n]*require\((?P<path>{QUOTED})\)"))
+    // no `(?x)` here, so every character counts: a stray space after the
+    // flags would be a space the line has to start with
+    compile(&format!(r"(?m)^[^/*\n]*require\((?P<path>{QUOTED})\)"))
 });
 
 /// Rewrite `require("./thing")` to the module path it means, and record

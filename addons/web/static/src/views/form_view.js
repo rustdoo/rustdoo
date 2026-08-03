@@ -1,3 +1,7 @@
+/** @odoo-module ignore **/
+// Não é um módulo ES6: este cliente é IIFE e se instala em
+// `window.rusdoo` ao carregar. Envolvê-lo num `odoo.define` faria
+// o corpo só rodar quando alguém o requisitasse, e ninguém requisita.
 /**
  * A view de formulário: um registro, os campos que o arch declara, e o
  * caminho de escrita do cliente (`web_save`).

@@ -1,3 +1,7 @@
+/** @odoo-module ignore **/
+// Não é um módulo ES6: este cliente é IIFE e se instala em
+// `window.rusdoo` ao carregar. Envolvê-lo num `odoo.define` faria
+// o corpo só rodar quando alguém o requisitasse, e ninguém requisita.
 /**
  * O boot do cliente: sessão, menus, e o despacho de uma ação para a view
  * que a desenha. É o último arquivo do bundle — quando ele roda, o resto

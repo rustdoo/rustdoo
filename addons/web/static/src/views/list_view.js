@@ -1,3 +1,7 @@
+/** @odoo-module ignore **/
+// Não é um módulo ES6: este cliente é IIFE e se instala em
+// `window.rusdoo` ao carregar. Envolvê-lo num `odoo.define` faria
+// o corpo só rodar quando alguém o requisitasse, e ninguém requisita.
 /**
  * A view de lista: as colunas que o arch declara, com busca, ordenação e
  * paginação — tudo resolvido no servidor, que é quem aplica ACL, regras

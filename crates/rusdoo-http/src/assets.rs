@@ -117,7 +117,17 @@ impl AssetHub {
             let content = match compiled.get(&file.path) {
                 Some(css) => css.clone().into_bytes(),
                 None => match std::fs::read(&file.disk) {
-                    Ok(content) => content,
+                    Ok(content) => match as_module(file, content) {
+                        Ok(content) => content,
+                        Err(error) => {
+                            // one file that does not transpile is a syntax
+                            // error inside the bundle, and a syntax error
+                            // takes down every file after it — so it fails
+                            // the bundle rather than shipping the wreck
+                            tracing::error!("asset {} does not transpile: {error}", file.path);
+                            return None;
+                        }
+                    },
                     Err(error) => {
                         // the file was there when the bundle resolved;
                         // losing it now must not serve a silently
@@ -256,6 +266,34 @@ fn answer(rendered: Option<Arc<Rendered>>, headers: &HeaderMap, cache: &str) -> 
 /// The newest modification time among a bundle's files. `None` when the
 /// filesystem cannot say — in which case the cache is kept, because
 /// rebuilding on every request would be worse than a stale byte.
+/// A JavaScript asset as the module the client defines and requires.
+///
+/// Only the ones that are modules: a vendored library under `static/lib`
+/// is loaded as it was published, and wrapping it in an `odoo.define`
+/// would break the global it exists to install. `is_odoo_module` is what
+/// draws that line, and it draws it exactly where Odoo does.
+///
+/// Anything that is not JavaScript passes through untouched.
+fn as_module(
+    file: &rusdoo_modules::assets::AssetFile,
+    content: Vec<u8>,
+) -> Result<Vec<u8>, rusdoo_core::RusdooError> {
+    if !matches!(file.extension(), "js" | "mjs") {
+        return Ok(content);
+    }
+    let url = format!("/{}", file.path);
+    // a file that is not valid UTF-8 is not source anybody wrote; it goes
+    // out as it came in rather than failing the bundle over an encoding
+    let source = match String::from_utf8(content) {
+        Ok(source) => source,
+        Err(not_text) => return Ok(not_text.into_bytes()),
+    };
+    if !rusdoo_modules::js_module::is_odoo_module(&url, &source) {
+        return Ok(source.into_bytes());
+    }
+    Ok(rusdoo_modules::js_module::transpile(&url, &source)?.into_bytes())
+}
+
 /// The key the at-rules Sass hoisted above everything are filed under.
 /// Not a path any asset can have, because `/` never starts one here.
 const HOISTED: &str = "/hoisted";
