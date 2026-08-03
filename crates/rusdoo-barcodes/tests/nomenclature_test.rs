@@ -69,9 +69,10 @@ async fn read_code(
     // `rest`: `args[0]` is the recordset
     let ctx = MethodCtx::new(registry, pool, 1, "barcode.nomenclature", vec![nomenclature])
         .with_rest(vec![json!(barcode)]);
-    (method.func)(ctx, &[json!(barcode)], &Map::new())
+    method
+        .call(ctx, &[json!(barcode)], &Map::new())
         .await
-        .expect("a leitura respondeu")
+        .expect("the scan answered")
 }
 
 async fn a_nomenclature(registry: &Registry, pool: &PgPool, name: &str) -> i64 {

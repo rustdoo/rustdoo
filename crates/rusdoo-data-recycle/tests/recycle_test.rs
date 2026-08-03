@@ -109,7 +109,7 @@ async fn call(
         .get(model, name)
         .unwrap_or_else(|| panic!("{model}.{name} must be registered"));
     let ctx = MethodCtx::new(reg, pool, 1, model, ids);
-    (method.func)(ctx, &[], &Map::new()).await
+    method.call(ctx, &[], &Map::new()).await
 }
 
 /// A document closed `days_ago` days ago.

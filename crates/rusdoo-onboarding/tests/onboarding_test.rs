@@ -89,7 +89,7 @@ async fn call(
     let ctx = MethodCtx::new(registry, pool, uid, model, ids);
     let args: Vec<Value> = Vec::new();
     let kwargs = Map::new();
-    (found.func)(ctx, &args, &kwargs).await
+    found.call(ctx, &args, &kwargs).await
 }
 
 /// A user of a company, so the method has somewhere to take the company

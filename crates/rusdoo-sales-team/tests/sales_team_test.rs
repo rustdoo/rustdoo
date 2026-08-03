@@ -81,7 +81,7 @@ async fn call(
         _ => Map::new(),
     };
     let ctx = MethodCtx::new(registry, pool, uid, model, ids.to_vec());
-    (method.func)(ctx, &[], &kwargs).await
+    method.call(ctx, &[], &kwargs).await
 }
 
 async fn a_user(registry: &Registry, pool: &PgPool, login: &str, name: &str) -> i64 {

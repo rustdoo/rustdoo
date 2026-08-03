@@ -85,7 +85,7 @@ async fn call(
     // a method's positional arguments live in `rest`: `args[0]` is the
     // recordset call_kw sent
     let ctx = MethodCtx::new(registry, pool, 1, "uom.uom", vec![from]).with_rest(args.clone());
-    (method.func)(ctx, &args, &kwargs).await
+    method.call(ctx, &args, &kwargs).await
 }
 
 #[tokio::test]

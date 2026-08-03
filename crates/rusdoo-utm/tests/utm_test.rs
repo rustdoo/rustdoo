@@ -47,7 +47,7 @@ impl Fixture {
         let ctx = MethodCtx::new(&self.registry, &self.pool, self.uid, model, vec![])
             .with_rest(args.clone());
         let kwargs = Map::new();
-        (entry.func)(ctx, &args, &kwargs)
+        entry.call(ctx, &args, &kwargs)
             .await
             .map_err(|error| error.to_string())
     }

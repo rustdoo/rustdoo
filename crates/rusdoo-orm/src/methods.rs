@@ -92,18 +92,64 @@ pub type MethodFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, RusdooErro
 pub type MethodFn =
     for<'a> fn(MethodCtx<'a>, &'a [Value], &'a Map<String, Value>) -> MethodFuture<'a>;
 
+/// A method whose behaviour needs state of its own.
+///
+/// A Rust module's method is a bare `fn`: everything it needs arrives in
+/// its arguments. A bridged one is not — a Python method has to know
+/// *which* Python method it is, and a function pointer cannot carry
+/// that. This is the door for anything in that shape.
+pub trait DynMethod: Send + Sync {
+    fn call<'a>(
+        &'a self,
+        ctx: MethodCtx<'a>,
+        args: &'a [Value],
+        kwargs: &'a Map<String, Value>,
+    ) -> MethodFuture<'a>;
+}
+
+/// What a registered method actually is.
+#[derive(Clone)]
+pub enum Body {
+    /// a plain function, how every ported module registers one
+    Native(MethodFn),
+    /// something carrying its own state — see [`DynMethod`]
+    Dynamic(std::sync::Arc<dyn DynMethod>),
+}
+
 /// One registered method and the access it requires.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Method {
-    pub func: MethodFn,
+    pub body: Body,
     /// the `ir.model.access` operation checked before it runs
     pub operation: Operation,
+}
+
+impl Method {
+    /// Run it, whichever kind it is.
+    pub fn call<'a>(
+        &'a self,
+        ctx: MethodCtx<'a>,
+        args: &'a [Value],
+        kwargs: &'a Map<String, Value>,
+    ) -> MethodFuture<'a> {
+        match &self.body {
+            Body::Native(func) => func(ctx, args, kwargs),
+            Body::Dynamic(method) => method.call(ctx, args, kwargs),
+        }
+    }
 }
 
 impl std::fmt::Debug for Method {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Method")
             .field("operation", &self.operation)
+            .field(
+                "kind",
+                &match self.body {
+                    Body::Native(_) => "native",
+                    Body::Dynamic(_) => "dynamic",
+                },
+            )
             .finish_non_exhaustive()
     }
 }
@@ -129,20 +175,42 @@ impl MethodRegistry {
         operation: Operation,
         func: MethodFn,
     ) -> Result<(), RusdooError> {
+        self.install(model, name, operation, Body::Native(func))
+    }
+
+    /// Attach a method that carries its own state — what the Python
+    /// bridge registers, one per method it found on a model.
+    pub fn register_dynamic(
+        &mut self,
+        model: &str,
+        name: &str,
+        operation: Operation,
+        method: std::sync::Arc<dyn DynMethod>,
+    ) -> Result<(), RusdooError> {
+        self.install(model, name, operation, Body::Dynamic(method))
+    }
+
+    fn install(
+        &mut self,
+        model: &str,
+        name: &str,
+        operation: Operation,
+        body: Body,
+    ) -> Result<(), RusdooError> {
         let key = (model.to_string(), name.to_string());
         if self.methods.contains_key(&key) {
             return Err(RusdooError::Validation(format!(
                 "method {name:?} already registered on {model}"
             )));
         }
-        self.methods.insert(key, Method { func, operation });
+        self.methods.insert(key, Method { body, operation });
         Ok(())
     }
 
     pub fn get(&self, model: &str, name: &str) -> Option<Method> {
         self.methods
             .get(&(model.to_string(), name.to_string()))
-            .copied()
+            .cloned()
     }
 
     pub fn is_empty(&self) -> bool {

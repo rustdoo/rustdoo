@@ -56,11 +56,11 @@ impl Fixture {
         let entry = self
             .methods
             .get(model, method)
-            .unwrap_or_else(|| panic!("{method} deveria estar registrado em {model}"));
+            .unwrap_or_else(|| panic!("{method} should be registered on {model}"));
         let args: Vec<Value> = Vec::new();
         let kwargs = Map::new();
         let ctx = MethodCtx::new(&self.registry, &self.pool, 1, model, ids);
-        (entry.func)(ctx, &args, &kwargs)
+        entry.call(ctx, &args, &kwargs)
             .await
             .map_err(|error| error.to_string())
     }

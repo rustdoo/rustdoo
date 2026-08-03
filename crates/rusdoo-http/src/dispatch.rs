@@ -959,7 +959,7 @@ impl OrmService {
             // the method gets the arguments as they were sent; `ids` is
             // the recordset it was called on, which is Odoo's `self` and
             // not one of them
-            return (entry.func)(ctx, args, kwargs).await.map_err(RpcError::from);
+            return entry.call(ctx, args, kwargs).await.map_err(RpcError::from);
         }
         match method {
             "search" => {
