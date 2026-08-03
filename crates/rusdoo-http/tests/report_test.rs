@@ -7,6 +7,7 @@ use http_body_util::BodyExt;
 use rusdoo_http::dispatch::OrmService;
 use rusdoo_http::routes::router;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -265,4 +266,137 @@ async fn a_report_is_never_cached_live() {
         "a printed document is what the database says now"
     );
     let _: Value = json!(null);
+}
+
+/// A converter that is not one, so the route can be proved without a
+/// binary on the machine — and so the test says what the *route* does
+/// rather than what somebody's chromium does.
+struct FakePdf;
+
+impl rusdoo_http::pdf::PdfRenderer for FakePdf {
+    fn name(&self) -> &str {
+        "fake"
+    }
+
+    fn render(&self, html: &str) -> Result<Vec<u8>, rusdoo_core::RusdooError> {
+        // enough of a PDF to be one, carrying the length of what it was
+        // given: the test can then tell "the report reached the
+        // converter" from "something reached the converter"
+        Ok(format!("%PDF-1.4 fake of {} bytes", html.len()).into_bytes())
+    }
+}
+
+async fn fetch(app: axum::Router, uri: &str) -> (StatusCode, HashMap<String, String>, Vec<u8>) {
+    let response = app
+        .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let headers = response
+        .headers()
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.as_str().to_string(),
+                value.to_str().unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, headers, bytes.to_vec())
+}
+
+/// The same document as `/report/html/`, converted and served as a file.
+#[tokio::test]
+async fn a_report_is_served_as_a_pdf_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let (service, order) = fixture(&url, rusdoo_testing::schema_for("rusdoo_report_pdf")).await;
+    let printing = service.clone().with_pdf(Arc::new(FakePdf));
+
+    let (status, headers, body) = fetch(
+        router(printing.clone()),
+        &format!("/report/pdf/test.doc_report/{order}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers["content-type"], "application/pdf");
+    assert_eq!(
+        headers["content-disposition"],
+        format!("inline; filename=\"test.doc_report-{order}.pdf\""),
+        "opened rather than downloaded, and named after what it is"
+    );
+    assert_eq!(
+        headers["cache-control"], "no-store",
+        "a printed document is what the database says now"
+    );
+    assert!(
+        body.starts_with(b"%PDF"),
+        "the bytes are the converter's, not the HTML: {:?}",
+        String::from_utf8_lossy(&body[..20.min(body.len())])
+    );
+    // and what reached the converter was the rendered report, not an
+    // empty page
+    let rendered = printing
+        .render_report("test.doc_report", order, None)
+        .await
+        .expect("the document renders");
+    assert!(
+        String::from_utf8_lossy(&body).contains(&format!("{} bytes", rendered.len())),
+        "the converter was handed the report: {}",
+        String::from_utf8_lossy(&body)
+    );
+
+    // an unknown report is refused here the same way it is in html, and
+    // still without saying which of the two was wrong
+    let (status, _, _) = fetch(
+        router(printing),
+        &format!("/report/pdf/test.nope/{order}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// Without a converter the route refuses and says so, and the HTML the
+/// same report renders is still served.
+#[tokio::test]
+async fn without_a_converter_pdf_refuses_and_html_still_serves_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let (service, order) = fixture(&url, rusdoo_testing::schema_for("rusdoo_report_nopdf")).await;
+
+    let (status, headers, body) = fetch(
+        router(service.clone()),
+        &format!("/report/pdf/test.doc_report/{order}"),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "a server with no converter says so"
+    );
+    assert!(
+        !headers
+            .get("content-type")
+            .is_some_and(|kind| kind.contains("application/pdf")),
+        "and never labels its refusal a PDF: {headers:?}"
+    );
+    let message = String::from_utf8_lossy(&body);
+    assert!(
+        message.contains("RUSDOO_PDF_BIN"),
+        "the message names the way out: {message}"
+    );
+
+    // nothing was lost but the file extension
+    let (status, page) = get(
+        router(service),
+        &format!("/report/html/test.doc_report/{order}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(page.contains("Pedido SO00001"), "{page}");
 }

@@ -37,6 +37,7 @@ pub fn router(service: OrmService) -> Router {
         .route("/web", get(web_index))
         .route("/web/view/{xml_id}", get(render_view_page))
         .route("/report/html/{xml_id}/{res_id}", get(render_report_page))
+        .route("/report/pdf/{xml_id}/{res_id}", get(render_report_pdf))
         .route("/web/action/{xml_id}", get(render_action_page))
         .route("/jsonrpc", post(jsonrpc_endpoint))
         .with_state(service.clone())
@@ -500,6 +501,94 @@ async fn render_report_page(
                 .into_response()
         }
     }
+}
+
+/// `GET /report/pdf/{xml_id}/{res_id}` — the same document, converted.
+///
+/// The same HTML `/report/html/` serves, handed to whatever converter
+/// the machine has. With none, this answers 503 and says which variable
+/// names one — and `/report/html/` keeps working, so nothing is lost but
+/// the file extension. What it must never do is serve the HTML under a
+/// PDF content type: a reader that refuses a file without explaining
+/// why sends the user looking at their own machine.
+async fn render_report_pdf(
+    State(service): State<OrmService>,
+    headers: HeaderMap,
+    Path((xml_id, res_id)): Path<(String, i64)>,
+) -> Response {
+    let session = current_session(&service, &headers);
+    if service.require_auth && session.is_none() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Html("<h1>401</h1><p>log in to print</p>".to_string()),
+        )
+            .into_response();
+    }
+    let Some(renderer) = service.pdf.clone() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Html(
+                "<h1>503</h1><p>this server has no PDF converter: install \
+                 weasyprint (or name one in RUSDOO_PDF_BIN). The same \
+                 document is at /report/html/.</p>"
+                    .to_string(),
+            ),
+        )
+            .into_response();
+    };
+    let html = match service.render_report(&xml_id, res_id, session.as_ref()).await {
+        Ok(html) => html,
+        Err(error) => {
+            tracing::warn!("report {xml_id}/{res_id} failed: {}", error.message);
+            return (
+                StatusCode::BAD_REQUEST,
+                Html("<h1>error</h1><p>the document could not be produced</p>".to_string()),
+            )
+                .into_response();
+        }
+    };
+    // the converter is a process, and waiting on one blocks. Told, the
+    // runtime keeps the rest of its work moving.
+    let converted =
+        tokio::task::spawn_blocking(move || renderer.render(&html)).await;
+    let pdf = match converted {
+        Ok(Ok(pdf)) => pdf,
+        Ok(Err(error)) => {
+            tracing::error!("report {xml_id}/{res_id} did not convert: {error}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Html("<h1>error</h1><p>the document could not be converted</p>".to_string()),
+            )
+                .into_response();
+        }
+        Err(error) => {
+            tracing::error!("report {xml_id}/{res_id} conversion panicked: {error}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Html("<h1>error</h1><p>the document could not be converted</p>".to_string()),
+            )
+                .into_response();
+        }
+    };
+    (
+        AppendHeaders([
+            (header::CONTENT_TYPE, "application/pdf".to_string()),
+            // inline: a printed document is opened, not downloaded. The
+            // name is the report and the record, because a browser's
+            // download directory full of `document.pdf` helps nobody.
+            (
+                header::CONTENT_DISPOSITION,
+                format!(
+                    "inline; filename=\"{}-{res_id}.pdf\"",
+                    xml_id.replace(['/', '\\', '"'], "-")
+                ),
+            ),
+            // what the database says now, never what a proxy kept
+            (header::CACHE_CONTROL, "no-store".to_string()),
+        ]),
+        pdf,
+    )
+        .into_response()
 }
 
 /// `GET /web/action/{xml_id}` — open an ir.actions.act_window: render its

@@ -100,6 +100,22 @@ async fn main() -> anyhow::Result<()> {
         .with_assets(assets)
         .with_methods(methods)
         .with_translations(translations);
+    // once, at boot: a `PATH` that changes under a running server must
+    // not make printing start or stop working halfway through a day
+    match rusdoo_http::pdf::ExternalPdf::discover() {
+        Some(converter) => {
+            use rusdoo_http::pdf::PdfRenderer;
+            tracing::info!("printing documents with {}", converter.name());
+            service = service.with_pdf(Arc::new(converter));
+        }
+        // not a failure: reports still serve as HTML, which is a page
+        // the browser prints. Said out loud, because a print button that
+        // answers 503 should not be a surprise.
+        None => tracing::warn!(
+            "no PDF converter found: /report/pdf/ will refuse and /report/html/ \
+             will serve. Install weasyprint, or name one in RUSDOO_PDF_BIN"
+        ),
+    }
     if std::env::var("RUSDOO_INSECURE_COOKIES").is_ok() {
         service = service.allow_insecure_cookies();
     }

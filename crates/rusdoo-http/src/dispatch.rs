@@ -77,6 +77,10 @@ pub struct OrmService {
     pub(crate) translations: Arc<rusdoo_orm::translations::Translations>,
     pub(crate) methods: Arc<rusdoo_orm::methods::MethodRegistry>,
     pub(crate) filestore: Arc<std::path::PathBuf>,
+    /// what turns a rendered report into the file somebody prints, when
+    /// this machine has a converter. `None` is a server that still
+    /// serves `/report/html/` and refuses `/report/pdf/` by saying so.
+    pub(crate) pdf: Option<Arc<dyn crate::pdf::PdfRenderer>>,
 }
 
 impl OrmService {
@@ -95,7 +99,14 @@ impl OrmService {
             translations: Arc::new(rusdoo_orm::translations::Translations::new()),
             methods: Arc::new(rusdoo_orm::methods::MethodRegistry::new()),
             filestore: Arc::new(crate::attachment::default_filestore()),
+            pdf: None,
         }
+    }
+
+    /// Install the converter that produces printed documents.
+    pub fn with_pdf(mut self, pdf: Arc<dyn crate::pdf::PdfRenderer>) -> Self {
+        self.pdf = Some(pdf);
+        self
     }
 
     /// Install the access-control table (`ir.model.access`).
