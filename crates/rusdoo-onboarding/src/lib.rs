@@ -1,20 +1,21 @@
 //! rusdoo-onboarding — port de `odoo/addons/onboarding/models/`: a
-//! lista de passos que um banco recém-instalado mostra até estar
+//! the list of steps a freshly installed database shows until it is
 //! configurado.
 //!
-//! São quatro modelos e uma separação só: o painel
-//! (`onboarding.onboarding`) e seus passos são a definição, igual para
-//! todo mundo e instalada com o módulo; o progresso
-//! (`onboarding.progress` e `onboarding.progress.step`) é o que cada
-//! empresa já fez. É essa separação que deixa duas empresas no mesmo
+//! Four models and one separation: the dashboard
+//! (`onboarding.onboarding`) and its steps are the definition, the same
+//! for everyone and installed with the module; the progress
+//! (`onboarding.progress` and `onboarding.progress.step`) is what each
+//! company has done. That separation is what lets two companies in one
 //! banco terem o mesmo checklist em pontos diferentes — apagar o
-//! progresso não apaga o painel, e instalar o painel de novo não zera
-//! ninguém.
+//! progress does not delete the dashboard, and installing the dashboard
+//! again resets nobody.
 //!
-//! Desvio do Odoo: não há `Environment` com contexto aqui, então "a
-//! empresa atual" é a do usuário que está chamando — que é de onde o
-//! Odoo tira o padrão de `self.env.company`. Fica de fora o painel em
-//! si: a rota `/onboarding/<route_name>` e o template que a desenha são
+//! Deviation from Odoo: there is no `Environment` carrying a context
+//! here, so "the current company" is the calling user's — which is where
+//! Odoo takes the default of `self.env.company` from. What is left out
+//! is the dashboard itself: the `/onboarding/<route_name>` route and the
+//! template that draws it are
 //! um controller e um asset de website, e nada disso existe no port.
 
 use rusdoo_core::RusdooError;
@@ -27,13 +28,13 @@ use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
 
-/// A tabela de relação entre um painel e seus passos. As duas pontas
-/// precisam nomear a mesma tabela, senão cada lado enxerga um vínculo
+/// The relation table between a dashboard and its steps. Both ends must
+/// name the same table, or each side sees a link
 /// diferente do outro.
 const PANEL_STEP_REL: &str = "onboarding_onboarding_step_rel";
 
 /// Idem para o progresso: um registro de progresso de passo pode servir
-/// a mais de um painel, porque o mesmo passo pode estar em vários.
+/// to more than one dashboard, because the same step may be on several.
 const PROGRESS_STEP_REL: &str = "onboarding_progress_step_rel";
 
 fn char(name: &str) -> Field {
@@ -58,11 +59,12 @@ fn meta(name: &str, table: &str) -> ModelMeta {
     }
 }
 
-/// Os três estados por que um passo passa.
+/// The three states a step goes through.
 ///
-/// `just_done` não é enfeite: é o que deixa o painel comemorar uma vez
-/// só. Quem lê o painel consolida o `just_done` em `done`, então a
-/// animação de "acabou de ficar pronto" não volta a cada carregamento.
+/// `just_done` is not decoration: it is what lets the dashboard
+/// celebrate exactly once. Whoever reads the dashboard folds `just_done`
+/// into `done`, so the "it just became ready" animation does not come
+/// back on every load.
 fn progress_states() -> FieldType {
     FieldType::Selection(vec![
         ("not_done".into(), "Pending".into()),
@@ -119,13 +121,13 @@ pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
 
 // ---------------------------------------------------------------- modelos
 
-/// Um painel é "por empresa" quando algum passo dele é.
+/// A dashboard is "per company" when any of its steps is.
 ///
-/// O Odoo também olha o progresso já criado e, uma vez por empresa,
-/// nunca mais volta atrás — assim ele não precisa fundir progressos
-/// existentes. Aqui a resposta segue só os passos, o que é mais simples
-/// de explicar; o preço é que tornar um passo comum a todas as empresas
-/// deixa o progresso antigo, gravado com dono, órfão.
+/// Odoo also looks at the progress already created and, once it is per
+/// company, never goes back — that way it never has to merge existing
+/// progress records. Here the answer follows the steps alone, which is
+/// simpler to explain; the price is that making a step common to every
+/// company leaves the old progress, written with an owner, orphaned.
 fn is_per_company(record: &Map<String, Value>) -> Value {
     let per_company = record
         .get("step_ids.is_per_company")
@@ -134,8 +136,8 @@ fn is_per_company(record: &Map<String, Value>) -> Value {
     json!(per_company)
 }
 
-/// O nome de rota vira um pedaço de URL (`/onboarding/<route_name>`), e
-/// um pedaço de URL com espaço não é um pedaço de URL.
+/// The route name becomes a piece of URL (`/onboarding/<route_name>`),
+/// and a piece of URL with a space in it is not a piece of URL.
 fn route_name_is_one_word(record: &Map<String, Value>) -> Result<(), String> {
     let route = record
         .get("route_name")
@@ -154,7 +156,7 @@ fn route_name_is_one_word(record: &Map<String, Value>) -> Result<(), String> {
     Ok(())
 }
 
-/// `onboarding.onboarding` — o painel: um título, uma rota e os passos.
+/// `onboarding.onboarding` — the dashboard: a title, a route, the steps.
 fn onboarding() -> Model {
     Model::new(
         meta("onboarding.onboarding", "onboarding_onboarding"),
@@ -172,8 +174,8 @@ fn onboarding() -> Model {
             ),
             char("text_completed")
                 .default_value(json!("Well done! The setup is ready.")),
-            // o método que o painel chama ao ser fechado, nomeado pelo
-            // módulo que o instalou
+            // the method the dashboard calls when it is closed, named
+            // by the module that installed it
             char("panel_close_action_name"),
             Field::new(
                 "progress_ids",
@@ -194,8 +196,8 @@ fn onboarding() -> Model {
     )
 }
 
-/// Um passo pendurado num painel sem opening action é um botão que
-/// não leva a lugar nenhum.
+/// A step hanging on a dashboard with no opening action is a button
+/// that leads nowhere.
 fn step_on_panel_has_action(record: &Map<String, Value>) -> Result<(), String> {
     let on_panel = record
         .get("onboarding_ids")
@@ -235,7 +237,7 @@ fn step() -> Model {
                 .default_value(json!("Let's go")),
             char("done_icon").default_value(json!("fa-star")),
             char("done_text").default_value(json!("Step done!")),
-            // o método que o passo abre quando se clica nele
+            // the method the step opens when it is clicked
             char("panel_step_open_action_name"),
             Field::new(
                 "progress_ids",
@@ -244,8 +246,8 @@ fn step() -> Model {
                     inverse: "step_id".into(),
                 },
             ),
-            // o padrão do Odoo: configurar é quase sempre configurar uma
-            // empresa, não o banco inteiro
+            // Odoo's default: configuring is almost always configuring
+            // a company, not the whole database
             Field::new("is_per_company", FieldType::Boolean).default_value(json!(true)),
             Field::new("sequence", FieldType::Integer).default_value(json!(10)),
         ],
@@ -259,8 +261,9 @@ fn step() -> Model {
 
 /// Quantos passos o painel deste progresso tem.
 ///
-/// A dependência atravessa duas relações — o painel, e a lista de passos
-/// dele — e o ORM devolve uma lista por registro percorrido. Daí a lista
+/// The dependency crosses two relations — the dashboard, and its list
+/// of steps — and the ORM answers one list per record walked. Hence the
+/// list
 /// dentro da lista.
 fn step_count(record: &Map<String, Value>) -> usize {
     record
@@ -275,7 +278,7 @@ fn step_count(record: &Map<String, Value>) -> usize {
         .unwrap_or(0)
 }
 
-/// Quantos passos já saíram do "pendente".
+/// How many steps have left "pending".
 fn done_count(record: &Map<String, Value>) -> usize {
     record
         .get("progress_step_ids.step_state")
@@ -289,10 +292,11 @@ fn done_count(record: &Map<String, Value>) -> usize {
         .unwrap_or(0)
 }
 
-/// O painel está pronto quando não sobrou passo pendente.
+/// The dashboard is ready when no pending step is left.
 ///
-/// Um painel sem passo nenhum já nasce pronto: não há o que fazer. E a
-/// comparação é `>=`, não `==`, porque um passo retirado do painel
+/// A dashboard with no steps at all is born ready: there is nothing to
+/// do. And the comparison is `>=`, not `==`, because a step taken off
+/// the dashboard
 /// depois de feito deixaria o progresso pendente para sempre.
 fn onboarding_state(record: &Map<String, Value>) -> Value {
     if done_count(record) >= step_count(record) {
@@ -302,7 +306,7 @@ fn onboarding_state(record: &Map<String, Value>) -> Value {
     }
 }
 
-/// `onboarding.progress` — o que uma empresa já fez de um painel.
+/// `onboarding.progress` — what one company has done of a dashboard.
 fn progress() -> Model {
     Model::new(
         meta("onboarding.progress", "onboarding_progress"),
@@ -320,7 +324,7 @@ fn progress() -> Model {
                     column2: "progress_step_id".into(),
                 },
             ),
-            // materializado: a lista de painéis mostra o estado de cada
+            // materialised: the dashboard list shows the state of each
             // um, e recalcular isso por linha seria uma consulta por
             // linha
             Field::new("onboarding_state", progress_states())
@@ -354,9 +358,9 @@ fn progress_step() -> Model {
     )
 }
 
-// ---------------------------------------------------------------- métodos
+// ---------------------------------------------------------------- methods
 
-/// O id dentro de um many2one, que lê como `[id, nome]`.
+/// The id inside a many2one, which reads as `[id, name]`.
 fn first_id(value: &Value) -> Option<i64> {
     match value {
         Value::Array(items) => items.first().and_then(Value::as_i64),
@@ -374,11 +378,12 @@ fn ids_of(record: &Map<String, Value>, name: &str) -> Vec<i64> {
         .unwrap_or_default()
 }
 
-/// A empresa de quem está chamando — o port de `self.env.company`.
+/// The caller's company — the port of `self.env.company`.
 ///
-/// Sem contexto na chamada, a empresa é a do usuário: é dela que o Odoo
-/// parte quando ninguém disse outra coisa. Um usuário sem empresa
-/// devolve `None`, e aí o progresso vale para o banco inteiro.
+/// With no context on the call, the company is the user's: that is
+/// where Odoo starts from when nobody said otherwise. A user with no
+/// company answers `None`, and then the progress holds for the whole
+/// database.
 async fn current_company(ctx: &MethodCtx<'_>) -> Result<Option<i64>, RusdooError> {
     let rows = ctx
         .registry
@@ -390,8 +395,8 @@ async fn current_company(ctx: &MethodCtx<'_>) -> Result<Option<i64>, RusdooError
         .and_then(first_id))
 }
 
-/// Regra do Odoo: um registro de progresso serve à empresa atual quando
-/// é dela, ou quando não é de ninguém (painel comum a todas).
+/// Odoo's rule: a progress record serves the current company when
+/// it is hers, or when it is nobody's (a dashboard common to all).
 fn serves_company(record: &Map<String, Value>, company: Option<i64>) -> bool {
     match record.get("company_id").and_then(first_id) {
         None => true,
@@ -399,7 +404,7 @@ fn serves_company(record: &Map<String, Value>, company: Option<i64>) -> bool {
     }
 }
 
-/// O progresso deste painel para `company`, criado se ainda não existe —
+/// This dashboard's progress for `company`, created if it is not there
 /// o `_search_or_create_progress` do Odoo.
 async fn progress_for(
     ctx: &MethodCtx<'_>,
@@ -430,7 +435,7 @@ async fn progress_for(
         }
     }
     // um painel cujos passos valem para o banco inteiro tem um progresso
-    // só: gravar a empresa nele partiria o mesmo checklist em dois
+    // one: writing the company on it would split one checklist in two
     let panel = ctx
         .registry
         .read(
@@ -455,8 +460,8 @@ async fn progress_for(
 }
 
 /// O registro de progresso deste passo para `company`, com o estado em
-/// que ele está. `None` quando ninguém encostou no passo ainda — o que é
-/// diferente de um passo pendente e por isso não se inventa uma linha
+/// it is in. `None` when nobody has touched the step yet — which is not
+/// the same as a pending step, so no row is invented
 /// para responder.
 async fn find_progress_step(
     ctx: &MethodCtx<'_>,
@@ -501,9 +506,9 @@ async fn find_progress_step(
 /// Recoloca em `progress` os registros de progresso dos passos do painel
 /// — o `_recompute_progress_step_ids` do Odoo.
 ///
-/// Escrever o m2m é também o que manda o ORM recalcular o estado do
-/// painel: o estado depende dessa lista, e um estado gravado que ninguém
-/// recalcula é pior do que nenhum.
+/// Writing the m2m is also what tells the ORM to recompute the
+/// dashboard's state: the state depends on that list, and a stored state
+/// nobody recomputes is worse than none at all.
 async fn relink_progress_steps(
     ctx: &MethodCtx<'_>,
     progress: i64,
@@ -542,9 +547,9 @@ async fn relink_progress_steps(
 
 /// `action_set_just_done` — o passo foi feito.
 ///
-/// Marca um passo de cada vez porque é assim que o painel funciona: um
-/// clique, um passo. Um passo já feito não é marcado de novo — dizer
-/// "it was already done" é a resposta certa, não um erro.
+/// Marks one step at a time because that is how the dashboard works:
+/// one click, one step. A step already done is not marked again — saying
+/// "it was already done" is the right answer, not an error.
 fn action_set_just_done<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -568,7 +573,7 @@ fn action_set_just_done<'a>(
         let step = rows
             .first()
             .ok_or_else(|| RusdooError::Validation(format!("step {step_id} does not exist")))?;
-        // um passo comum a todas as empresas tem um registro só, sem dono
+        // a step common to every company has a single record, with no owner
         let per_company = step
             .get("is_per_company")
             .and_then(Value::as_bool)
@@ -621,8 +626,8 @@ fn action_set_just_done<'a>(
 
 /// `action_open_progress` — abrir o progresso deste painel.
 ///
-/// Criar o registro aqui é o que garante que a tela abre apontando para
-/// alguma coisa, mesmo na primeira vez que alguém olha o painel.
+/// Creating the record here is what guarantees the screen opens
+/// pointing at something, even the first time anyone looks.
 fn action_open_progress<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -659,7 +664,7 @@ async fn progress_of_single_panel(ctx: &MethodCtx<'_>) -> Result<i64, RusdooErro
     progress_for(ctx, onboarding, company).await
 }
 
-/// `action_close` — o usuário não quer mais ver este painel.
+/// `action_close` — the user does not want to see this dashboard again.
 fn action_close<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -681,7 +686,7 @@ fn action_close<'a>(
 }
 
 /// `action_toggle_visibility` — mostrar de novo o painel fechado, ou
-/// fechar o aberto. É o botão de quem quer rever a configuração.
+/// closing an open one. It is the button for revisiting the setup.
 fn action_toggle_visibility<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -718,10 +723,10 @@ fn action_toggle_visibility<'a>(
 
 /// `action_step_states` — o estado de cada passo, para desenhar o painel.
 ///
-/// É o `_get_and_update_onboarding_state` do Odoo, e como lá ele
-/// consolida os `just_done` enquanto responde: quem perguntou já viu a
-/// comemoração, e ela não se repete na próxima leitura. Por isso o
-/// método escreve, e declara que escreve.
+/// This is Odoo's `_get_and_update_onboarding_state`, and like there it
+/// folds the `just_done` away while answering: whoever asked has seen
+/// the celebration, and it does not repeat on the next read. That is why
+/// the method writes, and declares that it writes.
 fn action_step_states<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -756,9 +761,9 @@ fn action_step_states<'a>(
             .ok_or_else(|| {
                 RusdooError::Validation("the progress record points at no dashboard".into())
             })?;
-        // a empresa do próprio progresso; quando ele vale para o banco
-        // inteiro, os passos por empresa ainda são lidos da empresa de
-        // quem está olhando
+        // the progress record's own company; when it holds for the whole
+        // database, the per-company steps are still read from the company
+        // of whoever is looking
         let company = match progress.get("company_id").and_then(first_id) {
             Some(company) => Some(company),
             None => current_company(&ctx).await?,
@@ -778,8 +783,8 @@ fn action_step_states<'a>(
             .map(|row| ids_of(row, "step_ids"))
             .unwrap_or_default();
 
-        // percorre os passos do painel, e não o progresso: um passo que
-        // ninguém começou não tem registro de progresso e mesmo assim
+        // walks the dashboard's steps, not the progress: a step nobody
+        // started has no progress record and even so
         // precisa aparecer como pendente
         let mut states = Map::new();
         let mut to_consolidate: Vec<i64> = Vec::new();
@@ -856,7 +861,7 @@ mod tests {
         );
         assert_eq!(onboarding_state(&record), json!("done"));
 
-        // um painel sem passo nenhum não tem o que esperar
+        // a dashboard with no steps has nothing to wait for
         assert_eq!(onboarding_state(&Map::new()), json!("done"));
     }
 
@@ -910,7 +915,7 @@ mod tests {
         ] {
             assert!(reg.get(name).is_some(), "{name} must be registered");
         }
-        // o estado do painel é uma coluna: uma lista de painéis não
+        // the dashboard's state is a column: a list of dashboards does not
         // recalcula um por linha
         let state = reg
             .get("onboarding.progress")
@@ -918,7 +923,7 @@ mod tests {
             .field("onboarding_state")
             .unwrap();
         assert!(state.stored);
-        // um progresso sem painel não é progresso de nada
+        // progress with no dashboard is progress on nothing
         assert!(
             reg.get("onboarding.progress")
                 .unwrap()

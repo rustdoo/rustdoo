@@ -1,14 +1,14 @@
 //! rusdoo-data-recycle — port de `odoo/addons/data_recycle/models/`: as
 //! regras que encontram registro velho para arquivar ou apagar.
 //!
-//! São dois modelos e um ciclo. Uma regra (`data_recycle.model`) diz em
+//! Two models and one cycle. A rule (`data_recycle.model`) says which
 //! que modelo procurar, com que filtro, a partir de que idade e o que
 //! fazer com o que achar. A varredura materializa cada achado numa
-//! sugestão (`data_recycle.record`), e é a sugestão — não a regra — que
-//! alguém valida ou descarta. O passo intermediário existe porque
-//! apagar é irreversível: entre "a regra casou" e "o registro sumiu"
-//! tem que caber um humano, e no modo automático a decisão de dispensar
-//! esse humano é explícita.
+//! suggestion (`data_recycle.record`), and it is the suggestion — not
+//! the rule — that somebody validates or discards. The step in between
+//! exists because deleting is irreversible: between "the rule matched"
+//! and "the record is gone" a human has to fit, and in automatic mode
+//! the decision to do without that human is an explicit one.
 //!
 //! O `ir.cron` do addon chama `cron_recycle_records` uma vez por dia.
 
@@ -31,12 +31,12 @@ const RECORD: &str = "data_recycle.record";
 const ARCHIVE: &str = "archive";
 const UNLINK: &str = "unlink";
 
-/// Quantos candidatos uma varredura traz por execução.
+/// How many candidates one scan brings back per run.
 ///
-/// Uma regra recém-criada sobre uma tabela grande casa com tudo de uma
-/// vez; sem teto, a primeira execução viraria um insert de milhões de
-/// linhas dentro do cron. Com teto, a execução seguinte continua de onde
-/// esta parou — o Odoo faz o mesmo com `DR_CREATE_STEP_*`, só que em
+/// A freshly written rule over a large table matches everything at
+/// once; with no cap the first run would become an insert of millions of
+/// rows inside the cron. With one, the next run carries on where this
+/// one stopped — Odoo does the same with `DR_CREATE_STEP_*`, only in
 /// lotes commitados em vez de um corte.
 const SCAN_LIMIT: u64 = 5_000;
 
@@ -77,9 +77,10 @@ pub fn extend(reg: &mut Registry) -> Result<(), RusdooError> {
     Ok(())
 }
 
-/// Os botões das duas telas, mais o trabalho que o cron chama.
+/// The buttons of both screens, plus the work the cron calls.
 pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
-    // varrer cria sugestões: é escrita, mesmo quando nada é apagado
+    // scanning creates suggestions: it is a write, even when nothing
+    // is deleted
     methods.register(
         RULE,
         "action_recycle_records",
@@ -94,7 +95,7 @@ pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
         cron_recycle_records,
     )?;
     // validar apaga ou arquiva registro alheio, e depois apaga a
-    // sugestão — quem pode chamar isso precisa poder excluir
+    // a suggestion — whoever may call this must be allowed to delete
     methods.register(
         RECORD,
         "action_validate",
@@ -107,9 +108,9 @@ pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
 
 // ---------------------------------------------------------------- modelos
 
-/// Um filtro que o banco não entende é uma regra que só falha às três da
-/// manhã, dentro do cron, com o log de ninguém olhando. Recusar na hora
-/// de salvar, quando ainda tem alguém na frente da tela.
+/// A filter the database cannot read is a rule that only fails at three
+/// in the morning, inside the cron, with nobody watching the log. Refuse
+/// it at save time, while there is still somebody in front of a screen.
 fn filter_is_a_domain(record: &Map<String, Value>) -> Result<(), String> {
     let raw = text(record, "domain");
     if raw.trim().is_empty() {
@@ -128,8 +129,9 @@ fn filter_is_a_domain(record: &Map<String, Value>) -> Result<(), String> {
 
 /// Uma regra sem filtro e sem idade casa com a tabela inteira: o
 /// primeiro clique em "Executar agora" levaria o modelo todo. O Odoo
-/// permite salvar essa regra; aqui não, porque o estrago não tem volta e
-/// o custo de exigir um dos dois é um campo preenchido.
+/// lets such a rule be saved; here it does not, because the damage does
+/// not come back and the cost of demanding one of the two is one filled
+/// field.
 fn rule_selects_something(record: &Map<String, Value>) -> Result<(), String> {
     let raw = text(record, "domain");
     let no_filter = serde_json::from_str::<Vec<Value>>(&raw).is_ok_and(|terms| terms.is_empty())
@@ -145,8 +147,8 @@ fn rule_selects_something(record: &Map<String, Value>) -> Result<(), String> {
     Ok(())
 }
 
-/// Idade zero é "tudo", e idade negativa é o futuro. Nem uma nem outra é
-/// o que alguém quis dizer ao escolher um campo de data.
+/// Age zero means "everything", and a negative age is the future.
+/// Neither is what anyone meant when they picked a date field.
 fn age_is_a_real_interval(record: &Map<String, Value>) -> Result<(), String> {
     if text(record, "time_field_name").trim().is_empty() {
         return Ok(());
@@ -160,10 +162,11 @@ fn age_is_a_real_interval(record: &Map<String, Value>) -> Result<(), String> {
     Ok(())
 }
 
-/// Quantas sugestões abertas a regra tem hoje.
+/// How many open suggestions the rule has today.
 ///
-/// Descartada não conta: quem descartou disse que aquele registro fica,
-/// e um contador que insistisse nele seria um alarme que não apaga.
+/// A discarded one does not count: whoever discarded it said that
+/// record stays, and a counter that kept insisting would be an alarm
+/// nobody can switch off.
 fn open_suggestions(record: &Map<String, Value>) -> Value {
     let flags = record
         .get("recycle_record_ids.active")
@@ -178,17 +181,18 @@ fn open_suggestions(record: &Map<String, Value>) -> Value {
 
 /// `data_recycle.model` — a regra.
 ///
-/// Desvio do Odoo: o modelo-alvo e o campo de data são nomes técnicos em
-/// `Char`, não many2ones para `ir.model`/`ir.model.fields`. O port não
-/// tem registro dinâmico de modelos, e um many2one para uma tabela que
-/// não existe seria um campo que nunca resolve.
+/// Deviation from Odoo: the target model and the date field are
+/// technical names in a `Char`, not many2ones to
+/// `ir.model`/`ir.model.fields`. The port has no dynamic model registry,
+/// and a many2one to a table that does not exist would be a field that
+/// never resolves.
 fn recycle_rule() -> Model {
     Model::new(
         meta(RULE, "data_recycle_model"),
         vec![
             char("name").required(),
             Field::new("active", FieldType::Boolean).default_value(json!(true)),
-            // o nome técnico do modelo varrido, ex.: "mail.message"
+            // the technical name of the scanned model, e.g. "mail.message"
             char("res_model_name").required(),
             Field::new(
                 "recycle_mode",
@@ -198,8 +202,8 @@ fn recycle_rule() -> Model {
                 ]),
             )
             .required()
-            // manual por padrão: o modo que apaga sozinho é uma escolha,
-            // nunca o que se ganha por não ter escolhido
+            // manual by default: the mode that deletes on its own is a
+            // choice, never what you get for not having chosen
             .default_value(json!("manual")),
             Field::new(
                 "recycle_action",
@@ -210,7 +214,7 @@ fn recycle_rule() -> Model {
             )
             .required()
             .default_value(json!(ARCHIVE)),
-            // o filtro, em JSON — o mesmo domínio que as views usam
+            // the filter, as JSON — the same domain the views use
             char("domain").default_value(json!("[]")),
             char("time_field_name"),
             Field::new("time_field_delta", FieldType::Integer).default_value(json!(1)),
@@ -232,13 +236,13 @@ fn recycle_rule() -> Model {
                     inverse: "recycle_model_id".into(),
                 },
             ),
-            // não materializado: o número muda a cada varredura e a cada
-            // validação, e ninguém ordena uma lista de regras por ele
+            // not materialised: the number changes with every scan and
+            // every validation, and nobody sorts a list of rules by it
             Field::new("records_to_recycle_count", FieldType::Integer)
                 .computed(&["recycle_record_ids.active"], open_suggestions),
-            // quando a regra rodou pela última vez. Não é `.readonly()`:
-            // no ORM daqui isso trancaria a própria varredura, que é
-            // quem escreve o campo. Quem fica de fora é o cliente, e
+            // when the rule last ran. Not `.readonly()`: in this ORM
+            // that would lock out the scan itself, which is what writes
+            // the field. What stays out is the client, and
             // isso a view resolve.
             Field::new("last_scan", FieldType::Datetime),
         ],
@@ -258,11 +262,12 @@ fn recycle_rule() -> Model {
 
 /// `data_recycle.record` — um registro que a regra separou.
 ///
-/// Desvio do Odoo: o nome do alvo é gravado na varredura, não computado
-/// a cada leitura. O Odoo lê o `display_name` original toda vez (e
-/// mostra "**Record Deleted**" quando não acha); aqui o nome é o que o
-/// registro se chamava quando foi separado, que é justamente a
-/// informação que some no instante em que a sugestão é aplicada.
+/// Deviation from Odoo: the target's name is written down by the scan,
+/// not computed on every read. Odoo reads the original `display_name`
+/// each time (and shows "**Record Deleted**" when it cannot find it);
+/// here the name is what the record was called when it was set aside,
+/// which is exactly the information that disappears the moment the
+/// suggestion is applied.
 fn recycle_record() -> Model {
     Model::new(
         meta(RECORD, "data_recycle_record"),
@@ -287,8 +292,9 @@ fn recycle_record() -> Model {
 
 /// A data-limite da regra, no formato que o campo alvo entende.
 ///
-/// Separada do resto porque é onde mora o erro fácil: "3 meses" não é
-/// "90 dias", e um `Date` comparado com um texto de datetime não casa
+/// Kept apart from the rest because it is where the easy mistake
+/// lives: "3 months" is not "90 days", and a `Date` compared against a
+/// datetime string does not match
 /// nada.
 fn cutoff_for(
     ty: &FieldType,
@@ -317,14 +323,14 @@ fn subtract(now: NaiveDateTime, unit: &str, delta: i64) -> Option<NaiveDateTime>
     match unit {
         "days" => now.checked_sub_days(Days::new(u64::from(count))),
         "weeks" => now.checked_sub_days(Days::new(u64::from(count).checked_mul(7)?)),
-        // meses e anos andam no calendário, não em múltiplos de 30 dias
+        // months and years walk the calendar, not multiples of 30 days
         "months" => now.checked_sub_months(Months::new(count)),
         "years" => now.checked_sub_months(Months::new(count.checked_mul(12)?)),
         _ => None,
     }
 }
 
-/// O domínio que a regra procura: o filtro do usuário, mais a condição
+/// The domain the rule looks for: the user's filter, plus the age
 /// de idade quando a regra tem uma.
 fn rule_domain(
     rule: &Map<String, Value>,
@@ -356,7 +362,7 @@ fn rule_domain(
             int(rule, "time_field_delta"),
             now,
         )?;
-        // termos no mesmo nível são E implícito: o filtro do usuário
+        // terms at the same level are an implicit AND: the user's filter
         // continua valendo inteiro ao lado da idade
         terms.push(json!([field_name, "<=", cutoff]));
     }
@@ -396,7 +402,7 @@ async fn scan_rule(ctx: &MethodCtx<'_>, rule_id: i64) -> Result<usize, RusdooErr
     })?;
     let action = text(rule, "recycle_action");
     // a mesma recusa do `_check_recycle_action` do Odoo, feita aqui
-    // porque é aqui que se enxerga o registro de modelos
+    // because this is where the model registry is visible
     if action == ARCHIVE && target.field("active").is_none() {
         return Err(RusdooError::Validation(format!(
             "model {target_name} has no archivable records: change the action of rule \
@@ -405,8 +411,8 @@ async fn scan_rule(ctx: &MethodCtx<'_>, rule_id: i64) -> Result<usize, RusdooErr
     }
 
     let domain = rule_domain(rule, target, Utc::now().naive_utc())?;
-    // arquivar o que já está arquivado não faz nada e a regra reencontra
-    // o mesmo registro para sempre; o Odoo esconde a opção nesse modo
+    // archiving what is already archived does nothing and the rule finds
+    // the same record again forever; Odoo hides the option in that case
     let include_archived = flag(rule, "include_archived") && action == UNLINK;
     let found = ctx
         .registry
@@ -471,8 +477,8 @@ async fn scan_rule(ctx: &MethodCtx<'_>, rule_id: i64) -> Result<usize, RusdooErr
     Ok(fresh.len())
 }
 
-/// Os `res_id` que a regra já separou — inclusive os descartados, que
-/// não devem voltar à lista na varredura seguinte.
+/// The `res_id`s the rule has already set aside — the discarded ones
+/// included, which must not come back on the next scan.
 async fn already_listed(ctx: &MethodCtx<'_>, rule_id: i64) -> Result<HashSet<i64>, RusdooError> {
     let ids = ctx
         .registry
@@ -498,7 +504,7 @@ async fn already_listed(ctx: &MethodCtx<'_>, rule_id: i64) -> Result<HashSet<i64
         .collect())
 }
 
-/// Aplica as sugestões abertas de uma regra automática.
+/// Apply the open suggestions of an automatic rule.
 async fn apply_open_suggestions(ctx: &MethodCtx<'_>, rule_id: i64) -> Result<usize, RusdooError> {
     let ids = ctx
         .registry
@@ -512,13 +518,14 @@ async fn apply_open_suggestions(ctx: &MethodCtx<'_>, rule_id: i64) -> Result<usi
     validate_suggestions(ctx, &ids).await
 }
 
-// ---------------------------------------------------------------- métodos
+// ---------------------------------------------------------------- methods
 
-/// `action_recycle_records` — o botão "Executar agora".
+/// `action_recycle_records` — the "Run now" button.
 ///
-/// Numa regra manual a resposta é a tela das sugestões: quem mandou
-/// rodar quer ver o que apareceu, não um "ok". Numa regra automática não
-/// há o que revisar, e a resposta é quantos registros foram tratados.
+/// On a manual rule the answer is the suggestions screen: whoever asked
+/// it to run wants to see what turned up, not an "ok". On an automatic
+/// rule there is nothing to review, and the answer is how many records
+/// were dealt with.
 fn action_recycle_records<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -561,9 +568,9 @@ fn action_recycle_records<'a>(
 
 /// `cron_recycle_records` — o trabalho de todo dia.
 ///
-/// Varre toda regra ativa e aplica sozinho só as automáticas. Uma regra
+/// Scan every active rule and apply only the automatic ones. A rule
 /// que quebra (modelo removido, filtro que deixou de casar com o
-/// esquema) não derruba as outras: o cron existe para as que ainda
+/// schema) does not bring the others down: the cron exists for the ones
 /// funcionam.
 fn cron_recycle_records<'a>(
     ctx: MethodCtx<'a>,
@@ -621,11 +628,12 @@ fn action_validate<'a>(
     })
 }
 
-/// Arquiva ou apaga os alvos de `ids`, e depois some com as sugestões.
+/// Archive or delete the targets of `ids`, then remove the suggestions.
 ///
-/// Agrupado por (modelo, ação): mil sugestões do mesmo modelo viram uma
-/// escrita, não mil. A sugestão só é removida depois que o alvo foi
-/// tratado — se a exclusão falhar, ela continua na lista para alguém
+/// Grouped by (model, action): a thousand suggestions of the same model
+/// become one write, not a thousand. A suggestion is only removed after
+/// its target was dealt with — if the delete fails, it stays on the list
+/// for somebody
 /// olhar, em vez de sumir tendo feito nada.
 async fn validate_suggestions(ctx: &MethodCtx<'_>, ids: &[i64]) -> Result<usize, RusdooError> {
     if ids.is_empty() {
@@ -642,7 +650,7 @@ async fn validate_suggestions(ctx: &MethodCtx<'_>, ids: &[i64]) -> Result<usize,
         .await?;
     let actions = rule_actions(ctx, &rows).await?;
 
-    // (modelo alvo, ação) -> ids do alvo
+    // (target model, action) -> the target's ids
     let mut batches: HashMap<(String, String), Vec<i64>> = HashMap::new();
     for row in &rows {
         let (Some(res_id), rule_id) = (
@@ -663,8 +671,8 @@ async fn validate_suggestions(ctx: &MethodCtx<'_>, ids: &[i64]) -> Result<usize,
     for ((model_name, action), mut targets) in batches {
         targets.sort_unstable();
         targets.dedup();
-        // o alvo pode ter sumido entre a varredura e agora: só se trata
-        // o que ainda existe, e o resto vale como já tratado
+        // the target may be gone between the scan and now: only what is
+        // still there is dealt with, and the rest counts as done
         let alive = ctx
             .registry
             .search(
@@ -706,7 +714,7 @@ async fn validate_suggestions(ctx: &MethodCtx<'_>, ids: &[i64]) -> Result<usize,
     Ok(rows.len())
 }
 
-/// A ação de cada regra citada pelas sugestões, numa leitura só.
+/// The action of every rule the suggestions name, in one read.
 async fn rule_actions(
     ctx: &MethodCtx<'_>,
     rows: &[Map<String, Value>],
@@ -734,8 +742,9 @@ async fn rule_actions(
 
 /// `action_discard` — "esse fica".
 ///
-/// A sugestão é arquivada, não apagada: apagada, a varredura seguinte a
-/// recriaria, e o mesmo registro voltaria a pedir decisão para sempre.
+/// The suggestion is archived, not deleted: deleted, the next scan
+/// would recreate it, and the same record would go on asking for a
+/// decision forever.
 fn action_discard<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -760,7 +769,7 @@ fn action_discard<'a>(
     })
 }
 
-/// O id de um many2one, que é lido como `[id, nome]`.
+/// The id of a many2one, which reads as `[id, name]`.
 fn first_id(value: Option<&Value>) -> Option<i64> {
     match value? {
         Value::Array(items) => items.first().and_then(Value::as_i64),
@@ -782,12 +791,12 @@ mod tests {
 
     #[test]
     fn a_idade_anda_no_calendario_e_no_formato_do_campo() {
-        // um mês antes de 31 de março é 28 de fevereiro, não "30 dias"
+        // one month before 31 March is 28 February, not "30 days"
         assert_eq!(
             cutoff_for(&FieldType::Date, "months", 1, moment()).unwrap(),
             "2026-02-28"
         );
-        // datetime leva a hora junto, senão a comparação não casa
+        // a datetime carries the time with it, or the comparison misses
         assert_eq!(
             cutoff_for(&FieldType::Datetime, "days", 30, moment()).unwrap(),
             "2026-03-01 14:30:00"
@@ -810,7 +819,7 @@ mod tests {
             error.to_string().contains("must be a date"),
             "{error}"
         );
-        // e uma unidade que ninguém definiu não vira silenciosamente dias
+        // and a unit nobody defined does not silently become days
         let error = cutoff_for(&FieldType::Date, "quinzenas", 1, moment())
             .expect_err("an unknown unit is not silently days");
         assert!(error.to_string().contains("review the age interval"), "{error}");
@@ -864,7 +873,7 @@ mod tests {
         let reason = rule_selects_something(&rule).expect_err("no filter and no age");
         assert!(reason.contains("match every record"), "{reason}");
 
-        // basta um dos dois para a regra ser aceitável
+        // either of the two is enough for the rule to be acceptable
         rule.insert("time_field_name".into(), json!("create_date"));
         assert!(rule_selects_something(&rule).is_ok());
         rule.insert("time_field_name".into(), json!(""));
@@ -879,7 +888,7 @@ mod tests {
         let reason = filter_is_a_domain(&rule).expect_err("that is not JSON");
         assert!(reason.contains("JSON list"), "{reason}");
 
-        // JSON válido, domínio inválido: um operador que não existe
+        // valid JSON, invalid domain: an operator that does not exist
         rule.insert("domain".into(), json!(r#"[["state", "~=", "cancel"]]"#));
         let reason = filter_is_a_domain(&rule).expect_err("operador desconhecido");
         assert!(reason.contains("is not valid"), "{reason}");
@@ -896,7 +905,7 @@ mod tests {
         let reason = age_is_a_real_interval(&rule).expect_err("zero is not an interval");
         assert!(reason.contains("greater than zero"), "{reason}");
 
-        // sem campo de idade, o intervalo não é olhado
+        // with no age field, the interval is not looked at
         rule.insert("time_field_name".into(), json!(""));
         assert!(age_is_a_real_interval(&rule).is_ok());
     }
@@ -909,7 +918,7 @@ mod tests {
             json!([true, false, true]),
         );
         assert_eq!(open_suggestions(&rule), json!(2));
-        // uma regra sem sugestão nenhuma conta zero, não nulo
+        // a rule with no suggestion at all counts zero, not null
         assert_eq!(open_suggestions(&Map::new()), json!(0));
     }
 
@@ -920,7 +929,7 @@ mod tests {
         for name in [RULE, RECORD] {
             assert!(reg.get(name).is_some(), "{name} must be registered");
         }
-        // o contador é derivado: nenhum cliente escreve nele
+        // the counter is derived: no client writes to it
         let count = reg
             .get(RULE)
             .and_then(|model| model.field("records_to_recycle_count"))

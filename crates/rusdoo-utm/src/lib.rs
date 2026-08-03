@@ -1,13 +1,13 @@
 //! rusdoo-utm — port de `odoo/addons/utm/models/`: de onde veio quem
 //! chegou.
 //!
-//! Cinco modelos pequenos que outros módulos apontam — campanha, meio,
-//! origem, estágio e etiqueta. O `utm.mixin`, que enfia `campaign_id`,
-//! `source_id` e `medium_id` em modelos de outros módulos, ficou de fora:
-//! ele é `_inherit` entre módulos, que o port ainda não tem. O que
-//! sobrou é o que existe por si — o cadastro que os links rastreiam — e
+//! Five small models other modules point at — campaign, medium, source,
+//! stage and tag. `utm.mixin`, which pushes `campaign_id`, `source_id`
+//! and `medium_id` into other modules' models, is left out: it is
+//! `_inherit` across modules, which the port does not have yet. What is
+//! left is what stands on its own — the records links track — and
 //! os dois caminhos pelos quais um link cria um registro sem pedir nada
-//! a ninguém.
+//! nobody.
 
 use rusdoo_core::RusdooError;
 use rusdoo_orm::access::Operation;
@@ -21,8 +21,8 @@ use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 
 /// Os modelos que um link rastreia (`_tracking_models` do `utm.mixin`).
-/// Sem o mixin para reuni-los, cada um responde por si — e são estes
-/// três que ganham os métodos de criação por nome.
+/// With no mixin to gather them, each answers for itself — and it is
+/// these three that get the create-by-name methods.
 const TRACKING_MODELS: [&str; 3] = ["utm.campaign", "utm.medium", "utm.source"];
 
 fn char(name: &str) -> Field {
@@ -48,7 +48,7 @@ fn meta(name: &str, table: &str) -> ModelMeta {
 }
 
 pub fn extend(reg: &mut Registry) -> Result<(), RusdooError> {
-    // estágio e etiqueta antes da campanha, que aponta para os dois
+    // stage and tag before the campaign, which points at both
     reg.register(stage())?;
     reg.register(tag())?;
     reg.register(medium())?;
@@ -57,9 +57,9 @@ pub fn extend(reg: &mut Registry) -> Result<(), RusdooError> {
     Ok(())
 }
 
-/// Os dois modos de um link virar registro: `name_create`, quando alguém
+/// The two ways a link becomes a record: `name_create`, when somebody
 /// digita um nome numa lista suspensa, e `find_or_create`, quando um
-/// clique traz um `utm_campaign=...` que talvez já exista.
+/// click carries a `utm_campaign=...` that may already exist.
 pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
     for model in TRACKING_MODELS {
         methods.register(model, "name_create", Operation::Create, name_create)?;
@@ -68,8 +68,9 @@ pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
     Ok(())
 }
 
-/// Um nome só de espaços passa pelo `required` do banco e não identifica
-/// nada — quem procurar a origem depois não acha coluna nenhuma vazia.
+/// A name of nothing but spaces gets past the database's `required` and
+/// identifies nothing — whoever looks for the source later finds no
+/// empty column to look at.
 fn name_is_filled(record: &Map<String, Value>) -> Result<(), String> {
     if is_blank(record, "name") {
         return Err("the name cannot be left blank".into());
@@ -77,8 +78,8 @@ fn name_is_filled(record: &Map<String, Value>) -> Result<(), String> {
     Ok(())
 }
 
-/// A campanha guarda o nome em `title`; `name` é o identificador
-/// derivado dele, e não adianta cobrar o segundo.
+/// A campaign keeps its name in `title`; `name` is the identifier
+/// derived from it, and there is no point demanding the second.
 fn title_is_filled(record: &Map<String, Value>) -> Result<(), String> {
     if is_blank(record, "title") {
         return Err("give the campaign a name".into());
@@ -95,7 +96,7 @@ fn is_blank(record: &Map<String, Value>, field: &str) -> bool {
         .is_empty()
 }
 
-/// `utm.stage` — em que ponto a campanha está.
+/// `utm.stage` — where the campaign stands.
 fn stage() -> Model {
     Model::new(
         meta("utm.stage", "utm_stage"),
@@ -108,14 +109,15 @@ fn stage() -> Model {
     .constrained("nome preenchido", &["name"], name_is_filled)
 }
 
-/// `utm.tag` — como o marketing separa as próprias campanhas.
+/// `utm.tag` — how marketing sorts its own campaigns.
 fn tag() -> Model {
     Model::new(
         meta("utm.tag", "utm_tag"),
         vec![
             char("name").required(),
             // o Odoo sorteia uma cor; aqui a etiqueta nasce sem nenhuma,
-            // que é o que "sem cor" significa no quadro: nada a destacar
+            // which is what "no colour" means on the board: nothing to
+            // stand out
             Field::new("color", FieldType::Integer).default_value(json!(0)),
         ],
     )
@@ -129,7 +131,7 @@ fn medium() -> Model {
         vec![
             char("name").required(),
             // arquivar em vez de apagar: um meio some das listas sem
-            // levar junto o histórico que aponta para ele
+            // take the history pointing at it along
             Field::new("active", FieldType::Boolean).default_value(json!(true)),
         ],
     )
@@ -146,12 +148,13 @@ fn source() -> Model {
     .constrained("nome preenchido", &["name"], name_is_filled)
 }
 
-/// `name` — o identificador da campanha, que acompanha o nome dado a ela.
+/// `name` — the campaign's identifier, which follows the name it was
+/// given.
 ///
-/// No Odoo ele também ganha um contador quando dois títulos coincidem;
-/// isso pede uma busca no banco, e uma função de campo computado não
-/// tem banco. Fica o espelho: uma campanha sempre tem identificador, e
-/// é ele que aparece onde alguém a referencia.
+/// In Odoo it also gets a counter when two titles coincide; that needs a
+/// database lookup, and a computed field's function has no database.
+/// What is left is the mirror: a campaign always has an identifier, and
+/// it is what shows up wherever somebody references it.
 fn campaign_name(record: &Map<String, Value>) -> Value {
     let title = record
         .get("title")
@@ -161,14 +164,14 @@ fn campaign_name(record: &Map<String, Value>) -> Value {
     json!(title)
 }
 
-/// `utm.campaign` — o esforço de marketing que se quer medir.
+/// `utm.campaign` — the marketing effort somebody wants to measure.
 fn campaign() -> Model {
     Model::new(
         meta("utm.campaign", "utm_campaign"),
         vec![
             char("title").required(),
-            // materializado: é por ele que a campanha aparece em toda
-            // referência, e uma lista de campanhas lê uma coluna
+            // materialised: it is how the campaign shows up in every
+            // reference, and a list of campaigns reads one column
             char("name").computed(&["title"], campaign_name).store(),
             m2o("user_id", "res.users").required(),
             m2o("stage_id", "utm.stage").required(),
@@ -177,14 +180,15 @@ fn campaign() -> Model {
                 FieldType::Many2many {
                     comodel: "utm.tag".into(),
                     relation: "utm_tag_rel".into(),
-                    // esta ponta primeiro, como o framework lê; o Odoo
-                    // declara as duas trocadas por herança histórica
+                    // this end first, the way the framework reads it;
+                    // Odoo declares the two swapped, for historical
+                    // reasons
                     column1: "campaign_id".into(),
                     column2: "tag_id".into(),
                 },
             ),
             // a campanha que um link criou sozinho, para o filtro separar
-            // do que alguém sentou e planejou
+            // than something somebody sat down and planned
             Field::new("is_auto_campaign", FieldType::Boolean).default_value(json!(false)),
             Field::new("color", FieldType::Integer).default_value(json!(0)),
             Field::new("active", FieldType::Boolean).default_value(json!(true)),
@@ -195,7 +199,8 @@ fn campaign() -> Model {
 
 /// Separa o nome do contador: `"Email [3]"` → `("Email", 3)`.
 ///
-/// Um nome sem contador vale 1 — é assim que o Odoo o representa, e é o
+/// A name with no counter is worth 1 — that is how Odoo represents it,
+/// and it is the
 /// que faz `"Email"` e `"Email [1]"` disputarem a mesma vaga.
 fn split_name_and_count(name: &str) -> (&str, u32) {
     let Some(rest) = name.trim_end().strip_suffix(']') else {
@@ -204,8 +209,8 @@ fn split_name_and_count(name: &str) -> (&str, u32) {
     let Some((head, digits)) = rest.rsplit_once('[') else {
         return (name, 1);
     };
-    // o colchete tem que vir depois de um espaço: em "A[2]" o número faz
-    // parte do nome, não é contador
+    // the bracket has to come after a space: in "A[2]" the number is
+    // part of the name, not a counter
     if head.trim_end() == head {
         return (name, 1);
     }
@@ -215,19 +220,20 @@ fn split_name_and_count(name: &str) -> (&str, u32) {
     }
 }
 
-/// O nome com que um registro pode nascer sem repetir um que já existe:
-/// `"Email"` vira `"Email [2]"` quando `"Email"` está lá (`_get_unique_names`).
+/// The name a record can be born with without repeating one already
+/// there: `"Email"` becomes `"Email [2]"` when `"Email"` exists
+/// (`_get_unique_names`).
 ///
 /// O contador preenche buracos em vez de sempre ir ao fim — com `"Email"`
-/// e `"Email [3]"` ocupados, o próximo é `"Email [2]"`.
+/// and `"Email [3]"` taken, the next one is `"Email [2]"`.
 fn unique_name(wanted: &str, taken: &[String]) -> String {
     let (base, asked) = split_name_and_count(wanted);
     let used: HashSet<u32> = taken
         .iter()
         .filter_map(|name| {
             let (other, count) = split_name_and_count(name);
-            // só a mesma família conta: "Email [2]" ocupa o 2 de "Email",
-            // "Emails" não ocupa nada
+            // only the same family counts: "Email [2]" takes Email's 2,
+            // "Emails" takes nothing
             (other == base).then_some(count)
         })
         .collect();
@@ -245,9 +251,9 @@ fn unique_name(wanted: &str, taken: &[String]) -> String {
 
 /// `name_create` — criar digitando um nome numa lista suspensa.
 ///
-/// O Odoo numera o nome repetido dentro do `create`; aqui não há gancho
-/// de create, então o contador mora neste caminho, que é por onde o
-/// cliente cria um registro só com um nome.
+/// Odoo numbers the repeated name inside `create`; there is no create
+/// hook here, so the counter lives on this path, which is how a client
+/// creates a record from a name alone.
 fn name_create<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -261,10 +267,10 @@ fn name_create<'a>(
     })
 }
 
-/// `find_or_create` — o registro que este nome já designa, ou um novo.
+/// `find_or_create` — the record this name already names, or a new one.
 ///
 /// É o `find_or_create_record` do `utm.mixin`: um link chega com
-/// `utm_source=Newsletter` e não pode criar uma segunda "Newsletter" a
+/// `utm_source=Newsletter` and must not create a second "Newsletter"
 /// cada clique.
 fn find_or_create<'a>(
     ctx: MethodCtx<'a>,
@@ -276,13 +282,13 @@ fn find_or_create<'a>(
         if let Some(id) = named_exactly(&ctx, &wanted).await? {
             return Ok(json!({"id": id, "name": stored_name(&ctx, id).await?}));
         }
-        // criada pelo link, não por alguém: o Odoo marca a campanha assim
+        // created by the link, not by a person: Odoo marks it this way
         let id = create_named(&ctx, &wanted, true).await?;
         Ok(json!({"id": id, "name": stored_name(&ctx, id).await?}))
     })
 }
 
-/// O nome que a chamada pediu, sem os espaços das pontas.
+/// The name the call asked for, without the surrounding spaces.
 fn wanted_name(args: &[Value], kwargs: &Map<String, Value>) -> Result<String, RusdooError> {
     let raw = args
         .first()
@@ -298,7 +304,7 @@ fn wanted_name(args: &[Value], kwargs: &Map<String, Value>) -> Result<String, Ru
     Ok(raw.to_string())
 }
 
-/// O registro cujo nome é exatamente este, sem olhar maiúsculas — e
+/// The record whose name is exactly this one, case-insensitively — and
 /// contando os arquivados, que continuam ocupando o nome.
 async fn named_exactly(ctx: &MethodCtx<'_>, name: &str) -> Result<Option<i64>, RusdooError> {
     let found = ctx
@@ -317,8 +323,8 @@ async fn named_exactly(ctx: &MethodCtx<'_>, name: &str) -> Result<Option<i64>, R
     Ok(found.first().copied())
 }
 
-/// Cria o registro a partir de um nome só, preenchendo o que o modelo
-/// exige e o chamador não tem como saber.
+/// Create the record from a name alone, filling in what the model
+/// demands and the caller has no way of knowing.
 async fn create_named(
     ctx: &MethodCtx<'_>,
     wanted: &str,
@@ -335,7 +341,8 @@ async fn create_named(
         values.push(("name", json!(available_name(ctx, wanted).await?)));
     }
     if model.field("user_id").is_some() {
-        // o responsável é quem está criando (`default=lambda: self.env.uid`)
+        // the owner is whoever is creating it
+        // (`default=lambda: self.env.uid`)
         values.push(("user_id", json!(ctx.uid)));
     }
     if model.field("stage_id").is_some() {
@@ -349,7 +356,7 @@ async fn create_named(
         .await
 }
 
-/// O nome livre mais próximo do pedido, olhando os que já existem.
+/// The free name closest to the one asked for, given what exists.
 async fn available_name(ctx: &MethodCtx<'_>, wanted: &str) -> Result<String, RusdooError> {
     let (base, _) = split_name_and_count(wanted);
     let ids = ctx
@@ -378,10 +385,11 @@ async fn available_name(ctx: &MethodCtx<'_>, wanted: &str) -> Result<String, Rus
     Ok(unique_name(wanted, &taken))
 }
 
-/// O primeiro estágio, que é o estágio em que uma campanha começa.
+/// The first stage, which is the stage a campaign starts in.
 ///
-/// O Odoo resolve isso num `default`; os defaults daqui são valores
-/// fixos, e um id não é um valor fixo — então a busca acontece aqui.
+/// Odoo settles this in a `default`; the defaults here were constants
+/// when this was written, and an id is not a constant — so the lookup
+/// happens here.
 async fn first_stage(ctx: &MethodCtx<'_>) -> Result<i64, RusdooError> {
     let found = ctx
         .registry
@@ -401,8 +409,9 @@ async fn first_stage(ctx: &MethodCtx<'_>) -> Result<i64, RusdooError> {
     })
 }
 
-/// O nome gravado, que não é necessariamente o pedido: o contador pode
-/// ter entrado, e o identificador da campanha é computado.
+/// The name that was stored, which is not necessarily the one asked
+/// for: the counter may have come in, and a campaign's identifier is
+/// computed.
 async fn stored_name(ctx: &MethodCtx<'_>, id: i64) -> Result<String, RusdooError> {
     let rows = ctx
         .registry
@@ -424,7 +433,7 @@ mod tests {
     fn a_counter_is_read_off_the_end_of_the_name() {
         assert_eq!(split_name_and_count("Email"), ("Email", 1));
         assert_eq!(split_name_and_count("Email [3]"), ("Email", 3));
-        // sem espaço antes do colchete o número é parte do nome
+        // with no space before the bracket the number is part of the name
         assert_eq!(split_name_and_count("Email[3]"), ("Email[3]", 1));
         assert_eq!(split_name_and_count("Email [x]"), ("Email [x]", 1));
         assert_eq!(split_name_and_count("[3]"), ("[3]", 1));
@@ -433,7 +442,7 @@ mod tests {
     #[test]
     fn a_free_name_is_kept_as_it_was_asked() {
         assert_eq!(unique_name("Email", &[]), "Email");
-        // outra família não ocupa vaga nenhuma
+        // another family takes no slot at all
         assert_eq!(unique_name("Email", &["Emails".into()]), "Email");
     }
 
@@ -441,9 +450,9 @@ mod tests {
     fn a_taken_name_gets_the_first_free_counter() {
         let taken = vec!["Email".to_string(), "Email [3]".to_string()];
         assert_eq!(unique_name("Email", &taken), "Email [2]");
-        // pedir o 3, que está ocupado, cai no primeiro buraco
+        // asking for 3, which is taken, falls into the first gap
         assert_eq!(unique_name("Email [3]", &taken), "Email [2]");
-        // e pedir um contador livre é atendido como pedido
+        // and asking for a free counter is answered as asked
         assert_eq!(unique_name("Email [9]", &taken), "Email [9]");
     }
 
@@ -460,11 +469,11 @@ mod tests {
         ] {
             assert!(reg.get(name).is_some(), "{name} must be registered");
         }
-        // o identificador é materializado: uma lista de campanhas lê coluna
+        // the identifier is materialised: a list of campaigns reads a column
         let campaign = reg.get("utm.campaign").expect("campanha registrada");
         let name = campaign.field("name").expect("campanha tem identificador");
         assert!(name.stored && name.compute.is_some());
-        // e é o `title` que alguém digita, então é ele que é obrigatório
+        // and `title` is what a person types, so it is the required one
         assert!(campaign.field("title").expect("has a title").required);
         assert!(!name.required, "the identifier is filled by the recompute");
     }
@@ -480,7 +489,7 @@ mod tests {
                 "{model}"
             );
         }
-        // a etiqueta e o estágio não são rastreados por link nenhum
+        // the tag and the stage are tracked by no link
         assert!(methods.names_for("utm.tag").is_empty());
     }
 }

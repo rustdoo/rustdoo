@@ -1,17 +1,18 @@
 //! rusdoo-barcodes — port de `odoo/addons/barcodes/models/`: o que
 //! acontece entre o bipe do leitor e o sistema saber o que foi lido.
 //!
-//! Uma *nomenclatura* é um conjunto de *regras*; cada regra diz "um
-//! código com esta cara é um produto" — e, quando a balança embutiu peso
-//! ou preço no código, onde esse número está. Decodificar é passar as
-//! regras na ordem até uma casar.
+//! A *nomenclature* is a set of *rules*; each rule says "a code that
+//! looks like this is a product" — and, when the scale embedded weight
+//! or price in the code, where that number is. Decoding is walking the
+//! rules in order until one matches.
 //!
-//! Três coisas do módulo original não vieram, e é melhor dizer do que
-//! fingir: o mixin de eventos de teclado (`barcode.events`), que é
-//! JavaScript de cliente e não tem modelo nem tabela; a nomenclatura
+//! Three things from the original module did not come across, and it is
+//! better to say so than to pretend: the keyboard-event mixin
+//! (`barcode.events`), which is client JavaScript with no model and no
+//! table; the nomenclature
 //! escolhida por empresa, que o Odoo enxerta em `res.company` com
-//! `_inherit` de outro módulo; e a trava que impede apagar a
-//! nomenclatura padrão, que precisaria de um gancho de exclusão.
+//! `_inherit` from another module; and the lock that stops the default
+//! nomenclature from being deleted, which would need an unlink hook.
 
 use rusdoo_core::RusdooError;
 use rusdoo_orm::access::Operation;
@@ -49,9 +50,9 @@ pub fn extend(reg: &mut Registry) -> Result<(), RusdooError> {
     Ok(())
 }
 
-/// O que a nomenclatura sabe fazer: ler um código.
+/// What a nomenclature knows how to do: read a code.
 pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
-    // decodificar não muda nada; quem só lê o estoque também pode bipar
+    // decoding changes nothing; whoever only reads stock may scan too
     methods.register(
         "barcode.nomenclature",
         "parse_barcode",
@@ -74,12 +75,12 @@ fn nomenclature() -> Model {
                     inverse: "barcode_nomenclature_id".into(),
                 },
             ),
-            // Guardada, não aplicada. No Odoo 19 a conversão nunca chega
-            // a acontecer: a codificação é conferida contra o código
-            // original, e um EAN-13 convertido de UPC-A começa em zero —
-            // o que, por definição, não é um EAN-13. Manter o campo é
-            // manter a configuração de quem migra; escrever o branch
-            // seria escrever código que não roda.
+            // Stored, not applied. In Odoo 19 the conversion never
+            // actually happens: the encoding is checked against the
+            // original code, and an EAN-13 converted from a UPC-A starts
+            // with zero — which, by definition, is not an EAN-13.
+            // Keeping the field keeps the setting of whoever migrates;
+            // writing the branch would be writing code that never runs.
             Field::new(
                 "upc_ean_conv",
                 FieldType::Selection(vec![
@@ -95,13 +96,13 @@ fn nomenclature() -> Model {
     )
 }
 
-/// O padrão de uma regra precisa ser aplicável antes de ser gravado.
+/// A rule's pattern has to be usable before it is stored.
 fn pattern_is_usable(record: &Map<String, Value>) -> Result<(), String> {
     let pattern = record.get("pattern").and_then(Value::as_str).unwrap_or("");
     pattern::check_pattern(pattern)
 }
 
-/// `barcode.rule` — uma cara de código e o que ela significa.
+/// `barcode.rule` — a shape of code and what it means.
 fn rule() -> Model {
     Model::new(
         meta("barcode.rule", "barcode_rule"),
@@ -113,8 +114,8 @@ fn rule() -> Model {
                     comodel: "barcode.nomenclature".into(),
                 },
             ),
-            // menor primeiro: é o desempate entre duas regras que casam o
-            // mesmo código
+            // lowest first: it is the tie-break between two rules that
+            // match the same code
             Field::new("sequence", FieldType::Integer).default_value(json!(10)),
             Field::new(
                 "encoding",
@@ -143,10 +144,11 @@ fn rule() -> Model {
     .constrained("usable pattern", &["pattern"], pattern_is_usable)
 }
 
-/// `parse_barcode` — o que este código lido é?
+/// `parse_barcode` — what is this scanned code?
 ///
-/// A resposta é um objeto (`type`, `code`, `base_code`, `value`) quando
-/// o código passou pelas regras, e uma *lista* quando era uma URI de
+/// The answer is an object (`type`, `code`, `base_code`, `value`) when
+/// the code went through the rules, and a *list* when it was a URI
+/// from
 /// RFID: uma URI carrega o produto e o lote de uma vez.
 fn parse_barcode<'a>(
     ctx: MethodCtx<'a>,
@@ -159,7 +161,7 @@ fn parse_barcode<'a>(
                 "scan with one nomenclature at a time".into(),
             ));
         };
-        // os argumentos do método vêm depois do conjunto de registros
+        // the method's arguments come after the recordset
         let barcode = ctx
             .rest
             .first()
@@ -167,7 +169,8 @@ fn parse_barcode<'a>(
             .and_then(Value::as_str)
             .ok_or_else(|| RusdooError::Validation("give the barcode that was scanned".into()))?;
 
-        // uma URI de RFID não passa pelas regras: ela já diz o que carrega
+        // an RFID URI does not go through the rules: it already says
+        // what it carries
         if let Some(parts) = decode::parse_uri(barcode) {
             return Ok(Value::Array(
                 parts.iter().map(decode::Parsed::to_json).collect(),
@@ -180,9 +183,10 @@ fn parse_barcode<'a>(
 
 /// As regras da nomenclatura, na ordem em que valem.
 ///
-/// A ordem é o que decide qual regra ganha quando duas casam o mesmo
-/// código, então ela vem do `search` (`sequence`, e o id para desempatar)
-/// e não da ordem em que o banco devolveu as linhas — `read` não promete
+/// The order is what decides which rule wins when two match the same
+/// code, so it comes from the `search` (`sequence`, and the id to break
+/// ties) and not from the order the database handed the rows back —
+/// `read` promises
 /// ordem nenhuma.
 async fn rules_of(ctx: &MethodCtx<'_>, nomenclature: i64) -> Result<Vec<Rule>, RusdooError> {
     let ids = ctx
@@ -231,7 +235,7 @@ mod tests {
         for name in ["barcode.nomenclature", "barcode.rule"] {
             assert!(reg.get(name).is_some(), "{name} must be registered");
         }
-        // uma regra sem padrão não filtra nada
+        // a rule with no pattern filters nothing
         let pattern = reg.get("barcode.rule").unwrap().field("pattern").unwrap();
         assert!(pattern.required);
         assert_eq!(pattern.default, Some(json!(".*")));

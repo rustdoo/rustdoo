@@ -1,27 +1,28 @@
-//! O padrão de uma regra: uma regular expression que casa o começo do
-//! código, com um trecho entre chaves onde a balança ou a etiquetadora
-//! escreveram um número.
+//! A rule's pattern: a regular expression matching the start of the
+//! code, with a stretch in braces where the scale or the label printer
+//! wrote a number.
 //!
-//! `2.....{NNNDD}` lê "os códigos que começam em 2, e do sétimo dígito
-//! em diante vem um valor com três inteiros e duas casas". O que sobra
-//! quando esse valor é zerado é o código gravado no produto.
+//! `2.....{NNNDD}` reads "codes that start with 2, and from the seventh
+//! digit on comes a value with three integers and two decimals". What is
+//! left when that value is zeroed is the code stored on the product.
 
 use regex::Regex;
 
-/// O que casar um padrão contra um código revelou.
+/// What matching a pattern against a code revealed.
 pub struct PatternMatch {
     pub matched: bool,
-    /// o número embutido no código, zero quando o padrão não embute nenhum
+    /// the number embedded in the code, zero when the pattern embeds none
     pub value: f64,
-    /// o código com o trecho numérico zerado — é este que está no produto
+    /// the code with the numeric stretch zeroed — this is the one on the
+    /// product
     pub base_code: String,
 }
 
-/// Onde fica o trecho numérico do padrão: o primeiro `{N…D…}`.
+/// Where the pattern's numeric stretch is: the first `{N…D…}`.
 ///
-/// Devolve as posições em caracteres, abrindo no `{` e fechando depois
-/// do `}`. Sem N nem D também conta (`{}`), porque quem recusa isso é a
-/// constraint da regra, e não este scanner.
+/// Answers the positions in characters, opening at the `{` and closing
+/// after the `}`. With neither N nor D it still counts (`{}`), because
+/// what refuses that is the rule's constraint, not this scanner.
 fn numeric_span(pattern: &str) -> Option<(usize, usize)> {
     let chars: Vec<char> = pattern.chars().collect();
     for start in 0..chars.len() {
@@ -42,11 +43,12 @@ fn numeric_span(pattern: &str) -> Option<(usize, usize)> {
     None
 }
 
-/// A regular expression que o padrão realmente vira: o trecho numérico
-/// trocado pelos zeros que ele ocupa no código base.
+/// The regular expression the pattern really becomes: the numeric
+/// stretch swapped for the zeros it occupies in the base code.
 ///
-/// O casamento é sempre contra o código já zerado, então é este texto —
-/// e não o padrão como foi escrito — que precisa compilar. É por isso
+/// The match always runs against the already-zeroed code, so it is this
+/// text — and not the pattern as written — that has to compile. That is
+/// why
 /// que a constraint da regra valida exatamente ele.
 fn effective_regex(pattern: &str) -> String {
     let Some((start, end)) = numeric_span(pattern) else {
@@ -58,10 +60,10 @@ fn effective_regex(pattern: &str) -> String {
     format!("{head}{}{tail}", "0".repeat(end - start - 2))
 }
 
-/// Casa um código contra um padrão e extrai o número que ele embutia.
+/// Match a code against a pattern and extract the number it embedded.
 ///
-/// O padrão casa um *prefixo* do código (é assim no Odoo: `re.match`),
-/// e o código é cortado no comprimento do padrão antes da comparação.
+/// The pattern matches a *prefix* of the code (as in Odoo: `re.match`),
+/// and the code is cut to the pattern's length before the comparison.
 pub fn match_pattern(barcode: &str, pattern: &str) -> PatternMatch {
     let code: Vec<char> = barcode.chars().collect();
     let mut value = 0.0;
@@ -75,8 +77,8 @@ pub fn match_pattern(barcode: &str, pattern: &str) -> PatternMatch {
             .collect();
         let decimals = inside.iter().filter(|c| **c == 'D').count();
         let whole_len = inside.len() - decimals;
-        // o trecho do código que fica sob as chaves; um código mais curto
-        // que o padrão simplesmente entrega menos dígitos
+        // the stretch of the code lying under the braces; a code shorter
+        // than the pattern simply hands over fewer digits
         let digits: Vec<char> = code
             .iter()
             .skip(start)
@@ -90,8 +92,9 @@ pub fn match_pattern(barcode: &str, pattern: &str) -> PatternMatch {
         } else {
             whole
         };
-        // se ali não havia número, não há valor a extrair nem código base
-        // a montar: a regra ainda pode não casar, e é o regex que decide
+        // if there was no number there, there is no value to extract and
+        // no base code to build: the rule may still not match, and it is
+        // the regex that decides
         if whole.chars().all(|c| c.is_ascii_digit()) {
             let integer: f64 = whole.parse().unwrap_or(0.0);
             let fraction: f64 = format!("0.{decimal}").parse().unwrap_or(0.0);
@@ -107,8 +110,8 @@ pub fn match_pattern(barcode: &str, pattern: &str) -> PatternMatch {
         .chars()
         .take(effective.chars().count())
         .collect::<String>();
-    // um padrão que não compila não casa com nada; a constraint da regra
-    // impede que um desses chegue até aqui
+    // a pattern that does not compile matches nothing; the rule's
+    // constraint keeps one of those from reaching here
     let matched = Regex::new(&format!("^(?:{effective})"))
         .map(|regex| regex.is_match(&subject))
         .unwrap_or(false);
@@ -120,15 +123,15 @@ pub fn match_pattern(barcode: &str, pattern: &str) -> PatternMatch {
     }
 }
 
-/// O padrão de uma regra é utilizável?
+/// Is a rule's pattern usable?
 ///
-/// A recusa acontece na gravação da regra, não na leitura de um código:
-/// um padrão quebrado descoberto no balcão é uma venda parada, e ninguém
-/// ali vai saber que o problema é uma chave a mais numa tela de
-/// configuração.
+/// The refusal happens when the rule is saved, not when a code is
+/// scanned: a broken pattern discovered at the counter is a sale that
+/// stops, and nobody there is going to know the problem is one brace too
+/// many on a settings screen.
 pub fn check_pattern(pattern: &str) -> Result<(), String> {
-    // chaves escapadas fazem parte do texto a casar, não delimitam o
-    // trecho numérico: saem da contagem
+    // escaped braces are part of the text to match, they do not delimit
+    // the numeric stretch: they leave the count
     let bare = pattern
         .replace("\\\\", "X")
         .replace("\\{", "X")
@@ -184,7 +187,7 @@ mod tests {
 
     #[test]
     fn decimals_come_after_the_whole_part() {
-        // 1020034051259: do décimo dígito em diante, 12 com uma casa
+        // 1020034051259: from the tenth digit on, 12 with one decimal
         let hit = match_pattern("1020034051259", "1........{NND}.");
         assert!(hit.matched);
         assert_eq!(hit.value, 12.5);
@@ -203,8 +206,8 @@ mod tests {
         assert_eq!(hit.value, 4.0);
         assert_eq!(hit.base_code, "11012340");
 
-        // o mesmo padrão contra um código de outro prefixo não casa,
-        // mesmo tendo extraído um valor
+        // the same pattern against a code with another prefix does not
+        // match, even having extracted a value
         assert!(!match_pattern("66012344", "11.....{N}").matched);
     }
 
@@ -225,7 +228,7 @@ mod tests {
 
     #[test]
     fn a_pattern_the_server_cannot_apply_is_refused() {
-        // chaves vazias: quantos dígitos?
+        // empty braces: how many digits?
         assert!(check_pattern("......{}..")
             .unwrap_err()
             .contains("empty braces"));
@@ -233,13 +236,13 @@ mod tests {
         assert!(check_pattern("......{DN}")
             .unwrap_err()
             .contains("N followed by D"));
-        // dois valores numa regra só
+        // two values in a single rule
         assert!(check_pattern("....{NN}{DD}")
             .unwrap_err()
             .contains("more than one pair"));
-        // '*' sozinho é o erro que todo mundo comete
+        // '*' on its own is the mistake everybody makes
         assert!(check_pattern("*").unwrap_err().contains("'.*'"));
-        // e o que nem regex é
+        // and what is not even a regex
         assert!(check_pattern("**>>>{ND}")
             .unwrap_err()
             .contains("regular expression"));

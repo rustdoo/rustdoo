@@ -1,28 +1,28 @@
-//! Decodificar um código lido: passar as regras da nomenclatura, na
-//! ordem, até uma casar — e dizer o que aquilo é.
+//! Decoding a scanned barcode: walk the nomenclature's rules, in order,
+//! until one matches — and say what the thing is.
 //!
-//! Puro de propósito: a decisão de o que um código significa não toca o
-//! banco, e por isso pode ser testada com o código de um pacote de
+//! Pure on purpose: deciding what a barcode means touches no database,
+//! and can therefore be tested with the code off a packet of
 //! bolacha e nada mais.
 
 use crate::gtin::{check_digit, check_encoding, sanitize_ean, sanitize_upc};
 use crate::pattern::match_pattern;
 use serde_json::{json, Map, Value};
 
-/// Uma regra da nomenclatura, do jeito que a decodificação precisa dela.
+/// A nomenclature rule, in the shape decoding needs it.
 pub struct Rule {
     pub encoding: String,
-    /// o `type` do Odoo: `alias` (troca o código por outro) ou `product`
+    /// Odoo's `type`: `alias` (swaps the code for another) or `product`
     pub kind: String,
     pub pattern: String,
     pub alias: String,
 }
 
-/// O que a leitura de um código virou.
+/// What a scan turned into.
 pub struct Parsed {
     pub encoding: String,
     /// `error` quando nenhuma regra casou — o leitor bipou algo que esta
-    /// nomenclatura não sabe ler
+    /// nomenclature cannot read
     pub kind: String,
     pub code: String,
     pub base_code: String,
@@ -41,7 +41,7 @@ impl Parsed {
         }
     }
 
-    /// A forma que o cliente recebe, igual à do Odoo.
+    /// The shape the client receives, the same as Odoo's.
     pub fn to_json(&self) -> Value {
         json!({
             "encoding": self.encoding,
@@ -54,10 +54,11 @@ impl Parsed {
 }
 
 /// Passa `barcode` pelas regras, na ordem em que vieram, e devolve o que
-/// a primeira que casar disser que ele é.
+/// the first matching one says it is.
 ///
-/// A ordem é a resposta: duas regras podem casar o mesmo código, e é a
-/// de menor `sequence` que vale. Quem ordena é quem lê as regras do
+/// The order is the answer: two rules can match the same code, and the
+/// one with the lower `sequence` wins. The ordering is done by whoever
+/// reads the rules out of
 /// banco.
 pub fn parse_nomenclature(rules: &[Rule], barcode: &str) -> Parsed {
     let mut result = Parsed::unknown(barcode);
@@ -71,7 +72,7 @@ pub fn parse_nomenclature(rules: &[Rule], barcode: &str) -> Parsed {
             continue;
         }
         if rule.kind == "alias" {
-            // um alias não classifica nada: troca o código lido por outro
+            // an alias classifies nothing: it swaps the scanned code
             // e deixa as regras seguintes classificarem esse
             code = rule.alias.clone();
             result.code = code.clone();
@@ -81,8 +82,8 @@ pub fn parse_nomenclature(rules: &[Rule], barcode: &str) -> Parsed {
         result.kind = rule.kind.clone();
         result.value = json!(hit.value);
         result.code = code.clone();
-        // zerar o trecho numérico quebrou o dígito verificador; o código
-        // gravado no produto é o que fecha de novo
+        // zeroing the numeric part broke the check digit; the code
+        // stored on the product is the one that adds up again
         result.base_code = match rule.encoding.as_str() {
             "ean13" => sanitize_ean(&hit.base_code),
             "upca" => sanitize_upc(&hit.base_code),
@@ -93,14 +94,14 @@ pub fn parse_nomenclature(rules: &[Rule], barcode: &str) -> Parsed {
     result
 }
 
-/// As URIs EPC que uma antena RFID entrega, convertidas nos códigos que
+/// The EPC URIs an RFID antenna hands over, converted into the codes
 /// elas carregam.
 ///
 /// Uma URI traz mais de uma coisa — o produto *e* o lote —, por isso a
-/// resposta é uma lista, e por isso ela não passa pelas regras: a URI já
-/// diz o que cada pedaço é.
+/// answer is a list, and so it does not go through the rules: the URI
+/// already says what each piece is.
 ///
-/// `None` quando não é uma URI que sabemos ler; aí o código volta para o
+/// `None` when it is not a URI we can read; the code then goes back to
 /// caminho normal em vez de virar um resultado inventado.
 pub fn parse_uri(barcode: &str) -> Option<Vec<Parsed>> {
     let trimmed = barcode.trim();
@@ -112,7 +113,7 @@ pub fn parse_uri(barcode: &str) -> Option<Vec<Parsed>> {
     let data: Vec<&str> = parts.last()?.trim().split('.').collect();
     match identifier {
         "lgtin" | "sgtin" => gtin_uri(trimmed, &data),
-        // as versões etiquetadas trazem um filtro na frente que não é dado
+        // the tagged forms carry a filter in front that is not data
         "sgtin-96" | "sgtin-198" => gtin_uri(trimmed, data.get(1..)?),
         "sscc" => sscc_uri(trimmed, &data),
         "sscc-96" => sscc_uri(trimmed, data.get(1..)?),
@@ -120,15 +121,15 @@ pub fn parse_uri(barcode: &str) -> Option<Vec<Parsed>> {
     }
 }
 
-/// O verificador de um código que ainda não tem lugar para ele: o zero
+/// The check digit of a code that has no room for it yet: the zero
 /// no fim ocupa a casa que o algoritmo ignora.
 fn closed(code: &str) -> Option<String> {
     let digit = check_digit(&format!("{code}0"))?;
     Some(format!("{code}{digit}"))
 }
 
-/// SGTIN/LGTIN: prefixo da empresa, referência do item com o indicador
-/// na frente, e o lote ou número de série.
+/// SGTIN/LGTIN: the company prefix, the item reference with the
+/// indicator in front, and the lot or serial number.
 fn gtin_uri(base_code: &str, data: &[&str]) -> Option<Vec<Parsed>> {
     let [company_prefix, item_ref, tracking_number] = data else {
         return None;
@@ -154,8 +155,8 @@ fn gtin_uri(base_code: &str, data: &[&str]) -> Option<Vec<Parsed>> {
     ])
 }
 
-/// SSCC: prefixo da empresa e a referência serial, com a extensão na
-/// frente. Identifica um volume, não um produto.
+/// SSCC: the company prefix and the serial reference, with the
+/// extension in front. It identifies one volume, not a product.
 fn sscc_uri(base_code: &str, data: &[&str]) -> Option<Vec<Parsed>> {
     let [company_prefix, serial_reference] = data else {
         return None;
@@ -173,7 +174,7 @@ fn sscc_uri(base_code: &str, data: &[&str]) -> Option<Vec<Parsed>> {
 }
 
 /// Uma regra lida do banco. Um campo que voltou nulo vira o vazio: a
-/// decodificação não é lugar de descobrir que a regra está incompleta.
+/// decoding is no place to discover that a rule is incomplete.
 pub fn rule_from(row: &Map<String, Value>) -> Rule {
     let text = |name: &str| {
         row.get(name)
@@ -212,7 +213,7 @@ mod tests {
         assert_eq!(parsed.encoding, "");
         assert_eq!(parsed.code, "0002");
 
-        // oito dígitos, mas o verificador não fecha: foi lido errado
+        // eight digits, but the check digit does not add up: misread
         let parsed = parse_nomenclature(&rules, "12345678");
         assert_eq!(parsed.kind, "error", "the checksum is what rejects it");
 
@@ -228,12 +229,12 @@ mod tests {
     fn the_first_rule_that_matches_wins() {
         let rules = [rule("ean8", "11.....{N}"), rule("ean8", "66{NN}....")];
 
-        // só a segunda casa
+        // the second decimal only
         let parsed = parse_nomenclature(&rules, "66012344");
         assert_eq!(parsed.value, json!(1.0));
         assert_eq!(parsed.base_code, "66002344");
 
-        // só a primeira casa
+        // the first decimal only
         let parsed = parse_nomenclature(&rules, "11012344");
         assert_eq!(parsed.value, json!(4.0));
         assert_eq!(parsed.base_code, "11012340");
@@ -289,7 +290,7 @@ mod tests {
         assert_eq!(parts[0].value, json!("09521141123454"));
         assert_eq!(parts[1].value, json!("4711"));
 
-        // a forma etiquetada traz um filtro na frente, que não é dado
+        // the tagged form carries a filter in front, which is not data
         let parts = parse_uri("urn:epc:tag:sgtin-96 : 1.358378.0728089.620776").expect("uma URI");
         assert_eq!(parts[0].value, json!("03583787280898"));
         assert_eq!(parts[1].value, json!("620776"));
@@ -305,11 +306,12 @@ mod tests {
 
     #[test]
     fn what_is_not_a_uri_we_know_goes_back_to_the_rules() {
-        // um código comum não é URI nenhuma
+        // an ordinary code is no URI at all
         assert!(parse_uri("12345670").is_none());
-        // uma URN de outra coisa não vira resultado inventado
+        // a URN of something else does not become an invented result
         assert!(parse_uri("urn:isbn:0451450523").is_none());
-        // e uma que tem o identificador certo com dados de menos também não
+        // and one with the right identifier but too little data does not
+        // either
         assert!(parse_uri("urn:epc:id:sgtin:9521141.012345").is_none());
     }
 }

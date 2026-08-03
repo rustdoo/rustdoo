@@ -1,15 +1,17 @@
 //! rusdoo-account-debit-note — port de `odoo/addons/account_debit_note/`:
-//! a nota de débito.
+//! the debit note.
 //!
-//! Uma nota de débito cobra a mais sobre uma fatura já lançada. Ela não
-//! é uma fatura solta: guarda o vínculo com o documento que corrigiu, e
-//! é por esse vínculo que alguém, meses depois, entende por que o mesmo
+//! A debit note charges extra on an invoice that is already posted. It
+//! is not a loose invoice: it keeps the link to the document it
+//! corrected, and it is by that link that somebody, months later,
+//! understands why the same
 //! cliente foi cobrado duas vezes. Cancelar a fatura e emitir outra
-//! apagaria essa história — é justamente o que a nota existe para evitar.
+//! would erase that history — which is exactly what the note exists to
+//! avoid.
 //!
-//! O caminho é o do Odoo: um assistente recebe as faturas escolhidas,
+//! The path is Odoo's: a wizard takes the chosen invoices,
 //! pergunta a data, o motivo e se as linhas devem vir junto, e devolve a
-//! ação que abre o que criou.
+//! action that opens what it created.
 
 use rusdoo_core::RusdooError;
 use rusdoo_orm::access::Operation;
@@ -19,16 +21,16 @@ use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
 
-/// A série própria das notas de débito (`ir.sequence`), para que uma
-/// nota não consuma um número da série das faturas: quem confere a
-/// numeração de um mês não deve encontrar buracos porque houve
-/// correções. É o que o Odoo faz prefixando "D" no número quando o
-/// diário está marcado com `debit_sequence` — o padrão dos diários de
+/// The debit notes' own series (`ir.sequence`), so that a note does not
+/// consume a number from the invoices' series: whoever checks a month's
+/// numbering should not find gaps because there were corrections. It is
+/// what Odoo does by prefixing "D" to the number when the journal is
+/// marked `debit_sequence` — the default for
 /// venda e de compra.
 const DEBIT_SEQUENCE: &str = "account.move.debit";
 
-/// O que se debita. O Odoo aceita também nota de crédito (`out_refund`,
-/// `in_refund`), tipos que o `account.move` do port ainda não tem.
+/// What can be debited. Odoo also accepts credit notes (`out_refund`,
+/// `in_refund`), types the port's `account.move` does not have yet.
 const DEBITABLE: [&str; 2] = ["out_invoice", "in_invoice"];
 
 fn char(name: &str) -> Field {
@@ -44,7 +46,7 @@ fn m2o(name: &str, comodel: &str) -> Field {
     )
 }
 
-/// O id dentro de um many2one, que se lê como `[id, nome]`.
+/// The id inside a many2one, which reads as `[id, name]`.
 fn first_id(value: &Value) -> Option<i64> {
     match value {
         Value::Array(items) => items.first().and_then(Value::as_i64),
@@ -55,14 +57,14 @@ fn first_id(value: &Value) -> Option<i64> {
 
 /// Hoje, como a data viaja no protocolo (`YYYY-MM-DD`).
 ///
-/// O Odoo usa o fuso do usuário (`fields.Date.context_today`); o port
-/// ainda não tem contexto, então é UTC — e quem abre o assistente vê a
-/// data e pode trocá-la.
+/// Odoo uses the user's timezone (`fields.Date.context_today`); there
+/// is no timezone on `res.users` here yet, so this is UTC — and whoever
+/// opens the wizard sees the date and can change it.
 fn today() -> String {
     chrono::Utc::now().date_naive().to_string()
 }
 
-/// `debit_note_count` — quantas notas de débito saíram desta fatura.
+/// `debit_note_count` — how many debit notes came out of this invoice.
 fn debit_note_count(record: &Map<String, Value>) -> Value {
     let notes = record
         .get("debit_note_ids")
@@ -77,9 +79,9 @@ pub fn extend(reg: &mut Registry) -> Result<(), RusdooError> {
     Ok(())
 }
 
-/// Os botões da nota de débito: os dois na fatura e o do diálogo.
+/// The debit note's buttons: the two on the invoice and the dialog's.
 pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
-    // abrir um diálogo e listar não mexem na fatura: pedem leitura
+    // opening a dialog and listing do not touch the invoice: they read
     methods.register(
         "account.move",
         "action_debit_note",
@@ -112,9 +114,10 @@ fn debited_move() -> Model {
             inherits: vec![],
         },
         vec![
-            // não é `readonly` aqui, ao contrário do Odoo: neste ORM
-            // `readonly` proíbe a escrita, e é o assistente que preenche
-            // o vínculo. Quem protege o campo na tela é o arch do form.
+            // not `readonly` here, unlike Odoo: in this ORM `readonly`
+            // forbids the write, and it is the wizard that fills the
+            // link in. What protects the field on screen is the form's
+            // arch.
             m2o("debit_origin_id", "account.move"),
             Field::new(
                 "debit_note_ids",
@@ -123,9 +126,10 @@ fn debited_move() -> Model {
                     inverse: "debit_origin_id".into(),
                 },
             ),
-            // não materializado: a contagem muda quando OUTRO registro
-            // grava seu `debit_origin_id`, e o recompute só acompanha os
-            // campos de quem está sendo gravado — uma coluna aqui
+            // not materialised: the count changes when ANOTHER record
+            // writes its `debit_origin_id`, and the recompute only
+            // follows the fields of whatever is being written — a column
+            // here
             // envelheceria calada
             Field::new("debit_note_count", FieldType::Integer)
                 .computed(&["debit_note_ids"], debit_note_count),
@@ -133,10 +137,10 @@ fn debited_move() -> Model {
     )
 }
 
-/// `account.debit.note` — o diálogo que emite a nota.
+/// `account.debit.note` — the dialog that issues the note.
 ///
-/// Um `TransientModel`: a linha é o estado de um diálogo aberto, não
-/// algo que o negócio guarda. O many2many é o que permite debitar um
+/// A `TransientModel`: the row is the state of an open dialog, not
+/// something the business keeps. The many2many is what allows debiting
 /// lote de faturas de uma vez, como no Odoo.
 fn debit_note_wizard() -> Model {
     Model::new(
@@ -158,18 +162,19 @@ fn debit_note_wizard() -> Model {
             ),
             Field::new("date", FieldType::Date).required(),
             char("reason"),
-            // desmarcado por padrão: a nota costuma cobrar um item novo
-            // (um frete esquecido), não repetir o que já foi cobrado
+            // unticked by default: a note usually charges something new
+            // (a forgotten freight), not a repeat of what was charged
             Field::new("copy_lines", FieldType::Boolean).default_value(json!(false)),
         ],
     )
     .transient()
 }
 
-/// Por que esta fatura não vira nota de débito.
+/// Why this invoice does not become a debit note.
 ///
-/// Vale nas duas pontas: ao abrir o diálogo, para ninguém preencher um
-/// formulário que vai falhar; e ao criar, porque entre uma coisa e
+/// It holds at both ends: when the dialog opens, so nobody fills in a
+/// form that is going to fail; and at create time, because between one
+/// and
 /// outra a fatura pode ter sido cancelada.
 fn refuse_undebitable(row: &Map<String, Value>) -> Result<(), RusdooError> {
     let name = row.get("name").and_then(Value::as_str).unwrap_or("");
@@ -193,12 +198,14 @@ fn refuse_undebitable(row: &Map<String, Value>) -> Result<(), RusdooError> {
     Ok(())
 }
 
-/// `action_debit_note` — abre o diálogo já apontando as faturas.
+/// `action_debit_note` — opens the dialog already pointing at the
+/// invoices.
 ///
-/// O Odoo passa a seleção pelo contexto (`active_ids`) e a lê no
+/// Odoo passes the selection through the context (`active_ids`) and
+/// reads it in
 /// `default_get`; aqui o registro do assistente nasce apontando, como no
-/// assistente de cancelamento de `sale`. É a mesma decisão tomada onde a
-/// fatura já está, e o diálogo não tem como abrir apontando para nada.
+/// `sale`'s cancel wizard. It is the same decision taken where the
+/// invoice already is, and the dialog cannot open pointing at nothing.
 fn action_debit_note<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -240,13 +247,13 @@ fn action_debit_note<'a>(
             "res_model": "account.debit.note",
             "res_id": wizard,
             "views": [[false, "form"]],
-            // um diálogo sobre a fatura, não uma tela que a substitui
+            // a dialog about the invoice, not a screen replacing it
             "target": "new",
         }))
     })
 }
 
-/// `action_view_debit_notes` — as notas que saíram desta fatura.
+/// `action_view_debit_notes` — the notes that came out of this invoice.
 fn action_view_debit_notes<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -269,7 +276,7 @@ fn action_view_debit_notes<'a>(
     })
 }
 
-/// `create_debit` — o botão do diálogo: emite a nota de cada fatura.
+/// `create_debit` — the dialog's button: issues each invoice's note.
 fn create_debit<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -301,8 +308,9 @@ fn create_debit<'a>(
                 "the wizard points at no invoice: there is nothing to debit".into(),
             ));
         }
-        // a data da nota é a do assistente, não a da fatura debitada: a
-        // cobrança nasce hoje, ainda que corrija um documento antigo
+        // the note's date is the wizard's, not the debited invoice's:
+        // the charge is born today, even when it corrects an old
+        // document
         let date = wizard
             .get("date")
             .and_then(Value::as_str)
@@ -336,7 +344,7 @@ fn create_debit<'a>(
                 ],
             )
             .await?;
-        // uma fatura apagada enquanto o diálogo estava aberto sumiria da
+        // an invoice deleted while the dialog was open would vanish from
         // leitura, e o lote sairia menor do que quem clicou pediu
         if moves.len() != move_ids.len() {
             return Err(RusdooError::Validation(
@@ -344,8 +352,8 @@ fn create_debit<'a>(
             ));
         }
         // tudo conferido antes de criar qualquer coisa: um lote que para
-        // no meio deixa notas emitidas e um erro na tela, e ninguém sabe
-        // quais saíram
+        // halfway leaves notes issued and an error on screen, and
+        // nobody knows which ones came out
         for row in &moves {
             refuse_undebitable(row)?;
         }
@@ -355,7 +363,7 @@ fn create_debit<'a>(
             created.push(emit_note(&ctx, row, &date, reason.as_deref(), copy_lines).await?);
         }
 
-        // uma só nota abre direto; um lote abre a lista do que saiu
+        // a single note opens straight away; a batch opens the list
         if let [only] = created[..] {
             return Ok(json!({
                 "type": "ir.actions.act_window",
@@ -377,10 +385,10 @@ fn create_debit<'a>(
     })
 }
 
-/// A nota de débito de uma fatura, devolvendo o id do que foi criado.
+/// One invoice's debit note, answering the id of what was created.
 ///
 /// Ela nasce rascunho, como qualquer documento: quem emitiu ainda vai
-/// olhar o que está cobrando antes de lançar.
+/// look at what is being charged before posting.
 async fn emit_note(
     ctx: &MethodCtx<'_>,
     origin: &Map<String, Value>,
@@ -393,8 +401,9 @@ async fn emit_note(
         .and_then(Value::as_i64)
         .ok_or_else(|| RusdooError::Validation("the source invoice is gone".into()))?;
     let name = origin.get("name").and_then(Value::as_str).unwrap_or("");
-    // o motivo entra na referência junto do número da origem: é o que
-    // aparece no extrato do cliente, e sozinho o número não explica nada
+    // the reason goes into the reference next to the source's number:
+    // it is what shows on the customer's statement, and the number alone
+    // explains nothing
     let reference = match reason {
         Some(reason) => format!("{name}, {reason}"),
         None => name.to_string(),
@@ -406,7 +415,7 @@ async fn emit_note(
     };
 
     // mesmo tipo da origem: debitar uma fatura de fornecedor gera outra
-    // fatura de fornecedor, não uma cobrança ao cliente
+    // a vendor bill, not a charge to the customer
     let move_type = origin
         .get("move_type")
         .cloned()
@@ -426,8 +435,8 @@ async fn emit_note(
         ("debit_origin_id", json!(origin_id)),
         ("line_ids", Value::Array(lines)),
     ];
-    // sem a sequência das notas instalada, o documento cai na numeração
-    // normal das faturas em vez de nascer sem número
+    // without the notes' sequence installed, the document falls back to
+    // the invoices' ordinary numbering instead of being born unnumbered
     if let Some(number) = ctx.registry.next_sequence(ctx.pool, DEBIT_SEQUENCE).await? {
         values.push(("name", json!(number)));
     }
@@ -436,10 +445,10 @@ async fn emit_note(
         .await
 }
 
-/// As linhas da fatura de origem, como comandos de criação.
+/// The source invoice's lines, as create commands.
 ///
-/// São cópias, não vínculos: a nota é um documento próprio, e editar a
-/// linha de uma não pode reescrever a outra.
+/// Copies, not links: the note is a document of its own, and editing
+/// one's line must not rewrite the other's.
 async fn copied_lines(
     ctx: &MethodCtx<'_>,
     origin: &Map<String, Value>,
@@ -522,7 +531,7 @@ mod tests {
         let mut record = Map::new();
         record.insert("debit_note_ids".into(), json!([12, 13]));
         assert_eq!(debit_note_count(&record), json!(2));
-        // e uma fatura que nunca foi debitada conta zero, não nulo
+        // and an invoice that was never debited counts zero, not null
         assert_eq!(debit_note_count(&Map::new()), json!(0));
     }
 
@@ -536,7 +545,7 @@ mod tests {
         let mv = reg.get("account.move").unwrap();
         assert!(mv.field("debit_origin_id").is_some());
         assert!(mv.field("debit_note_count").is_some());
-        // a extensão adiciona; o que o módulo `account` trouxe continua lá
+        // the extension adds; what the `account` module brought stays
         assert!(mv.field("amount_total").unwrap().stored);
         assert_eq!(mv.constraints().len(), 1, "a regra do vencimento sobrevive");
         assert_eq!(mv.meta.table, "account_move", "and the table is the same");
