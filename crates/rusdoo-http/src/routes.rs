@@ -36,6 +36,7 @@ pub fn router(service: OrmService) -> Router {
         .route("/web/action/load", post(action_load))
         .route("/web", get(web_index))
         .route("/web/view/{xml_id}", get(render_view_page))
+        .route("/report/html/{xml_id}/{res_id}", get(render_report_page))
         .route("/web/action/{xml_id}", get(render_action_page))
         .route("/jsonrpc", post(jsonrpc_endpoint))
         .with_state(service)
@@ -445,6 +446,45 @@ async fn render_view_page(
             (
                 axum::http::StatusCode::BAD_REQUEST,
                 Html("<h1>erro</h1><p>não foi possível renderizar a view</p>".to_string()),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// `GET /report/html/{xml_id}/{res_id}` — a document to print.
+///
+/// The answer is a page, not a JSON-RPC result: it is opened in a tab
+/// and printed from there. Odoo hands the same HTML to wkhtmltopdf.
+async fn render_report_page(
+    State(service): State<OrmService>,
+    headers: HeaderMap,
+    Path((xml_id, res_id)): Path<(String, i64)>,
+) -> Response {
+    let session = current_session(&service, &headers);
+    if service.require_auth && session.is_none() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Html("<h1>401</h1><p>faça login para imprimir</p>".to_string()),
+        )
+            .into_response();
+    }
+    match service
+        .render_report(&xml_id, res_id, session.as_ref())
+        .await
+    {
+        Ok(html) => (
+            // a printed document is what the database says now, never a
+            // page a proxy kept from an hour ago
+            AppendHeaders([(header::CACHE_CONTROL, "no-store")]),
+            Html(html),
+        )
+            .into_response(),
+        Err(error) => {
+            tracing::warn!("relatório {xml_id}/{res_id} falhou: {}", error.message);
+            (
+                StatusCode::BAD_REQUEST,
+                Html("<h1>erro</h1><p>não foi possível gerar o documento</p>".to_string()),
             )
                 .into_response()
         }

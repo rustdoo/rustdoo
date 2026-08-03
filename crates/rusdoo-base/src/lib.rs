@@ -66,6 +66,7 @@ fn models() -> Vec<Model> {
         users(),
         ui_view(),
         act_window(),
+        report(),
         ui_menu(),
     ]
 }
@@ -225,6 +226,20 @@ fn act_window() -> Model {
     )
 }
 
+/// `ir.actions.report` — printing a record through a QWeb template.
+fn report() -> Model {
+    Model::new(
+        meta("ir.actions.report", "ir_act_report"),
+        vec![
+            char("name").required(),
+            char("model").required(),
+            // the external id of the ir.ui.view holding the template
+            char("report_name").required(),
+            char("report_type").default_value(json!("qweb-html")),
+        ],
+    )
+}
+
 /// `ir.ui.menu` — the navigation tree.
 fn ui_menu() -> Model {
     Model::new(
@@ -256,6 +271,7 @@ mod tests {
             "res.users",
             "ir.ui.view",
             "ir.actions.act_window",
+            "ir.actions.report",
             "ir.ui.menu",
         ] {
             assert!(reg.get(name).is_some(), "{name} must be registered");

@@ -74,7 +74,9 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
    (`ir.model.data`), instalação de addons.
 5. **Fase 4 — QWeb + relatórios** ✅ no essencial: engine QWeb
    (`t-if`/`t-foreach`/`t-out`/`t-call`/`t-set`/`t-att*`), views
-   renderizadas server-side. Falta: relatórios PDF.
+   renderizadas server-side e `ir.actions.report` — o documento de um
+   pedido ou fatura em `/report/html/<relatório>/<id>`. Falta: o passo
+   de PDF (o Odoo entrega o mesmo HTML ao wkhtmltopdf).
 6. **Fase 5 — Cliente web** ✅ no essencial: o addon `web` traz um
    cliente próprio (JS sem dependências) que fala o mesmo JSON-RPC do
    Odoo: login, apps e menus, view de lista (busca, ordenação, paginação)
@@ -82,7 +84,7 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
    (as linhas de um pedido), botões de ação do arch, o chatter e os
    filtros e agrupamento da view de busca (com contagem e somas por
    grupo) e a view kanban (colunas por grupo, com troca list/quadro).
-   Falta: anexos, relatórios.
+   Falta: anexos, edição em massa.
 7. **Fase 6 — Addons de negócio** *(atual)*: port módulo a módulo em ordem
    do grafo de dependências. Já portados: `mail` (chatter), `product`,
    `sale` (pedidos, linhas, totais e botões de estado) e `account`

@@ -420,6 +420,31 @@ impl OrmService {
     /// Render an `ir.ui.view` (resolved by external id) to HTML: read the
     /// view's arch, gather its target model's records as the context, and
     /// run them through QWeb. The Rust side of an Odoo QWeb report/list.
+    /// The arch of an `ir.ui.view` by external id, access-checked.
+    pub(crate) async fn view_arch(
+        &self,
+        xml_id: &str,
+        session: Option<&crate::session::Session>,
+    ) -> Result<String, RpcError> {
+        if let Some(s) = session {
+            self.check_access("ir.ui.view", "read", s)?;
+        }
+        let (module, name) = xml_id
+            .split_once('.')
+            .ok_or_else(|| RpcError::invalid_params("xml_id must be module.name"))?;
+        let res_id = self.resolve_external_id(module, name, "ir.ui.view").await?;
+        let views = self
+            .registry
+            .read(&self.pool, "ir.ui.view", &[res_id], &["arch"])
+            .await?;
+        Ok(views
+            .first()
+            .and_then(|view| view.get("arch"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string())
+    }
+
     pub(crate) async fn render_view(
         &self,
         xml_id: &str,
@@ -689,7 +714,7 @@ impl OrmService {
     /// Resolve the transitive closure of `t-call` targets referenced from
     /// `arch`, reading each referenced view's arch only after checking the
     /// caller may read that view's target model.
-    async fn collect_templates(
+    pub(crate) async fn collect_templates(
         &self,
         arch: &str,
         session: Option<&crate::session::Session>,

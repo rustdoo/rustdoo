@@ -247,6 +247,34 @@
                 });
         }
 
+        /**
+         * `<report name="módulo.id"/>` no arch: o documento impresso
+         * deste registro, aberto numa aba. Um registro ainda não salvo
+         * não tem o que imprimir.
+         */
+        renderReports() {
+            return Array.from(this.archRoot.getElementsByTagName("report"))
+                .filter((node) => node.getAttribute("name"))
+                .map((node) =>
+                    el(
+                        "button",
+                        {
+                            class: "btn btn-ghost",
+                            disabled: !this.resId,
+                            onclick: () =>
+                                window.open(
+                                    "/report/html/" +
+                                        encodeURIComponent(node.getAttribute("name")) +
+                                        "/" +
+                                        this.resId,
+                                    "_blank"
+                                ),
+                        },
+                        node.getAttribute("string") || "Imprimir"
+                    )
+                );
+        }
+
         renderControlPanel() {
             return el("div", { class: "o_control_panel" }, [
                 el("h2", { class: "o_breadcrumb" }, [
@@ -265,6 +293,7 @@
                     this.resId ? "#" + this.resId : "Novo",
                 ]),
                 el("div", { class: "o_cp_actions" }, [
+                    ...this.renderReports(),
                     ...this.renderButtons(),
                     el(
                         "button",

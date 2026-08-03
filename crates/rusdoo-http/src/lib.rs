@@ -9,6 +9,7 @@ pub mod assets;
 pub mod dispatch;
 mod group;
 pub mod jsonrpc;
+pub mod report;
 pub mod routes;
 pub mod session;
 mod web_read;

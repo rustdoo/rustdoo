@@ -10,6 +10,7 @@
         'security/ir.model.access.csv',
         'views/account_move_views.xml',
         'views/menus.xml',
+        'views/report_invoice.xml',
     ],
     'installable': True,
 }
