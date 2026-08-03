@@ -1008,7 +1008,42 @@ impl Registry {
         fields: &'a [&'a str],
         lang: &'a str,
     ) -> ReadFuture<'a> {
+        self.read_conn_deep(conn, model_name, ids, fields, lang, 0)
+    }
+
+    /// [`Registry::read_conn_lang`] with the hop count carried in.
+    ///
+    /// The count measures hops in the *data* — following a relation —
+    /// not entries into a function. Entering a related or a computed
+    /// field is continuing the same read, and counting those too made a
+    /// legitimate three-level unit-of-measure chain blow a ceiling meant
+    /// for eight relations.
+    ///
+    /// The count has to survive the *whole* read, not each entry point.
+    /// A related field walks into a comodel, which may itself have a
+    /// related or a computed field, which reads again — and the graph of
+    /// models is not a tree. On cyclic data (`a.parent_id = b`,
+    /// `b.parent_id = a`) a counter that restarted on every hop never
+    /// reached its ceiling, so the recursion had nothing to stop it and
+    /// the process died on a stack overflow rather than answering an
+    /// error. That is reachable from any screen showing such a field.
+    #[allow(clippy::too_many_arguments)]
+    fn read_conn_deep<'a>(
+        &'a self,
+        conn: &'a mut PgConnection,
+        model_name: &'a str,
+        ids: &'a [i64],
+        fields: &'a [&'a str],
+        lang: &'a str,
+        depth: usize,
+    ) -> ReadFuture<'a> {
         Box::pin(async move {
+            if depth > MAX_RELATED_DEPTH {
+                return Err(RusdooError::Validation(format!(
+                    "reading {model_name} went more than {MAX_RELATED_DEPTH} hops deep: \
+                     a related or computed field points in a circle"
+                )));
+            }
             let model = self
                 .get(model_name)
                 .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
@@ -1078,7 +1113,7 @@ impl Registry {
             for field in related {
                 let path = field.related.as_deref().expect("filtered above");
                 let values = self
-                    .read_related(&mut *conn, model_name, ids, path, 0)
+                    .read_related(&mut *conn, model_name, ids, path, depth)
                     .await?;
                 for record in &mut records {
                     let owner = record["id"].as_i64().expect("id present");
@@ -1092,7 +1127,7 @@ impl Registry {
             // through this same path
             for field in computed {
                 let values = self
-                    .read_computed(&mut *conn, model_name, ids, field, 0)
+                    .read_computed(&mut *conn, model_name, ids, field, depth)
                     .await?;
                 for record in &mut records {
                     let owner = record["id"].as_i64().expect("id present");
@@ -1274,7 +1309,16 @@ impl Registry {
             }
             let Some((head, rest)) = path.split_once('.') else {
                 // last hop: the value itself
-                let rows = self.read_conn(&mut *conn, model_name, ids, &[path]).await?;
+                let rows = self
+                    .read_conn_deep(
+                        &mut *conn,
+                        model_name,
+                        ids,
+                        &[path],
+                        crate::context::DEFAULT_LANG,
+                        depth,
+                    )
+                    .await?;
                 return Ok(rows
                     .into_iter()
                     .filter_map(|mut row| {
@@ -1300,7 +1344,16 @@ impl Registry {
                 }
             };
             // the hop: owner id -> linked id (a m2o reads as [id, name])
-            let rows = self.read_conn(&mut *conn, model_name, ids, &[head]).await?;
+            let rows = self
+                .read_conn_deep(
+                    &mut *conn,
+                    model_name,
+                    ids,
+                    &[head],
+                    crate::context::DEFAULT_LANG,
+                    depth,
+                )
+                .await?;
             let hops: Vec<(i64, i64)> = rows
                 .iter()
                 .filter_map(|row| {
@@ -1331,6 +1384,7 @@ impl Registry {
     /// Two queries whatever the number of parents: the links, then the
     /// field on every linked record at once. A many2one hop yields a
     /// one-element list, so a compute reads both shapes the same way.
+    #[allow(clippy::too_many_arguments)]
     fn read_over_x2many<'a>(
         &'a self,
         conn: &'a mut PgConnection,
@@ -1338,6 +1392,7 @@ impl Registry {
         ids: &'a [i64],
         path: &'a str,
         owner_field: &'a str,
+        depth: usize,
     ) -> RelatedFuture<'a> {
         Box::pin(async move {
             let (head, rest) = path.split_once('.').expect("caller checked for the dot");
@@ -1358,7 +1413,16 @@ impl Registry {
                 }
             };
             // parent -> the records it links to
-            let rows = self.read_conn(&mut *conn, model_name, ids, &[head]).await?;
+            let rows = self
+                .read_conn_deep(
+                    &mut *conn,
+                    model_name,
+                    ids,
+                    &[head],
+                    crate::context::DEFAULT_LANG,
+                    depth,
+                )
+                .await?;
             let mut links: Vec<(i64, Vec<i64>)> = Vec::new();
             let mut linked_ids: Vec<i64> = Vec::new();
             for row in &rows {
@@ -1389,7 +1453,7 @@ impl Registry {
             }
             // the field itself, on every linked record in one read
             let values = self
-                .read_related(&mut *conn, &comodel, &linked_ids, rest, 0)
+                .read_related(&mut *conn, &comodel, &linked_ids, rest, depth + 1)
                 .await?;
             Ok(links
                 .into_iter()
@@ -1465,10 +1529,19 @@ impl Registry {
                     }
                 }
             }
-            let mut rows = self.read_conn(&mut *conn, model_name, ids, &plain).await?;
+            let mut rows = self
+                .read_conn_deep(
+                    &mut *conn,
+                    model_name,
+                    ids,
+                    &plain,
+                    crate::context::DEFAULT_LANG,
+                    depth,
+                )
+                .await?;
             for path in through_lines {
                 let gathered = self
-                    .read_over_x2many(&mut *conn, model_name, ids, path, &field.name)
+                    .read_over_x2many(&mut *conn, model_name, ids, path, &field.name, depth + 1)
                     .await?;
                 for row in &mut rows {
                     let Some(id) = row.get("id").and_then(Value::as_i64) else {
