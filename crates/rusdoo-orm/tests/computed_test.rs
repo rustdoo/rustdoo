@@ -122,8 +122,8 @@ fn a_computed_field_cannot_be_searched_written_or_ordered_by() {
 }
 
 async fn test_pool() -> Option<PgPool> {
-    // um schema desta execução: estes testes criam tabelas
-    // direto, e sem isso duas execuções mexem nas mesmas
+    // a schema of this run: these tests create tables directly, and
+    // without it two runs touch the same ones
     rusdoo_testing::pool_in("rusdoo_computed_test_test_pool")
 }
 

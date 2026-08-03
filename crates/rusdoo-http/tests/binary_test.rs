@@ -75,8 +75,8 @@ async fn an_image_survives_the_round_trip_live() {
         .unwrap();
     assert_eq!(back, PNG, "os bytes voltam idênticos");
 
-    // e um produto sem imagem responde nulo, não string vazia: a tela
-    // desenha um espaço reservado a partir disso
+    // and a product with no image answers null, not an empty string:
+    // the screen draws a placeholder from that
     let other = call(
         &service,
         "product.product",
@@ -95,7 +95,7 @@ async fn an_image_survives_the_round_trip_live() {
     .await;
     assert_eq!(rows["result"][0]["image_1920"], json!(null));
 
-    // limpar é escrever `false`, como no Odoo
+    // clearing is writing `false`, as in Odoo
     call(
         &service,
         "product.product",
@@ -135,7 +135,7 @@ async fn malformed_base64_is_refused_with_a_sentence_live() {
         "a recusa nomeia o problema, não uma função de SQL: {answer}"
     );
 
-    // um número também não é uma imagem
+    // a number is not an image either
     let answer = call(
         &service,
         "product.product",
@@ -191,7 +191,7 @@ async fn the_image_route_serves_bytes_with_a_type_it_sniffed_live() {
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(&bytes[..], PNG, "os bytes, não o base64 deles");
 
-    // um campo que não é binário não é servido por aqui
+    // a field that is not binary is not served here
     let response = router(service.clone())
         .oneshot(
             Request::get(format!("/web/image/product.product/{id}/name"))
@@ -202,7 +202,7 @@ async fn the_image_route_serves_bytes_with_a_type_it_sniffed_live() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
-    // e um registro sem imagem não é um erro
+    // and a record with no image is not an error
     let empty = call(
         &service,
         "product.product",

@@ -1,5 +1,5 @@
-//! A nota de débito de ponta a ponta: o diálogo que abre sobre uma
-//! fatura lançada, as linhas que vêm (ou não) junto, e o que o modelo se
+//! The debit note end to end: the dialog that opens over a posted
+//! invoice, the lines that come (or do not) with it, and what the model
 //! recusa a debitar.
 
 use rusdoo_orm::methods::{MethodCtx, MethodRegistry};
@@ -7,7 +7,7 @@ use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 
-/// Cada teste no seu próprio schema: a suíte roda em paralelo e todos
+/// Each test in its own schema: the suite runs in parallel and all
 /// criam as mesmas tabelas.
 fn pool(url: &str, schema: &'static str) -> PgPool {
     sqlx::postgres::PgPoolOptions::new()
@@ -51,7 +51,7 @@ struct Fixture {
 }
 
 impl Fixture {
-    /// Chama um método de modelo como o despacho chamaria.
+    /// Call a model method the way the dispatch would.
     async fn call(&self, model: &str, method: &str, ids: Vec<i64>) -> Result<Value, String> {
         let entry = self
             .methods
@@ -75,7 +75,7 @@ impl Fixture {
             .expect("o registro existe")
     }
 
-    /// Uma fatura de cliente com duas linhas, lançada.
+    /// A customer invoice with two lines, posted.
     async fn a_posted_invoice(&self) -> i64 {
         let invoice = self
             .registry
@@ -104,7 +104,7 @@ impl Fixture {
         invoice
     }
 
-    /// Marca no assistente as respostas do diálogo.
+    /// Write the dialog's answers onto the wizard.
     async fn answer(&self, wizard: i64, values: Vec<(&str, Value)>) {
         self.registry
             .write_as(&self.pool, 1, "account.debit.note", &[wizard], values)
@@ -140,7 +140,7 @@ async fn fixture(schema: &'static str) -> Option<Fixture> {
         "res.country",
         "res.company",
         "res.partner",
-        // o default de empresa de `account.move` lê o usuário que cria
+        // `account.move`'s company default reads the creating user
         "res.groups",
         "res.users",
         "product.product",
@@ -155,7 +155,7 @@ async fn fixture(schema: &'static str) -> Option<Fixture> {
             .await
             .unwrap();
     }
-    // as sequências que os dois addons trazem nos seus arquivos de dados
+    // the sequences both addons ship in their data files
     for (code, prefix) in [("account.move", "FAT/"), ("account.move.debit", "FAT/D")] {
         registry
             .create(
@@ -208,7 +208,7 @@ async fn a_posted_invoice_becomes_a_debit_note_live() {
     assert_eq!(action["res_model"], "account.debit.note");
     assert_eq!(action["target"], "new", "é um diálogo, não uma tela");
     let wizard = action["res_id"].as_i64().expect("o assistente nasceu");
-    // o diálogo já sabe qual fatura está debitando
+    // the dialog already knows which invoice it is debiting
     let opened = fx
         .read("account.debit.note", wizard, &["move_ids", "date"])
         .await;
@@ -250,11 +250,11 @@ async fn a_posted_invoice_becomes_a_debit_note_live() {
     assert_eq!(row["move_type"], "out_invoice", "o tipo da origem");
     assert_eq!(row["invoice_date"], "2026-04-01", "a data do assistente");
     assert_eq!(row["debit_origin_id"][0], json!(invoice), "o vínculo ficou");
-    // a referência diz de qual documento veio e por quê
+    // the reference says which document it came from and why
     assert_eq!(row["ref"], "FAT/00001, Frete não cobrado");
-    // série própria: a nota não consome um número da série das faturas
+    // its own series: the note does not consume an invoice's number
     assert_eq!(row["name"], "FAT/D00001");
-    // as linhas vieram junto, então a nota vale o mesmo que a fatura
+    // the lines came along, so the note is worth the same as the invoice
     assert_eq!(row["amount_total"], json!(2800.0));
 
     // e a fatura de origem sabe que foi debitada
@@ -288,8 +288,8 @@ async fn a_debit_note_without_copied_lines_is_born_empty_live() {
         .unwrap();
     let wizard = action["res_id"].as_i64().unwrap();
 
-    // sem motivo e sem copiar: a nota é um documento em branco ligado à
-    // fatura, para quem vai cobrar um item que não estava lá
+    // with no reason and no copy: the note is a blank document linked
+    // to the invoice, for charging an item that was not there
     let action = fx
         .call("account.debit.note", "create_debit", vec![wizard])
         .await
@@ -302,7 +302,7 @@ async fn a_debit_note_without_copied_lines_is_born_empty_live() {
     assert_eq!(row["line_ids"], json!([]));
     assert_eq!(row["amount_total"], json!(0.0));
 
-    // e uma nota sem linhas não se lança: não há o que cobrar
+    // and a note with no lines is not posted: there is nothing to charge
     let error = fx
         .call("account.move", "action_post", vec![note])
         .await
@@ -338,7 +338,7 @@ async fn a_draft_invoice_is_not_debited_live() {
         .await
         .expect_err("a draft is not debited");
     assert!(error.contains("post it before"), "{error}");
-    // e nada de assistente ficou para trás
+    // and no wizard was left behind
     let wizards = fx
         .registry
         .search(
@@ -375,7 +375,7 @@ async fn a_debit_note_is_not_debited_again_live() {
         .await
         .expect("a nota lança");
 
-    // uma corrente de notas de débito não diz de onde a cobrança veio:
+    // a chain of debit notes does not say where the charge came from:
     // debita-se a fatura de origem
     let error = fx
         .call("account.move", "action_debit_note", vec![note])
@@ -435,7 +435,7 @@ async fn a_batch_of_invoices_is_debited_at_once_live() {
         .call("account.debit.note", "create_debit", vec![wizard])
         .await
         .expect("as notas saem");
-    // um lote não abre um formulário: abre a lista do que foi emitido
+    // a batch does not open a form: it opens the list of what was issued
     assert_eq!(action["view_mode"], "list,form");
     let created: Vec<i64> = action["domain"][0][2]
         .as_array()
@@ -463,7 +463,7 @@ async fn a_cancelled_invoice_between_the_dialog_and_the_button_is_refused_live()
         .unwrap();
     let wizard = action["res_id"].as_i64().unwrap();
 
-    // o diálogo ficou aberto enquanto outra pessoa cancelou a fatura
+    // the dialog stayed open while somebody else cancelled the invoice
     fx.call("account.move", "action_cancel", vec![invoice])
         .await
         .unwrap();

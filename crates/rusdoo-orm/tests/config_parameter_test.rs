@@ -57,7 +57,7 @@ async fn a_parameter_is_read_written_and_forgotten_live() {
         return;
     };
 
-    // uma chave que ninguém escreveu não é erro: é o padrão do módulo
+    // a key nobody wrote is not an error: it is the module's default
     assert_eq!(reg.get_param(&pool, "sales_team.membership_multi").await.unwrap(), None);
     assert_eq!(
         reg.param_or(&pool, "web.base.url", "http://localhost:8069").await,
@@ -84,7 +84,7 @@ async fn a_parameter_is_read_written_and_forgotten_live() {
         Some("https://outro.exemplo.com")
     );
 
-    // as várias formas que o Odoo escreve um booleano contam todas
+    // the several ways Odoo writes a boolean all count
     for truthy in ["True", "1", "yes", "  true  "] {
         reg.set_param(&pool, "x.flag", truthy).await.unwrap();
         assert!(
@@ -125,7 +125,8 @@ async fn the_database_refuses_a_second_parameter_with_the_same_key_live() {
         )
         .await
         .expect_err("a chave é única");
-    // e o usuário lê a frase que o modelo declarou, não a do driver
+    // and the user reads the sentence the model declared, not the
+    // driver's
     assert!(
         error.to_string().contains("parameter with that key already exists"),
         "mensagem inesperada: {error}"
@@ -134,7 +135,8 @@ async fn the_database_refuses_a_second_parameter_with_the_same_key_live() {
     drop_schema(&pool, schema).await;
 }
 
-/// A razão de a unicidade estar no banco e não numa checagem em Rust.
+/// The reason the uniqueness lives in the database and not in a Rust
+/// check.
 #[tokio::test]
 async fn concurrent_writers_cannot_both_create_the_same_key_live() {
     let schema = rusdoo_testing::schema_for("rusdoo_case_config_race");
@@ -144,9 +146,9 @@ async fn concurrent_writers_cannot_both_create_the_same_key_live() {
     };
     let reg = std::sync::Arc::new(reg);
 
-    // dezesseis tentativas simultâneas de criar a mesma chave: uma
-    // checagem antes do INSERT deixaria várias passarem, porque todas
-    // leem "não existe" antes de qualquer uma escrever
+    // sixteen simultaneous attempts at the same key: a check before the
+    // INSERT would let several through, because they all read "it does
+    // not exist" before any of them writes
     let mut tasks = Vec::new();
     for n in 0..16 {
         let reg = std::sync::Arc::clone(&reg);
@@ -176,7 +178,7 @@ async fn concurrent_writers_cannot_both_create_the_same_key_live() {
             .unwrap();
     assert_eq!(rows, 1);
 
-    // e o set_param concorrente também converge para uma linha só
+    // and a concurrent set_param converges on a single row too
     let mut tasks = Vec::new();
     for n in 0..16 {
         let reg = std::sync::Arc::clone(&reg);
@@ -200,8 +202,8 @@ async fn concurrent_writers_cannot_both_create_the_same_key_live() {
     drop_schema(&pool, schema).await;
 }
 
-/// Um boot repetido não pode falhar por causa de uma restrição que já
-/// está lá — é o caso normal, não a exceção.
+/// A repeated boot must not fail because of a constraint that is
+/// already there — that is the normal case, not the exception.
 #[tokio::test]
 async fn adding_a_constraint_that_already_exists_is_a_no_op_live() {
     let schema = rusdoo_testing::schema_for("rusdoo_case_config_idempotent");
@@ -215,8 +217,8 @@ async fn adding_a_constraint_that_already_exists_is_a_no_op_live() {
             model.init_table(&pool).await.expect("o boot se repete");
         }
     }
-    // escopo do schema do caso: os outros casos deste arquivo têm a
-    // mesma restrição, com o mesmo nome, nos schemas deles
+    // scoped to the case's schema: the other cases in this file have
+    // the same constraint, under the same name, in theirs
     let count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM pg_constraint
          WHERE conname = 'ir_config_parameter_key_uniq'

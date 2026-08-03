@@ -1,4 +1,5 @@
-//! Defaults que o ORM roda, não lê — o `default=` calável do Odoo.
+//! Defaults the ORM runs rather than reads — Odoo's callable
+//! `default=`.
 
 use rusdoo_orm::defaults;
 use rusdoo_orm::fields::{DefaultCtx, Field, FieldType};
@@ -19,8 +20,8 @@ fn meta(name: &str, table: &str) -> ModelMeta {
     }
 }
 
-/// Um default que lê do banco: prova que a função tem a conexão da
-/// transação do create, não só o relógio.
+/// A default that reads from the database: proof the function has the
+/// create's own connection, not only the clock.
 fn last_partner_name(
     ctx: DefaultCtx<'_>,
 ) -> Pin<Box<dyn Future<Output = Result<Value, RusdooError>> + Send + '_>> {
@@ -128,7 +129,7 @@ async fn a_dynamic_default_runs_at_create_time_live() {
     );
     assert_eq!(row["estado"], json!("rascunho"), "o default constante segue");
 
-    // e o que o chamador passou vence sempre, inclusive um nulo explícito
+    // and what the caller passed always wins, an explicit null included
     let id = reg
         .create_as(
             &pool,
@@ -159,8 +160,8 @@ async fn a_dynamic_default_runs_at_create_time_live() {
         .unwrap();
 }
 
-/// O default roda dentro da transação do create: o que ele lê é o que o
-/// registro está prestes a ser guardado ao lado.
+/// The default runs inside the create's transaction: what it reads is
+/// what the record is about to be stored next to.
 #[tokio::test]
 async fn a_default_sees_what_the_same_call_just_wrote_live() {
     let schema = rusdoo_testing::schema_for("rusdoo_case_dyn_default_tx");
@@ -169,7 +170,8 @@ async fn a_default_sees_what_the_same_call_just_wrote_live() {
         return;
     };
 
-    // sem nenhuma origem, o default não tem o que devolver e não inventa
+    // with no source at all, the default has nothing to answer and
+    // invents nothing
     let id = reg
         .create_as(&pool, 1, "x.doc", vec![("name", json!("sem origem"))])
         .await

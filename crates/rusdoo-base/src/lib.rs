@@ -202,7 +202,7 @@ fn sequence() -> Model {
             Field::new("active", FieldType::Boolean).default_value(json!(true)),
         ],
     )
-    // duas sequências com o mesmo código são duas numerações para o
+    // two sequences with the same code are two numberings for the
     // mesmo documento: o `next_by_code` pegaria uma delas, e qual
     // depende do dia
     .sql_constrained(

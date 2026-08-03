@@ -179,7 +179,7 @@ async fn a_salesperson_belongs_to_one_team_at_a_time_live() {
     assert_eq!(leftovers.len(), 1, "one person, one membership");
 }
 
-/// A exclusividade é o padrão, não uma regra: quem ligou o parâmetro do
+/// Exclusivity is the default, not a law: whoever turned Odoo's
 /// Odoo pediu por uma pessoa em duas equipes.
 #[tokio::test]
 async fn the_membership_multi_parameter_lets_a_salesperson_serve_two_teams_live() {

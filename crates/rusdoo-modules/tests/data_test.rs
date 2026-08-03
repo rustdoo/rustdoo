@@ -436,8 +436,8 @@ fn markup_close_tag_with_whitespace() {
 
 #[test]
 fn a_view_patch_arch_survives_the_loader() {
-    // o arch de uma herança de view é `<data>` com um `<field>` de
-    // verdade dentro: nenhum dos dois é do registro, os dois já foram
+    // a view inheritance's arch is `<data>` with a real `<field>`
+    // inside: neither belongs to the record, and both were already
     // lidos como se fossem
     let src = r#"<odoo><record id="v" model="ir.ui.view">
         <field name="inherit_id" ref="account.view_move_form"/>

@@ -1,5 +1,5 @@
-//! Apagar um registro: o que o negócio recusa, e o que o banco faz com
-//! as referências.
+//! Deleting a record: what the business refuses, and what the database
+//! does with the references.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -51,7 +51,7 @@ async fn a_confirmed_order_refuses_to_be_deleted_live() {
         .as_i64()
         .unwrap();
 
-    // em rascunho o pedido é apagável
+    // in draft the order can be deleted
     let other = call(
         &service,
         "sale.order",
@@ -62,22 +62,22 @@ async fn a_confirmed_order_refuses_to_be_deleted_live() {
         .as_i64()
         .unwrap();
     let answer = call(&service, "sale.order", "unlink", json!([[other]])).await;
-    assert_eq!(answer["result"], json!(true), "um rascunho some: {answer}");
+    assert_eq!(answer["result"], json!(true), "a draft goes: {answer}");
 
-    // confirmado, não
+    // confirmed, it cannot
     call(&service, "sale.order", "action_confirm", json!([[order]])).await;
     let answer = call(&service, "sale.order", "unlink", json!([[order]])).await;
     let message = answer["error"]["message"].as_str().unwrap_or_default();
     assert!(
         message.contains("is not in draft"),
-        "o hook recusa e diz por quê: {answer}"
+        "the hook refuses and says why: {answer}"
     );
 
-    // e a recusa é uma recusa: o registro continua lá
+    // and a refusal is a refusal: the record is still there
     let left = call(&service, "sale.order", "search_count", json!([[]])).await["result"]
         .as_i64()
         .unwrap();
-    assert_eq!(left, 1, "o pedido confirmado não foi apagado");
+    assert_eq!(left, 1, "the confirmed order was not deleted");
 
     case.close().await;
 }
@@ -100,13 +100,14 @@ async fn a_referenced_record_cannot_be_deleted_out_from_under_it_live() {
     )
     .await;
 
-    // `sale.order.partner_id` é obrigatório: a regra do Odoo para uma
-    // referência obrigatória é recusar o apagamento do alvo
+    // `sale.order.partner_id` is required: Odoo's rule for a required
+    // reference is to refuse the target's deletion
     let answer = call(&service, "res.partner", "unlink", json!([[partner]])).await;
     let message = answer["error"]["message"].as_str().unwrap_or_default();
     assert!(
         message.contains("records depend on this one"),
-        "o banco recusa, e a frase diz de que lado está o problema: {answer}"
+        "the database refuses, and the sentence says which side the
+         problem is on: {answer}"
     );
     let left = call(&service, "res.partner", "search_count", json!([[]])).await["result"]
         .as_i64()
@@ -123,8 +124,8 @@ async fn a_reference_to_a_record_that_does_not_exist_is_refused_live() {
     };
     let service = OrmService::insecure(case.registry(), case.pool()).with_methods(case.methods());
 
-    // o que as chaves estrangeiras compram: a referência inventada não
-    // entra mais, em vez de virar um formulário que abre no vazio
+    // what foreign keys buy: an invented reference no longer gets in,
+    // instead of becoming a form that opens onto nothing
     let answer = call(
         &service,
         "sale.order",
@@ -135,7 +136,7 @@ async fn a_reference_to_a_record_that_does_not_exist_is_refused_live() {
     let message = answer["error"]["message"].as_str().unwrap_or_default();
     assert!(
         message.contains("does not exist"),
-        "a referência inventada é recusada: {answer}"
+        "the invented reference is refused: {answer}"
     );
 
     case.close().await;
@@ -178,14 +179,14 @@ async fn the_lines_of_a_deleted_document_go_with_it_live() {
         json!(1)
     );
 
-    // o pedido está em rascunho, então some — e as linhas não são
-    // registros com vida própria: vão junto
+    // the order is in draft, so it goes — and the lines are not records
+    // with a life of their own: they go with it
     let answer = call(&service, "sale.order", "unlink", json!([[order]])).await;
     assert_eq!(answer["result"], json!(true), "{answer}");
     assert_eq!(
         call(&service, "sale.order.line", "search_count", json!([[]])).await["result"],
         json!(0),
-        "as linhas não ficaram órfãs"
+        "the lines were not orphaned"
     );
 
     case.close().await;

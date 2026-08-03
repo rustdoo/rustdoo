@@ -82,8 +82,8 @@ async fn call(
     kwargs: Map<String, Value>,
 ) -> Result<Value, rusdoo_core::RusdooError> {
     let method = methods.get("uom.uom", name).expect("method registered");
-    // os argumentos posicionais de um método vivem em `rest`: `args[0]`
-    // é o conjunto de registros que o call_kw mandou
+    // a method's positional arguments live in `rest`: `args[0]` is the
+    // recordset call_kw sent
     let ctx = MethodCtx::new(registry, pool, 1, "uom.uom", vec![from]).with_rest(args.clone());
     (method.func)(ctx, &args, &kwargs).await
 }

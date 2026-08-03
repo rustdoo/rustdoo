@@ -1,6 +1,6 @@
 //! O ciclo de um onboarding contra um banco de verdade: um passo
-//! marcado, o painel que só fica pronto quando não sobra passo, e o
-//! progresso que é de cada empresa.
+//! marked, the dashboard that is only ready when no step is left, and
+//! the progress that belongs to each company.
 
 use rusdoo_orm::access::Operation;
 use rusdoo_orm::methods::{MethodCtx, MethodRegistry};
@@ -69,7 +69,7 @@ async fn fixture(url: &str, schema: &'static str) -> (Registry, PgPool) {
     (registry, pool)
 }
 
-/// Chama um método registrado como `uid` chamaria pelo `call_kw`.
+/// Call a registered method the way `uid` would through `call_kw`.
 async fn call(
     registry: &Registry,
     pool: &PgPool,
@@ -92,7 +92,8 @@ async fn call(
     (found.func)(ctx, &args, &kwargs).await
 }
 
-/// Um usuário de uma empresa, para o método ter de onde tirar a empresa.
+/// A user of a company, so the method has somewhere to take the company
+/// from.
 async fn a_user(registry: &Registry, pool: &PgPool, login: &str, company: i64) -> i64 {
     registry
         .create(
@@ -190,7 +191,8 @@ async fn a_panel_is_done_only_when_the_last_step_is_live() {
     .unwrap();
     assert_eq!(answer, json!("just_done"));
 
-    // o progresso nasceu ao marcar o primeiro passo, e é da empresa
+    // the progress was born when the first step was marked, and belongs
+    // to the company
     let progress = registry
         .search(
             &pool,
@@ -296,7 +298,7 @@ async fn a_step_already_done_is_not_done_again_live() {
         "clicar duas vezes não refaz nada"
     );
 
-    // e continua havendo um registro de progresso só para o passo
+    // and there is still a single progress record for the step
     let steps = registry
         .search(
             &pool,
@@ -308,7 +310,7 @@ async fn a_step_already_done_is_not_done_again_live() {
         .unwrap();
     assert_eq!(steps.len(), 1);
 
-    // marcar dois passos de uma vez não é o que o painel faz
+    // marking two steps at once is not what the dashboard does
     let error = call(
         &registry,
         &pool,
@@ -369,7 +371,7 @@ async fn each_company_walks_its_own_checklist_live() {
     assert_eq!(progresses.len(), 1, "só a Acme começou");
     assert_eq!(panel_state(&registry, &pool, progresses[0]).await, "done");
 
-    // a Globex abre o mesmo painel e não herda nada
+    // Globex opens the same dashboard and inherits nothing
     let action = call(
         &registry,
         &pool,
@@ -451,7 +453,7 @@ async fn closing_the_panel_is_remembered_live() {
         "um painel fechado não volta sozinho: {answer}"
     );
 
-    // e o botão de mostrar/esconder traz de volta
+    // and the show/hide button brings it back
     let visible = call(
         &registry,
         &pool,
@@ -484,7 +486,7 @@ async fn what_the_models_refuse_live() {
     };
     let (registry, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_onboarding_refusals")).await;
 
-    // uma rota com espaço não vira `/onboarding/<rota>`
+    // a route with a space does not become `/onboarding/<route>`
     let error = registry
         .create(
             &pool,
@@ -498,7 +500,7 @@ async fn what_the_models_refuse_live() {
         .expect_err("uma rota de duas palavras");
     assert!(error.to_string().contains("a single word"), "{error}");
 
-    // um passo sem opening action não pode ser pendurado num painel
+    // a step with no opening action cannot hang on a dashboard
     let orphan = registry
         .create(
             &pool,
@@ -529,7 +531,7 @@ async fn what_the_models_refuse_live() {
         .expect_err("um botão que não abre nada");
     assert!(error.to_string().contains("opening action"), "{error}");
 
-    // e o vínculo não ficou para trás
+    // and the link was not left behind
     let rows = registry
         .read(
             &pool,

@@ -122,8 +122,8 @@ fn due_after_issue(record: &Map<String, Value>) -> Result<(), String> {
     Ok(())
 }
 
-/// Port do guarda de `unlink` em `account.move`: um lançamento que já
-/// foi para a contabilidade não some sem deixar rastro.
+/// Port of `account.move`'s `unlink` guard: an entry that has already
+/// gone to the books does not vanish without a trace.
 fn refuse_posted(
     mut ctx: rusdoo_orm::unlink::UnlinkCtx<'_>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), RusdooError>> + Send + '_>> {
@@ -192,12 +192,13 @@ fn mv() -> Model {
         &["invoice_date", "invoice_date_due"],
         due_after_issue,
     )
-    // `_order` do Odoo é `date desc, name desc, invoice_date desc, id
-    // desc`; sem o campo `date` contábil, o que o port tem que diz a
-    // mesma coisa é a data da fatura e o número. A intenção é uma só:
+    // Odoo's `_order` is `date desc, name desc, invoice_date desc, id
+    // desc`; with no accounting `date` field, what the port has that
+    // says the same thing is the invoice date and the number. The intent
+    // is one:
     // a fatura mais nova primeiro.
     .ordered("invoice_date desc, name desc, id desc")
-    // uma fatura lançada é um documento fiscal: cancela-se, não se apaga
+    // a posted invoice is a tax document: it is cancelled, not deleted
     .on_unlink("no posted invoice", refuse_posted)
 }
 

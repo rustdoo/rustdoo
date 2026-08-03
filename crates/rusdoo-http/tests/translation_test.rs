@@ -1,4 +1,4 @@
-//! Campos traduzíveis: um valor por idioma na própria coluna, como o
+//! Translatable fields: one value per language in the column itself, as
 //! Odoo 19 faz desde que `ir.translation` deixou de existir.
 
 use axum::body::Body;
@@ -55,7 +55,7 @@ async fn a_value_per_language_lives_in_the_record_live() {
     };
     let service = OrmService::insecure(case.registry(), case.pool());
 
-    // nasce em inglês
+    // born in English
     let id = call(
         &service,
         "product.product",
@@ -67,11 +67,11 @@ async fn a_value_per_language_lives_in_the_record_live() {
         .as_i64()
         .unwrap();
 
-    // sem tradução, o português cai no idioma de origem: uma tela pela
-    // metade em inglês é melhor que uma tela pela metade em branco
+    // with no translation, Portuguese falls back to the source
+    // language: a screen half in English beats a screen half blank
     assert_eq!(name_of(&service, id, "pt_BR").await, "Oak table");
 
-    // traduzir é escrever com o contexto no idioma
+    // translating is writing with the context in that language
     call(
         &service,
         "product.product",
@@ -87,10 +87,10 @@ async fn a_value_per_language_lives_in_the_record_live() {
         "Oak table",
         "traduzir não apaga o original"
     );
-    // e um terceiro idioma sem tradução continua caindo na origem
+    // and a third language with no translation still falls back
     assert_eq!(name_of(&service, id, "es_ES").await, "Oak table");
 
-    // o valor está na própria linha, não numa tabela lateral
+    // the value is in the row itself, not in a side table
     let stored: Value = sqlx::query_scalar(r#"SELECT "name" FROM "product_product" WHERE "id" = $1"#)
         .bind(id as i32)
         .fetch_one(&case.pool())
@@ -109,8 +109,9 @@ async fn a_record_born_in_a_language_keeps_that_language_apart_live() {
     };
     let service = OrmService::insecure(case.registry(), case.pool());
 
-    // criado com o cliente em português: o texto vira o valor de origem
-    // *e* o valor em português, como o `convert_to_column_insert` do Odoo
+    // created with the client in Portuguese: the text becomes the source
+    // value *and* the Portuguese value, like Odoo's
+    // `convert_to_column_insert`
     let id = call(
         &service,
         "product.product",
@@ -124,8 +125,8 @@ async fn a_record_born_in_a_language_keeps_that_language_apart_live() {
     assert_eq!(name_of(&service, id, "pt_BR").await, "Cadeira");
     assert_eq!(name_of(&service, id, "en_US").await, "Cadeira");
 
-    // e é isso que faz a diferença: traduzir o inglês depois não
-    // arrasta o português junto
+    // and that is what makes the difference: translating the English
+    // afterwards does not drag the Portuguese along
     call(
         &service,
         "product.product",
@@ -163,7 +164,7 @@ async fn a_language_from_the_client_cannot_be_a_query_live() {
         .unwrap();
 
     // o `lang` vem de um contexto que o cliente controla, e entra numa
-    // expressão SQL: se fosse colado cru, isto seria uma consulta
+    // SQL expression: pasted raw, this would be a query of its own
     let answer = call(
         &service,
         "product.product",
@@ -206,7 +207,8 @@ async fn a_filter_matches_the_name_in_the_callers_language_live() {
     )
     .await;
 
-    // buscar pelo nome traduzido acha, e buscar pelo original também —
+    // searching by the translated name finds it, and by the original
+    // too —
     // cada um no seu idioma
     for (lang, term) in [("pt_BR", "Mesa de carvalho"), ("en_US", "Oak table")] {
         let found = call(
@@ -220,7 +222,8 @@ async fn a_filter_matches_the_name_in_the_callers_language_live() {
         assert_eq!(found["result"], json!([id]), "{lang}/{term}: {found}");
     }
 
-    // e procurar o texto do outro idioma não acha, que é o que um
+    // and looking for the other language's text finds nothing, which is
+    // what a
     // filtro quer dizer
     let found = call(
         &service,
@@ -232,7 +235,7 @@ async fn a_filter_matches_the_name_in_the_callers_language_live() {
     .await;
     assert_eq!(found["result"], json!([]), "{found}");
 
-    // o `like` da barra de busca também
+    // the search bar's `like` as well
     let found = call(
         &service,
         "product.product",
@@ -250,8 +253,9 @@ async fn a_filter_matches_the_name_in_the_callers_language_live() {
     case.close().await;
 }
 
-/// A lista é a tela mais comum que existe, e ela não passa pelo `read`:
-/// passa pelo `web_search_read`. Traduzir só um dos dois deixaria o
+/// The list is the most common screen there is, and it does not go
+/// through `read`: it goes through `web_search_read`. Translating only
+/// one of the two would leave the
 /// outro respondendo no idioma de origem e parecendo certo.
 #[tokio::test]
 async fn the_list_view_answers_in_the_callers_language_live() {
@@ -297,8 +301,8 @@ async fn the_list_view_answers_in_the_callers_language_live() {
     case.close().await;
 }
 
-/// O rótulo de um campo é texto do programa, não valor do banco: vem do
-/// `.po` do módulo e é o mesmo para todo registro.
+/// A field's label is text of the program, not a value in the database:
+/// it comes from the module's `.po` and is the same for every record.
 #[tokio::test]
 async fn a_field_label_comes_back_in_the_callers_language_live() {
     let Some(case) = TransactionCase::open("translation_labels", &["base", "product"]).await else {
@@ -329,13 +333,13 @@ async fn a_field_label_comes_back_in_the_callers_language_live() {
         "{answer}"
     );
     assert_eq!(answer["result"]["create_date"]["string"], json!("Criado em"));
-    // um rótulo sem tradução aparece na origem, nunca em branco
+    // an untranslated label shows in the source language, never blank
     assert_eq!(
         answer["result"]["standard_price"]["string"],
         json!("Standard Price")
     );
 
-    // e em inglês continua em inglês
+    // and in English it stays English
     let answer = call(
         &service,
         "product.product",

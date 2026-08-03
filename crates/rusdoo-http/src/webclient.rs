@@ -391,8 +391,9 @@ impl OrmService {
             };
             let value = &rest[value_start..value_start + end];
             out.push_str(&rest[..value_start]);
-            // o valor vem escapado no XML e a tradução tem de voltar
-            // escapada, senão um rótulo com `&` quebra o documento
+            // the value arrives XML-escaped and the translation has to
+            // go back escaped, or a label with an `&` breaks the
+            // document
             let source = unescape_xml(value);
             let translated = self.translations.get(lang, &source);
             out.push_str(&escape_xml(translated));

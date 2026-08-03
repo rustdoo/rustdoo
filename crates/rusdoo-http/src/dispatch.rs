@@ -1687,7 +1687,7 @@ fn field_metadata(
             m.insert("relation".into(), Value::from(comodel.as_str()));
         }
         FieldType::Selection(options) => {
-            // os rótulos de uma seleção também são texto do programa
+            // a selection's labels are text of the program too
             let pairs: Vec<Value> = options
                 .iter()
                 .map(|(v, label)| json!([v, translations.get(lang, label)]))

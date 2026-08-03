@@ -7,7 +7,8 @@ use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 
-/// Cada teste no seu schema: a suíte roda em paralelo contra o mesmo banco.
+/// Each test in its own schema: the suite runs in parallel against one
+/// database.
 fn pool(url: &str, schema: &'static str) -> PgPool {
     sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -30,18 +31,18 @@ struct Fixture {
     registry: Registry,
     methods: MethodRegistry,
     pool: PgPool,
-    /// quem faz as chamadas, como um usuário logado faria
+    /// who makes the calls, as a logged-in user would
     uid: i64,
 }
 
 impl Fixture {
-    /// Chama um método de modelo como o despacho chamaria.
+    /// Call a model method the way the dispatch would.
     async fn call(&self, model: &str, method: &str, args: Vec<Value>) -> Result<Value, String> {
         let entry = self
             .methods
             .get(model, method)
             .unwrap_or_else(|| panic!("{model}.{method} registrado"));
-        // um método sem registros ainda recebe seus argumentos, e eles
+        // a method with no records still gets its arguments, and they
         // vivem em `rest`
         let ctx = MethodCtx::new(&self.registry, &self.pool, self.uid, model, vec![])
             .with_rest(args.clone());
@@ -51,7 +52,8 @@ impl Fixture {
             .map_err(|error| error.to_string())
     }
 
-    /// O nome criado, seja pelo par do `name_create` ou pelo dicionário
+    /// The name that was created, whether from `name_create`'s pair or
+    /// from the dictionary
     /// do `find_or_create`.
     fn created_name(answer: &Value) -> &str {
         answer
@@ -100,7 +102,8 @@ async fn fixture(schema: &'static str) -> Option<Fixture> {
             .unwrap();
     }
     for model in [
-        // res.users existe porque a campanha tem responsável, e ler um
+        // res.users exists because a campaign has an owner, and reading
+        // one
         // many2one vai buscar o nome do outro lado
         "res.users",
         "utm.stage",
@@ -175,7 +178,7 @@ async fn the_same_medium_name_twice_gets_a_counter_live() {
         .expect("criado");
     assert_eq!(Fixture::created_name(&fourth), "Email [4]");
 
-    // e o buraco deixado por um nome que sumiu é reaproveitado
+    // and the gap left by a name that went away is reused
     fx.registry
         .get("utm.medium")
         .unwrap()
@@ -201,8 +204,9 @@ async fn a_link_reuses_the_source_that_is_already_there_live() {
         .expect("a origem nasce no primeiro clique");
     let id = Fixture::created_id(&created);
 
-    // o mesmo nome com outra caixa e espaços sobrando é a mesma origem:
-    // um clique repetido não pode encher o cadastro de duplicatas
+    // the same name in another case and with spaces left over is the
+    // same source: a repeated click must not fill the records with
+    // duplicates
     for asked in ["Newsletter", "  newsletter ", "NEWSLETTER"] {
         let again = fx
             .call("utm.source", "find_or_create", vec![json!(asked)])
@@ -212,14 +216,14 @@ async fn a_link_reuses_the_source_that_is_already_there_live() {
         assert_eq!(Fixture::created_name(&again), "Newsletter");
     }
 
-    // outro nome é outra origem
+    // another name is another source
     let other = fx
         .call("utm.source", "find_or_create", vec![json!("Buscador")])
         .await
         .expect("criada");
     assert_ne!(Fixture::created_id(&other), id);
 
-    // e um nome em branco não cria nada
+    // and a blank name creates nothing
     let refused = fx
         .call("utm.source", "find_or_create", vec![json!("   ")])
         .await
@@ -233,14 +237,15 @@ async fn a_campaign_is_born_with_an_identifier_a_stage_and_an_owner_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    // sem estágio nenhum a campanha não tem onde começar, e o método diz isso
+    // with no stage at all a campaign has nowhere to start, and the
+    // method says so
     let refused = fx
         .call("utm.campaign", "name_create", vec![json!("Black Friday")])
         .await
         .expect_err("faltou o estágio");
     assert!(refused.contains("create one before"), "{refused}");
 
-    // os estágios entram fora de ordem: o primeiro é o de menor sequência
+    // the stages go in out of order: the first is the lowest sequence
     for (name, sequence) in [("Em andamento", 20), ("Novo", 10)] {
         fx.registry
             .create(
@@ -265,7 +270,7 @@ async fn a_campaign_is_born_with_an_identifier_a_stage_and_an_owner_live() {
         )
         .await;
     assert_eq!(row["title"], "Black Friday");
-    // o identificador é computado do título e gravado na coluna
+    // the identifier is computed from the title and stored in the column
     assert_eq!(row["name"], "Black Friday");
     assert_eq!(
         row["stage_id"][1], "Novo",
@@ -282,7 +287,7 @@ async fn a_campaign_is_born_with_an_identifier_a_stage_and_an_owner_live() {
         "esta foi criada por alguém"
     );
 
-    // editar o título arrasta o identificador junto
+    // editing the title drags the identifier along
     fx.registry
         .write(
             &fx.pool,
@@ -295,7 +300,7 @@ async fn a_campaign_is_born_with_an_identifier_a_stage_and_an_owner_live() {
     let row = fx.read("utm.campaign", id, &["name"]).await;
     assert_eq!(row["name"], "Black Friday 2026");
 
-    // a campanha que um link cria vem marcada como automática
+    // the campaign a link creates comes marked as automatic
     let auto = fx
         .call("utm.campaign", "find_or_create", vec![json!("Natal")])
         .await
@@ -310,7 +315,7 @@ async fn a_campaign_is_born_with_an_identifier_a_stage_and_an_owner_live() {
     assert_eq!(row["is_auto_campaign"], json!(true));
     assert_eq!(row["name"], "Natal");
 
-    // e o segundo clique no mesmo link acha a que já existe
+    // and the second click on the same link finds the one that exists
     let again = fx
         .call("utm.campaign", "find_or_create", vec![json!("natal")])
         .await
@@ -328,7 +333,8 @@ async fn a_record_without_a_real_name_is_refused_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    // o `required` do banco aceita string vazia; a regra do modelo não
+    // the database's `required` accepts an empty string; the model's
+    // rule does not
     for model in ["utm.medium", "utm.source", "utm.stage", "utm.tag"] {
         let error = fx
             .registry
@@ -358,7 +364,7 @@ async fn a_record_without_a_real_name_is_refused_live() {
         .expect_err("a campanha sem nome também é recusada");
     assert!(error.to_string().contains("give the campaign a name"), "{error}");
 
-    // e nada disso ficou para trás
+    // and none of that was left behind
     let left = fx
         .registry
         .search(
@@ -425,7 +431,7 @@ async fn a_campaign_carries_its_tags_live() {
     tags.sort_unstable();
     assert_eq!(tags, vec![marketing, newsletter]);
 
-    // tirar uma etiqueta da campanha não apaga a etiqueta
+    // taking a tag off the campaign does not delete the tag
     fx.registry
         .write(
             &fx.pool,

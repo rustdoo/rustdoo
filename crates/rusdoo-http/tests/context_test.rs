@@ -1,5 +1,5 @@
-//! O contexto do cliente chega ao método, em vez de ser lido e jogado
-//! fora — o que fazia `with_context` ser um silêncio.
+//! The client's context reaches the method, instead of being read and
+//! thrown away — which is what made `with_context` a silence.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -12,8 +12,8 @@ use rusdoo_testing::TransactionCase;
 use serde_json::{json, Map, Value};
 use tower::ServiceExt;
 
-/// Um método que só devolve o contexto que recebeu: se o dispatch o
-/// perder pelo caminho, este teste é quem vê.
+/// A method that answers nothing but the context it was given: if the
+/// dispatch loses it on the way, this test is what notices.
 fn echo_context<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -59,7 +59,7 @@ async fn the_clients_context_reaches_the_method_live() {
         .unwrap();
     let service = OrmService::insecure(case.registry(), case.pool()).with_methods(methods);
 
-    // sem contexto: os padrões, e nenhum erro
+    // with no context: the defaults, and no error
     let answer = call(
         &service,
         "res.partner",
@@ -71,7 +71,8 @@ async fn the_clients_context_reaches_the_method_live() {
     assert_eq!(answer["result"]["lang"], json!("en_US"), "{answer}");
     assert_eq!(answer["result"]["active_test"], json!(true));
 
-    // com contexto: chega inteiro, incluindo o que o framework não conhece
+    // with a context: it arrives whole, including what the framework
+    // does not know
     let answer = call(
         &service,
         "res.partner",
@@ -92,7 +93,7 @@ async fn the_clients_context_reaches_the_method_live() {
     assert_eq!(
         result["todo"]["meu_modulo_flag"],
         json!(42),
-        "a chave que o framework não conhece atravessa igual: {answer}"
+        "the key the framework does not know crosses unchanged: {answer}"
     );
 
     case.close().await;
@@ -128,7 +129,7 @@ async fn active_test_off_shows_the_archived_records_live() {
         .unwrap();
     assert_eq!(visible, 1, "archived records stay out by default");
 
-    // e as formas que o Python trataria como falso desligam todas
+    // and the forms Python would treat as false all switch it off
     for off in [json!(false), json!(0), json!("")] {
         let all = call(
             &service,
@@ -140,7 +141,7 @@ async fn active_test_off_shows_the_archived_records_live() {
         .await["result"]
             .as_i64()
             .unwrap();
-        assert_eq!(all, 2, "{off} desliga o active_test como no Python");
+        assert_eq!(all, 2, "{off} switches active_test off, as in Python");
     }
 
     case.close().await;

@@ -89,7 +89,8 @@ async fn main() -> anyhow::Result<()> {
     if std::env::var("RUSDOO_INSECURE_COOKIES").is_ok() {
         service = service.allow_insecure_cookies();
     }
-    // o endereço é configurável: uma máquina que já roda um Odoo tem a
+    // the address is configurable: a machine already running an Odoo
+    // has the
     // 8069 ocupada, e um container publica em outra interface
     let addr = std::env::var("RUSDOO_ADDR").unwrap_or_else(|_| DEFAULT_ADDR.to_string());
     // the scheduler: it wakes on its own and runs what ir.cron says is

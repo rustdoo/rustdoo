@@ -393,8 +393,8 @@ fn only_id(ctx: &MethodCtx<'_>) -> Result<i64, RusdooError> {
 
 /// The destination unit, given positionally like Odoo's
 /// `_compute_quantity(qty, to_unit)` or by name.
-/// `ctx.rest` já vem sem o conjunto de registros, então o primeiro
-/// argumento do método é a quantidade e o segundo, a unidade de destino.
+/// `ctx.rest` already comes without the recordset, so the method's
+/// first argument is the quantity and the second is the target unit.
 fn target_id(args: &[Value], kwargs: &Map<String, Value>) -> Result<i64, RusdooError> {
     args.get(1)
         .or_else(|| kwargs.get("to_uom_id"))
@@ -431,7 +431,7 @@ fn convert_quantity<'a>(
 ) -> MethodFuture<'a> {
     Box::pin(async move {
         let from_id = only_id(&ctx)?;
-        // os argumentos do método vêm depois do conjunto de registros
+        // the method's arguments come after the recordset
         let to_id = target_id(&ctx.rest, kwargs)?;
         let qty = amount(&ctx.rest, kwargs, "qty")?;
         let from = facts(&ctx, from_id).await?;

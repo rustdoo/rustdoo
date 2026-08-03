@@ -47,8 +47,8 @@ fn after(table: &str, required: bool) -> Registry {
 }
 
 async fn pool() -> Option<PgPool> {
-    // um schema desta execução: estes testes criam tabelas direto,
-    // e sem isso duas execuções mexem nas mesmas
+    // a schema of this run: these tests create tables directly, and
+    // without it two runs touch the same ones
     rusdoo_testing::pool_in("rusdoo_schema_upgrad_pool")
 }
 
@@ -221,9 +221,11 @@ async fn a_required_field_on_an_empty_table_keeps_its_constraint_live() {
     );
 }
 
-/// Um campo que passa a ser traduzível converte a coluna que já existe,
+/// A field that becomes translatable converts the column that is
+/// already there,
 /// em vez de deixar o modelo dizendo `jsonb` e a tabela dizendo `varchar`
-/// — que é um servidor que sobe e falha em toda leitura daquele campo.
+/// — which is a server that boots and fails on every read of that
+/// field.
 #[tokio::test]
 async fn a_field_that_becomes_translatable_converts_its_column_live() {
     let Some(pool) = pool().await else {
@@ -257,7 +259,7 @@ async fn a_field_that_becomes_translatable_converts_its_column_live() {
         .await
         .unwrap();
 
-    // hoje: traduzível
+    // today: translatable
     let mut new = Registry::new();
     new.register(Model::new(
         meta(table),
@@ -280,14 +282,15 @@ async fn a_field_that_becomes_translatable_converts_its_column_live() {
     .unwrap();
     assert_eq!(udt, "jsonb", "a coluna virou o mapa de idiomas");
 
-    // e o texto que já estava lá virou o valor de origem, não sumiu
+    // and the text that was already there became the source value, it
+    // did not disappear
     let rows = new
         .read(&pool, "rusdoo.test.upgrade", &[id], &["name"])
         .await
         .unwrap();
     assert_eq!(rows[0]["name"], json!("Mesa de escritório"));
 
-    // o caminho de volta também: um campo que deixa de ser traduzível
+    // the way back too: a field that stops being translatable
     let mut back = Registry::new();
     back.register(Model::new(
         meta(table),

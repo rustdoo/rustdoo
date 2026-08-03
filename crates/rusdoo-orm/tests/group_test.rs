@@ -254,8 +254,8 @@ fn grouping_needs_at_least_one_groupby() {
 }
 
 async fn test_pool() -> Option<PgPool> {
-    // um schema desta execução: estes testes criam tabelas
-    // direto, e sem isso duas execuções mexem nas mesmas
+    // a schema of this run: these tests create tables directly, and
+    // without it two runs touch the same ones
     rusdoo_testing::pool_in("rusdoo_group_test_test_pool")
 }
 

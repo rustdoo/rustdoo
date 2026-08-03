@@ -1,17 +1,20 @@
-//! O catálogo de traduções de texto de código, port do que o Odoo
+//! The catalogue of code-text translations, a port of what Odoo
 //! carrega dos `.po` de cada addon (`odoo/tools/translate.py`).
 //!
-//! Duas coisas se traduzem num Odoo, e só uma delas vive no banco. O
-//! *valor* de um registro — o nome de um produto — é uma coluna `jsonb`,
+//! Two things translate in an Odoo, and only one of them lives in the
+//! database. A record's *value* — a product's name — is a `jsonb`
+//! column,
 //! porque muda de registro para registro. O *texto do programa* — o
-//! rótulo "Create Date", a mensagem de um erro — é o mesmo para todo
-//! mundo, vem do `.po` do módulo e mora na memória do servidor.
+//! the "Create Date" label, an error message — is the same for
+//! everyone, comes from the module's `.po` and lives in the server's
+//! memory.
 //!
-//! Guardar o segundo no banco seria uma consulta por rótulo por tela.
+//! Keeping the second in the database would be one query per label per
+//! screen.
 
 use std::collections::HashMap;
 
-/// As traduções carregadas: idioma -> (texto de origem -> tradução).
+/// The translations that were loaded: language -> (source -> target).
 #[derive(Debug, Default, Clone)]
 pub struct Translations {
     by_lang: HashMap<String, HashMap<String, String>>,
@@ -22,19 +25,19 @@ impl Translations {
         Translations::default()
     }
 
-    /// Acrescenta o que um `.po` trouxe. Módulos carregam em ordem de
-    /// dependência, e o último a falar sobre um texto vence — que é como
-    /// um módulo corrige o rótulo de outro.
+    /// Add what a `.po` brought. Modules load in dependency order, and
+    /// the last one to speak about a text wins — which is how one module
+    /// corrects another's label.
     pub fn extend(&mut self, lang: &str, entries: impl IntoIterator<Item = (String, String)>) {
         let catalogue = self.by_lang.entry(lang.to_string()).or_default();
         catalogue.extend(entries);
     }
 
-    /// O texto em `lang`, ou ele mesmo quando ninguém o traduziu.
+    /// The text in `lang`, or itself when nobody translated it.
     ///
-    /// Nunca vazio e nunca ausente: um rótulo que não foi traduzido
-    /// aparece na língua de origem, que é informação, enquanto um rótulo
-    /// em branco é uma coluna que o usuário não sabe ler.
+    /// Never empty and never absent: an untranslated label shows in the
+    /// source language, which is information, while a blank label is a
+    /// column the user cannot read.
     pub fn get<'a>(&'a self, lang: &str, source: &'a str) -> &'a str {
         self.by_lang
             .get(lang)
@@ -47,7 +50,7 @@ impl Translations {
         self.by_lang.is_empty()
     }
 
-    /// Os idiomas que têm alguma tradução carregada.
+    /// The languages that have any translation loaded.
     pub fn langs(&self) -> Vec<&str> {
         let mut langs: Vec<&str> = self.by_lang.keys().map(String::as_str).collect();
         langs.sort_unstable();
@@ -68,9 +71,9 @@ mod tests {
         let mut t = Translations::new();
         t.extend("pt_BR", [("Create Date".to_string(), "Criado em".to_string())]);
         assert_eq!(t.get("pt_BR", "Create Date"), "Criado em");
-        // sem tradução, a origem — nunca vazio
+        // with no translation, the source — never empty
         assert_eq!(t.get("pt_BR", "Write Date"), "Write Date");
-        // idioma que ninguém carregou
+        // a language nobody loaded
         assert_eq!(t.get("de_DE", "Create Date"), "Create Date");
     }
 

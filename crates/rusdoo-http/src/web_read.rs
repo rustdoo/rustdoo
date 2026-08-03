@@ -202,7 +202,7 @@ impl OrmService {
         let Some(col) = rec_name else {
             return Ok(ids.iter().map(|id| (*id, id.to_string())).collect());
         };
-        // no idioma de quem perguntou: o rótulo que volta é o que a
+        // in the asker's language: the label that comes back is what the
         // tela vai mostrar ao lado do id
         let rows = self
             .registry

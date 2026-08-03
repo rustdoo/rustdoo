@@ -46,7 +46,8 @@ fn product() -> Model {
             inherits: vec![],
         },
         vec![
-            // `translate=True` no Odoo: o catálogo é o que o cliente lê
+            // `translate=True` in Odoo: the catalogue is what the
+            // customer reads
             Field::new("name", FieldType::Char { size: None })
                 .required()
                 .translatable(),
@@ -64,7 +65,8 @@ fn product() -> Model {
             .default_value(json!("consu")),
             Field::new("description", FieldType::Text).translatable(),
             Field::new("active", FieldType::Boolean).default_value(json!(true)),
-            // `image.mixin` do Odoo dá uma imagem a todo produto; aqui só
+            // Odoo's `image.mixin` gives every product an image; here
+            // only
             // a original, sem os tamanhos derivados que ele materializa
             Field::new("image_1920", FieldType::Binary),
         ],

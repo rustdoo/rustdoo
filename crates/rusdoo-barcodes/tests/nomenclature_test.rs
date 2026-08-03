@@ -1,5 +1,5 @@
 //! A nomenclatura com o banco no meio: as regras gravadas, a ordem em
-//! que elas valem, e o que a gravação recusa.
+//! they hold in, and what saving refuses.
 
 use rusdoo_orm::access::Operation;
 use rusdoo_orm::methods::{MethodCtx, MethodRegistry};
@@ -7,7 +7,8 @@ use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 
-/// Cada teste no seu schema: a suíte roda em paralelo contra o mesmo
+/// Each test in its own schema: the suite runs in parallel against the
+/// same
 /// banco.
 fn pool(url: &str, schema: &'static str) -> PgPool {
     sqlx::postgres::PgPoolOptions::new()
@@ -52,7 +53,7 @@ async fn fixture(schema: &'static str) -> Option<(Registry, PgPool, MethodRegist
 }
 
 /// Chama `parse_barcode` como o despacho chamaria: pela tabela de
-/// métodos, com o id da nomenclatura em `self`.
+/// methods, with the nomenclature's id in `self`.
 async fn read_code(
     registry: &Registry,
     pool: &PgPool,
@@ -64,8 +65,8 @@ async fn read_code(
         .get("barcode.nomenclature", "parse_barcode")
         .expect("o método está registrado");
     assert_eq!(method.operation, Operation::Read, "bipar não muda nada");
-    // o código lido é argumento do método, e argumento vive em `rest`:
-    // `args[0]` é o conjunto de registros
+    // the scanned code is the method's argument, and arguments live in
+    // `rest`: `args[0]` is the recordset
     let ctx = MethodCtx::new(registry, pool, 1, "barcode.nomenclature", vec![nomenclature])
         .with_rest(vec![json!(barcode)]);
     (method.func)(ctx, &[json!(barcode)], &Map::new())
@@ -124,12 +125,13 @@ async fn a_scanned_code_comes_back_classified_live() {
     let parsed = read_code(&registry, &pool, &methods, nomenclature, "1020034051259").await;
     assert_eq!(parsed["type"], "product");
     assert_eq!(parsed["encoding"], "ean13");
-    // a balança escreveu 12,5 no código; o que está no produto é o base
+    // the scale wrote 12.5 into the code; what is on the product is the
+    // base
     assert_eq!(parsed["value"], json!(12.5));
     assert_eq!(parsed["base_code"], "1020034050009");
 
-    // um código que nenhuma regra reconhece volta como erro, não como
-    // produto nenhum: quem bipou precisa saber que não deu
+    // a code no rule recognises comes back as an error, not as no
+    // product at all: whoever scanned needs to know it did not work
     let parsed = read_code(&registry, &pool, &methods, nomenclature, "9999999999994").await;
     assert_eq!(parsed["type"], "error");
     assert_eq!(parsed["code"], "9999999999994");
@@ -142,8 +144,8 @@ async fn the_rule_with_the_lower_sequence_wins_live() {
         return;
     };
     let nomenclature = a_nomenclature(&registry, &pool, "Duas regras").await;
-    // as duas casam 2212345610259; a ordem de criação é a inversa da
-    // ordem em que elas valem, de propósito
+    // both match 2212345610259; the creation order is the reverse of
+    // the order they hold in, on purpose
     let wide = a_rule(
         &registry,
         &pool,
@@ -169,7 +171,7 @@ async fn the_rule_with_the_lower_sequence_wins_live() {
     assert_eq!(parsed["value"], json!(10.25), "venceu a de sequence 2");
     assert_eq!(parsed["base_code"], "2212345600007");
 
-    // trocando a ordem, a outra regra passa a valer para o mesmo código
+    // swapping the order, the other rule takes over the same code
     registry
         .write(&pool, "barcode.rule", &[wide], vec![("sequence", json!(1))])
         .await
@@ -209,8 +211,8 @@ async fn a_rule_the_server_could_not_apply_is_never_written_live() {
         .unwrap();
     assert_eq!(count, 0, "uma regra recusada não sobrevive");
 
-    // a regra boa passa, e editar o padrão para um quebrado também é
-    // recusado — a constraint vale na gravação, não só na criação
+    // the good rule passes, and editing the pattern into a broken one
+    // is refused too — the constraint holds on writes, not only creates
     let good = a_rule(&registry, &pool, nomenclature, "ean8", "..>>>{ND}", 10)
         .await
         .unwrap();
@@ -232,7 +234,7 @@ async fn an_rfid_uri_answers_with_the_product_and_the_lot_live() {
         eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
         return;
     };
-    // sem regra nenhuma: uma URI não passa por elas
+    // with no rule at all: a URI does not go through them
     let nomenclature = a_nomenclature(&registry, &pool, "RFID").await;
 
     let parsed = read_code(

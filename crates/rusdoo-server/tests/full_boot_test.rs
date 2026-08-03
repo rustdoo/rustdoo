@@ -55,7 +55,7 @@ fn registry() -> Registry {
     rusdoo_account::extend(&mut registry).expect("account models");
     rusdoo_stock::extend(&mut registry).expect("stock models");
     rusdoo_purchase::extend(&mut registry).expect("purchase models");
-    // os módulos do lote piloto
+    // the pilot batch's modules
     rusdoo_uom::extend(&mut registry).expect("uom models");
     rusdoo_barcodes::extend(&mut registry).expect("barcodes models");
     rusdoo_utm::extend(&mut registry).expect("utm models");

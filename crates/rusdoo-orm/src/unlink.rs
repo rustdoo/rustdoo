@@ -123,14 +123,15 @@ impl Registry {
     pub async fn init_foreign_keys(&self, pool: &PgPool) -> Result<(), RusdooError> {
         for model in self.models() {
             for field in model.fields() {
-                // as colunas de auditoria ficam de fora, e não por
+                // the audit columns stay out, and not for
                 // comodidade: `res.users.create_uid` aponta para
-                // `res.users`, então o primeiro usuário do banco teria de
+                // `res.users`, so the database's first user would have
+                // to
                 // existir antes de ser criado. O Odoo resolve isso
                 // inserindo o admin com id fixo nos dados de `base`; o
-                // port carimba o uid da sessão, que nem sempre é uma
-                // linha ainda. O que se perde é pequeno: um `create_uid`
-                // pode apontar para um usuário apagado, e a tela mostra
+                // port stamps the session's uid, which is not always a
+                // row yet. What is lost is small: a `create_uid` may
+                // point at a deleted user, and the screen shows
                 // um autor em branco.
                 if AUDIT_COLUMNS.contains(&field.name.as_str()) {
                     continue;
@@ -145,8 +146,9 @@ impl Registry {
                     continue;
                 };
                 let Some(target) = self.get(comodel) else {
-                    // um comodelo de outro módulo que não está instalado:
-                    // a referência fica sem chave, e o log diz qual
+                    // a comodel from a module that is not installed:
+                    // the reference is left without a key, and the log
+                    // says which
                     tracing::warn!(
                         "{}.{}: comodel {comodel} is not registered, \
                          the reference is left without a foreign key",

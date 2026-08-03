@@ -1,4 +1,5 @@
-//! `_order`: a busca que não pede ordem recebe a do modelo, não a que o
+//! `_order`: a search that asks for no order gets the model's, not the
+//! one the
 //! PostgreSQL quiser dar.
 
 use rusdoo_orm::crud::SearchOptions;
@@ -23,8 +24,8 @@ fn char(name: &str) -> Field {
 }
 
 async fn pool() -> Option<PgPool> {
-    // um schema desta execução: estes testes criam tabelas direto,
-    // e sem isso duas execuções mexem nas mesmas
+    // a schema of this run: these tests create tables directly, and
+    // without it two runs touch the same ones
     rusdoo_testing::pool_in("rusdoo_order_test_pool")
 }
 
@@ -40,7 +41,7 @@ fn an_inherit_child_keeps_the_order_its_parent_chose() {
     let mut reg = Registry::new();
     reg.register(Model::new(meta("x.y", "x_y"), vec![char("name")]).ordered("name desc, id"))
         .unwrap();
-    // um módulo que só acrescenta um campo não muda a ordem da lista
+    // a module that only adds a field does not change the list's order
     reg.register(Model::new(
         ModelMeta {
             inherit: vec!["x.y".into()],
@@ -108,8 +109,8 @@ async fn a_search_with_no_order_comes_back_in_the_models_order_live() {
             .await
             .unwrap();
     }
-    // a ordem de inserção não é a ordem do modelo, e é a inserção que o
-    // banco devolveria se ninguém dissesse nada
+    // the insertion order is not the model's order, and insertion is
+    // what the database would hand back if nobody said anything
     let ids = reg
         .search(&pool, "x.order", &Domain::True, &SearchOptions::default())
         .await
@@ -200,7 +201,7 @@ async fn the_lines_of_a_record_come_back_in_the_comodels_order_live() {
         model.init_table(&pool).await.unwrap();
     }
 
-    // as linhas entram fora de ordem, como entram quando alguém arrasta
+    // the lines go in out of order, as they do when somebody drags
     // uma linha nova para o meio do documento
     let doc = reg
         .create(

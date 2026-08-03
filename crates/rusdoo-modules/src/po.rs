@@ -1,22 +1,25 @@
-//! Leitor de `.po`, o formato em que toda tradução do Odoo viaja.
+//! A `.po` reader, the format every Odoo translation travels in.
 //!
-//! Um addon traz `i18n/pt_BR.po` com pares de `msgid` (o texto na língua
-//! de origem) e `msgstr` (a tradução). Os comentários `#:` dizem de onde
-//! cada texto veio — um rótulo de campo, uma string de view, uma mensagem
-//! de código — e é por eles que se sabe *o que* está sendo traduzido.
+//! An addon ships `i18n/pt_BR.po` with pairs of `msgid` (the text in
+//! the source language) and `msgstr` (the translation). The `#:`
+//! comments say where each text came from — a field label, a view
+//! string, a message in code — and they are how one knows *what* is
+//! being translated.
 //!
-//! O que é lido aqui é deliberadamente o subconjunto que importa: id,
-//! tradução, e as referências. Formas plurais e contextos (`msgctxt`)
-//! ficam de fora — o Odoo mesmo quase não os usa, e um leitor que
-//! fingisse entendê-los erraria em silêncio.
+//! What is read here is deliberately the subset that matters: id,
+//! translation, and the references. Plural forms and contexts
+//! (`msgctxt`) stay out — Odoo itself barely uses them, and a reader
+//! pretending to understand them would get it wrong in silence.
 //!
-//! Uma entrada com `msgstr` vazio não é uma tradução: é um texto que
-//! alguém ainda não traduziu, e guardá-la faria a tela mostrar vazio
+//! An entry with an empty `msgstr` is not a translation: it is a text
+//! nobody has translated yet, and keeping it would make the screen show
+//! blank
 //! onde deveria mostrar o original.
 
 use std::collections::HashMap;
 
-/// Uma entrada do arquivo: o texto de origem, a tradução e de onde veio.
+/// One entry of the file: the source text, the translation, and where
+/// it came from.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
     pub msgid: String,
@@ -27,14 +30,15 @@ pub struct Entry {
 }
 
 impl Entry {
-    /// Se esta entrada traduz o rótulo de um campo, o par
+    /// If this entry translates a field's label, the pair
     /// `(modelo, campo)` que ela nomeia.
     ///
-    /// A referência é `module.field_<tabela>__<campo>`, com a tabela em
-    /// snake_case — que é o nome do modelo com pontos virados sublinhado.
+    /// The reference is `module.field_<table>__<field>`, with the table
+    /// in snake_case — which is the model's name with its dots turned
+    /// into underscores.
     pub fn field_label(&self) -> Option<(String, String)> {
-        // toda referência é examinada, não só a primeira: uma entrada
-        // real do Odoo tem várias, e o rótulo "Name" aparece com quatro
+        // every reference is examined, not only the first: a real Odoo
+        // entry has several, and the label "Name" turns up with four
         // linhas `#:` das quais qualquer uma pode ser a de campo
         self.references.iter().find_map(|reference| {
             let rest = reference.strip_prefix("model:ir.model.fields,field_description:")?;
@@ -46,13 +50,14 @@ impl Entry {
     }
 }
 
-/// As traduções de um idioma: do texto de origem para o traduzido.
+/// One language's translations: from the source text to the translated
+/// one.
 pub type Catalogue = HashMap<String, String>;
 
-/// Lê um `.po`, devolvendo as entradas que carregam tradução.
+/// Read a `.po`, answering the entries that carry a translation.
 ///
-/// O cabeçalho (a entrada de `msgid ""`) é descartado: ele guarda
-/// metadados do arquivo, não uma tradução.
+/// The header (the `msgid ""` entry) is dropped: it holds the file's
+/// metadata, not a translation.
 pub fn parse_po(source: &str) -> Vec<Entry> {
     let mut entries = Vec::new();
     let mut references: Vec<String> = Vec::new();
@@ -105,7 +110,7 @@ pub fn parse_po(source: &str) -> Vec<Entry> {
     entries
 }
 
-/// As traduções de um `.po` como um catálogo pronto para consulta.
+/// A `.po`'s translations as a catalogue ready to be looked up.
 pub fn catalogue(source: &str) -> Catalogue {
     parse_po(source)
         .into_iter()
@@ -128,7 +133,7 @@ fn flush(
         references.clear();
         return;
     };
-    // o cabeçalho, e o que ninguém traduziu ainda
+    // the header, and what nobody has translated yet
     if !id.is_empty() && !text.is_empty() {
         entries.push(Entry {
             msgid: id,
@@ -140,7 +145,7 @@ fn flush(
     }
 }
 
-/// O conteúdo de uma linha `"..."`, com os escapes desfeitos.
+/// The content of a `"..."` line, with the escapes undone.
 fn unquote(raw: &str) -> String {
     let trimmed = raw.trim();
     let inner = trimmed
@@ -160,8 +165,9 @@ fn unquote(raw: &str) -> String {
             Some('r') => out.push('\r'),
             Some('"') => out.push('"'),
             Some('\\') => out.push('\\'),
-            // um escape que não conhecemos volta como veio, em vez de
-            // sumir: perder um caractere de uma tradução é pior que
+            // an escape we do not know comes back as it went in,
+            // instead of disappearing: losing a character of a
+            // translation is worse than
             // mostrar uma barra invertida
             Some(other) => {
                 out.push('\\');
@@ -262,7 +268,7 @@ msgstr "Cotação \"rascunho\""
             entry.field_label(),
             Some(("product.product".into(), "name".into()))
         );
-        // e uma entrada de código não é rótulo de campo nenhum
+        // and an entry from code is no field's label
         let code = entries
             .iter()
             .find(|e| e.msgid.starts_with('\n'))

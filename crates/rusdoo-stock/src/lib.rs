@@ -135,8 +135,8 @@ fn picking() -> Model {
             Field::new("note", FieldType::Text),
         ],
     )
-    // o Odoo põe a prioridade na frente (`priority desc,
-    // scheduled_date asc, id desc`); sem ela, a data prometida é o
+    // Odoo puts priority first (`priority desc, scheduled_date asc, id
+    // desc`); without it, the promised date is what
     // que organiza a fila de quem separa
     .ordered("scheduled_date asc, id desc")
 }

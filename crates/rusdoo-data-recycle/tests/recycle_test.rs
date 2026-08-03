@@ -1,5 +1,5 @@
 //! O ciclo da reciclagem: o que a varredura separa, o que ela deixa em
-//! paz, e o que acontece quando alguém valida ou descarta.
+//! peace, and what happens when somebody validates or discards.
 
 use rusdoo_core::RusdooError;
 use rusdoo_orm::crud::SearchOptions;
@@ -17,7 +17,7 @@ const RECORD: &str = "data_recycle.record";
 /// O modelo varrido pelos testes: um documento que fecha numa data e
 /// pode ser arquivado.
 const DOC: &str = "rusdoo.test.doc";
-/// Um modelo sem `active`: só dá para excluir o que ele guarda.
+/// A model with no `active`: what it keeps can only be deleted.
 const LOG: &str = "rusdoo.test.log";
 
 fn meta(name: &str, table: &str) -> ModelMeta {
@@ -96,7 +96,7 @@ async fn fixture(schema: &'static str) -> Option<(Registry, PgPool, MethodRegist
     Some((reg, pool, methods))
 }
 
-/// Chama um método registrado sobre `ids`, como o despacho faria.
+/// Call a registered method over `ids`, as the dispatch would.
 async fn call(
     reg: &Registry,
     pool: &PgPool,
@@ -112,7 +112,7 @@ async fn call(
     (method.func)(ctx, &[], &Map::new()).await
 }
 
-/// Um documento fechado há `days_ago` dias.
+/// A document closed `days_ago` days ago.
 async fn a_doc(reg: &Registry, pool: &PgPool, name: &str, state: &str, days_ago: i64) -> i64 {
     let closed = chrono::Utc::now().naive_utc() - chrono::Duration::days(days_ago);
     reg.create(
@@ -131,7 +131,7 @@ async fn a_doc(reg: &Registry, pool: &PgPool, name: &str, state: &str, days_ago:
     .unwrap()
 }
 
-/// A regra que os testes variam: cancelados fechados há mais de 6 meses.
+/// The rule the tests vary: cancelled, closed more than 6 months ago.
 async fn a_rule(reg: &Registry, pool: &PgPool, mode: &str, action: &str) -> i64 {
     reg.create(
         pool,
@@ -151,7 +151,7 @@ async fn a_rule(reg: &Registry, pool: &PgPool, mode: &str, action: &str) -> i64 
     .unwrap()
 }
 
-/// As sugestões abertas de uma regra, mais novas primeiro.
+/// A rule's open suggestions, newest first.
 async fn suggestions(reg: &Registry, pool: &PgPool, rule: i64) -> Vec<Map<String, Value>> {
     let ids = reg
         .search(
@@ -191,7 +191,7 @@ async fn a_varredura_separa_so_o_que_a_regra_descreve_live() {
     )
     .await
     .unwrap();
-    // numa regra manual a resposta é a tela do que apareceu
+    // on a manual rule the answer is the screen of what turned up
     assert_eq!(answer["type"], "ir.actions.act_window", "{answer}");
     assert_eq!(answer["res_model"], RECORD);
 
@@ -199,17 +199,17 @@ async fn a_varredura_separa_so_o_que_a_regra_descreve_live() {
     assert_eq!(found.len(), 1, "só o velho e cancelado casa: {found:?}");
     assert_eq!(found[0]["res_id"], json!(old_cancelled));
     assert_eq!(found[0]["res_model_name"], DOC);
-    // o nome do alvo é gravado na varredura, não inventado depois
+    // the target's name is written by the scan, not invented later
     assert_eq!(found[0]["name"], "Velho e cancelado");
 
-    // e nada foi apagado: separar não é aplicar
+    // and nothing was deleted: setting aside is not applying
     let alive = reg
         .search(&pool, DOC, &Domain::True, &SearchOptions::default())
         .await
         .unwrap();
     assert_eq!(alive.len(), 3, "a regra é manual");
 
-    // varrer de novo não duplica a sugestão
+    // scanning again does not duplicate the suggestion
     call(
         &reg,
         &pool,
@@ -261,7 +261,7 @@ async fn validar_apaga_o_alvo_e_a_sugestao_live() {
         .await
         .unwrap();
     assert_eq!(alive, vec![kept], "só o alvo da sugestão sai");
-    // e a sugestão some junto: ela existia para essa decisão
+    // and the suggestion goes with it: it existed for that decision
     assert!(suggestions(&reg, &pool, rule).await.is_empty());
     assert!(reg
         .read(&pool, DOC, &[doomed], &["name"])
@@ -307,7 +307,7 @@ async fn descartar_tira_o_registro_da_fila_para_sempre_live() {
         "saiu da fila"
     );
 
-    // a varredura seguinte não ressuscita a pergunta já respondida
+    // the next scan does not resurrect a question already answered
     call(
         &reg,
         &pool,
@@ -320,7 +320,7 @@ async fn descartar_tira_o_registro_da_fila_para_sempre_live() {
     .unwrap();
     assert!(suggestions(&reg, &pool, rule).await.is_empty());
 
-    // o contador da regra também ignora o descartado
+    // the rule's counter ignores the discarded one too
     let rows = reg
         .read(&pool, RULE, &[rule], &["records_to_recycle_count"])
         .await
@@ -348,10 +348,10 @@ async fn o_modo_automatico_arquiva_sem_perguntar_live() {
     )
     .await
     .unwrap();
-    // sem nada para revisar, a resposta é quantos foram tratados
+    // with nothing to review, the answer is how many were dealt with
     assert_eq!(answer, json!(1), "{answer}");
 
-    // o velho saiu de circulação sem ser apagado
+    // the old one left circulation without being deleted
     let visible = reg
         .search(&pool, DOC, &Domain::True, &SearchOptions::default())
         .await
@@ -359,7 +359,8 @@ async fn o_modo_automatico_arquiva_sem_perguntar_live() {
     assert_eq!(visible, vec![fresh]);
     let rows = reg.read(&pool, DOC, &[old], &["active"]).await.unwrap();
     assert_eq!(rows[0]["active"], json!(false), "arquivado, não apagado");
-    // e a fila fica vazia: no automático não há o que revisar
+    // and the queue is empty: in automatic mode there is nothing to
+    // review
     assert!(suggestions(&reg, &pool, rule).await.is_empty());
 }
 
@@ -371,7 +372,7 @@ async fn o_cron_roda_as_regras_ativas_e_ignora_a_que_quebra_live() {
     };
     let good = a_rule(&reg, &pool, "automatic", "archive").await;
     a_doc(&reg, &pool, "Velho", "cancel", 400).await;
-    // uma regra que aponta um modelo que ninguém registrou
+    // a rule pointing at a model nobody registered
     let broken = reg
         .create(
             &pool,
@@ -384,7 +385,7 @@ async fn o_cron_roda_as_regras_ativas_e_ignora_a_que_quebra_live() {
         )
         .await
         .unwrap();
-    // e uma desativada, que o cron não deve tocar
+    // and a deactivated one, which the cron must not touch
     let idle = a_rule(&reg, &pool, "manual", "unlink").await;
     reg.write(&pool, RULE, &[idle], vec![("active", json!(false))])
         .await
@@ -395,7 +396,7 @@ async fn o_cron_roda_as_regras_ativas_e_ignora_a_que_quebra_live() {
         .unwrap();
     assert_eq!(answer["scanned"], json!(1), "{answer}");
     assert_eq!(answer["applied"], json!(1), "{answer}");
-    // a regra quebrada não impediu a boa de rodar, e não deixou fila
+    // the broken rule did not stop the good one, and left no queue
     assert!(suggestions(&reg, &pool, broken).await.is_empty());
     assert!(suggestions(&reg, &pool, good).await.is_empty());
     assert!(suggestions(&reg, &pool, idle).await.is_empty());
@@ -457,7 +458,7 @@ async fn uma_regra_perigosa_ou_mal_escrita_nao_e_salva_live() {
         .expect_err("uma regra que pega tudo");
     assert!(error.to_string().contains("match every record"), "{error}");
 
-    // um filtro que não é domínio
+    // a filter that is not a domain
     let error = reg
         .create(
             &pool,
@@ -472,7 +473,7 @@ async fn uma_regra_perigosa_ou_mal_escrita_nao_e_salva_live() {
         .expect_err("isso não é um domínio");
     assert!(error.to_string().contains("JSON list"), "{error}");
 
-    // idade de zero é "tudo" escrito de outro jeito
+    // an age of zero is "everything" written another way
     let error = reg
         .create(
             &pool,
@@ -488,7 +489,7 @@ async fn uma_regra_perigosa_ou_mal_escrita_nao_e_salva_live() {
         .expect_err("zero is not an interval");
     assert!(error.to_string().contains("greater than zero"), "{error}");
 
-    // e nenhuma delas sobreviveu à recusa
+    // and none of them survived the refusal
     let saved = reg
         .search(&pool, RULE, &Domain::True, &SearchOptions::default())
         .await
@@ -517,7 +518,7 @@ async fn um_alvo_que_sumiu_sozinho_nao_derruba_a_validacao_live() {
     let suggestion = suggestions(&reg, &pool, rule).await[0]["id"]
         .as_i64()
         .unwrap();
-    // alguém apagou o documento entre a varredura e a validação
+    // somebody deleted the document between the scan and the validation
     reg.get(DOC).unwrap().unlink(&pool, &[doc]).await.unwrap();
 
     call(

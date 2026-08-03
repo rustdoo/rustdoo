@@ -293,7 +293,7 @@ fn load_translations(
         .map(|entry| entry.path())
         .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("po"))
         .collect();
-    // ordem estável: o log de um boot não pode depender do sistema de arquivos
+    // a stable order: a boot's log must not depend on the filesystem
     files.sort();
     for path in files {
         let Some(lang) = path.file_stem().and_then(|stem| stem.to_str()) else {
@@ -419,8 +419,8 @@ pub async fn install_modules(
         );
         report.modules.push((name.clone(), totals));
     }
-    // as chaves estrangeiras por último: um módulo instalado no meio do
-    // caminho referencia modelos de outro que ainda não tinha tabela
+    // the foreign keys last: a module installed halfway through
+    // references models of another that had no table yet
     registry.init_foreign_keys(pool).await?;
     Ok(report)
 }

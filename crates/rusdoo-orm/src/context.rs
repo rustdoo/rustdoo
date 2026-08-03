@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn odoos_false_context_is_an_empty_one() {
-        // o cliente manda `false` quando não tem contexto
+        // the client sends `false` when it has no context
         assert!(Context::from_value(Some(&json!(false))).is_empty());
         assert!(Context::from_value(Some(&json!(null))).is_empty());
     }
@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn an_empty_lang_is_no_lang() {
-        // um cliente que manda "" não escolheu um idioma
+        // a client that sends "" has chosen no language
         assert_eq!(Context::from_value(Some(&json!({"lang": ""}))).lang(), "en_US");
     }
 }

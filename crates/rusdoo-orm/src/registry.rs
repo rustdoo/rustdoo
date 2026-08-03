@@ -81,7 +81,7 @@ impl Registry {
             })?;
             merge_fields(&mut fields, parent_model.fields().iter().cloned());
             constraints.extend(parent_model.constraints().iter().cloned());
-            // um `_inherit` acrescenta comportamento, não licencia os
+            // an `_inherit` adds behaviour, it does not licence the
             // registros do pai a serem apagados sem as checagens dele
             hooks.extend(parent_model.unlink_hooks().iter().copied());
             if let Some(order) = parent_model.declared_order() {

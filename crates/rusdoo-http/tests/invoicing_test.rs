@@ -66,7 +66,7 @@ async fn fixture(url: &str, schema: &'static str) -> OrmService {
         "res.country",
         "res.company",
         "res.partner",
-        // o default de empresa lê o usuário que está criando
+        // the company default reads the creating user
         "res.groups",
         "res.users",
         "product.product",

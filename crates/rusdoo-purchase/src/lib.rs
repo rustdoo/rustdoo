@@ -161,7 +161,7 @@ fn order() -> Model {
         ],
     )
     // o Odoo ordena por `priority desc, id desc`; sem o campo de
-    // prioridade, o que sobra da intenção é o pedido mais novo primeiro
+    // priority, what is left of the intent is the newest order first
     .ordered("id desc")
 }
 

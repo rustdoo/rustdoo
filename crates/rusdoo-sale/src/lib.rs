@@ -604,16 +604,16 @@ fn cancel_wizard() -> Model {
     .transient()
 }
 
-/// Port of `_unlink_except_draft_or_cancel`: um pedido que já saiu do
-/// rascunho não é apagado, é cancelado.
+/// Port of `_unlink_except_draft_or_cancel`: an order that has left
+/// draft is not deleted, it is cancelled.
 ///
-/// Uma pergunta ao banco para todos os ids, não uma por registro: o
+/// One question to the database for every id, not one per record: the
 /// hook recebe o conjunto inteiro justamente para isso.
 fn refuse_unless_draft_or_cancel(
     mut ctx: rusdoo_orm::unlink::UnlinkCtx<'_>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), RusdooError>> + Send + '_>> {
     Box::pin(async move {
-        // uma leitura para todos os ids, não uma por registro: o hook
+        // one read for every id, not one per record: the hook
         // recebe o conjunto inteiro justamente para isso
         for record in ctx.read(&["name", "state"]).await? {
             let state = record.get("state").and_then(Value::as_str).unwrap_or("");

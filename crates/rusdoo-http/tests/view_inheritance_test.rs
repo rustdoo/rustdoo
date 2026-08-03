@@ -1,5 +1,5 @@
-//! Um módulo enxerta um campo no form de outro sem republicá-lo:
-//! `get_views` devolve o arch da base com os patches aplicados.
+//! A module grafts a field onto another's form without republishing it:
+//! `get_views` answers the base arch with the patches applied.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -10,7 +10,7 @@ use rusdoo_testing::TransactionCase;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
-/// O form que o módulo dono do modelo publica.
+/// The form the module that owns the model publishes.
 const BASE: &str = r#"<form><button name="action_post" type="object" string="Lançar"/><group><field name="name"/><field name="partner_id"/></group></form>"#;
 
 async fn call(service: OrmService, body: Value) -> Value {
@@ -61,7 +61,8 @@ async fn a_patch_is_applied_to_the_view_it_extends_live() {
         )
         .await
         .unwrap();
-    // o patch: um botão depois do que já existe, um campo depois de `name`
+    // the patch: a button after the one already there, a field after
+    // `name`
     case.models()
         .create(
             &pool,
@@ -86,24 +87,24 @@ async fn a_patch_is_applied_to_the_view_it_extends_live() {
     let response = call(service, get_views("res.partner")).await;
     let arch = response["result"]["views"]["form"]["arch"]
         .as_str()
-        .unwrap_or_else(|| panic!("sem arch: {response}"))
+        .unwrap_or_else(|| panic!("no arch: {response}"))
         .to_string();
 
     assert!(
         arch.contains(r#"<button name="action_extra""#),
-        "o botão do patch entrou: {arch}"
+        "the patch's button went in: {arch}"
     );
     assert!(
         arch.contains(r#"<field name="ref"/>"#),
-        "o campo do patch entrou: {arch}"
+        "the patch's field went in: {arch}"
     );
-    // e na posição pedida, não no fim
+    // and in the position asked for, not at the end
     let extra = arch.find("action_extra").unwrap();
     let group = arch.find("<group>").unwrap();
-    assert!(extra < group, "o botão ficou antes do grupo: {arch}");
+    assert!(extra < group, "the button landed before the group: {arch}");
     assert!(
         arch.find(r#"name="ref""#).unwrap() > arch.find(r#"name="name""#).unwrap(),
-        "o campo ficou depois de `name`: {arch}"
+        "the field landed after `name`: {arch}"
     );
 
     case.close().await;
@@ -115,8 +116,9 @@ async fn a_patch_is_never_served_as_a_view_of_its_own_live() {
         return;
     };
     let pool = case.pool();
-    // o patch entra primeiro e com prioridade menor: se a busca do form
-    // padrão não excluísse patches, seria ele que o cliente receberia
+    // the patch goes in first and with a lower priority: if the default
+    // form lookup did not exclude patches, it is what the client would
+    // get
     let patch = case
         .models()
         .create(
@@ -158,11 +160,11 @@ async fn a_patch_is_never_served_as_a_view_of_its_own_live() {
     assert_eq!(
         view["id"],
         json!(base),
-        "o cliente recebe a view, não o patch: {response}"
+        "the client gets the view, not the patch: {response}"
     );
     let arch = view["arch"].as_str().unwrap();
-    assert!(arch.starts_with("<form>"), "o arch é o da base: {arch}");
-    assert!(arch.contains(r#"<field name="active"/>"#), "com o patch: {arch}");
+    assert!(arch.starts_with("<form>"), "the arch is the base's: {arch}");
+    assert!(arch.contains(r#"<field name="active"/>"#), "with the patch: {arch}");
 
     case.close().await;
 }
