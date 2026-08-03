@@ -6,6 +6,10 @@ use std::sync::Arc;
 
 const DEFAULT_ADDR: &str = "0.0.0.0:8069";
 
+/// How often the scheduler looks for work. Odoo's own worker wakes on a
+/// similar beat; the granularity of a job is the tick, not the second.
+const CRON_TICK: std::time::Duration = std::time::Duration::from_secs(60);
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -87,6 +91,9 @@ async fn main() -> anyhow::Result<()> {
     // o endereço é configurável: uma máquina que já roda um Odoo tem a
     // 8069 ocupada, e um container publica em outra interface
     let addr = std::env::var("RUSDOO_ADDR").unwrap_or_else(|_| DEFAULT_ADDR.to_string());
+    // the scheduler: it wakes on its own and runs what ir.cron says is
+    // due. Nothing else in the process waits on it.
+    rusdoo_http::cron::spawn(service.clone(), CRON_TICK);
     tracing::info!("rusdoo listening on {addr} (/web, /jsonrpc, /web/dataset/call_kw)");
     rusdoo_http::serve(&addr, service).await?;
     Ok(())
@@ -158,6 +165,8 @@ fn code_methods(
     addons_path: &std::path::Path,
 ) -> anyhow::Result<rusdoo_orm::methods::MethodRegistry> {
     let mut methods = rusdoo_orm::methods::MethodRegistry::new();
+    // the framework's own scheduled work, before any module's
+    rusdoo_base::extend_methods(&mut methods)?;
     let installed = installed_code_modules(addons_path)?;
     if installed.contains(&"account") {
         rusdoo_account::extend_methods(&mut methods)?;

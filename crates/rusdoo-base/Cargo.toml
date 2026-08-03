@@ -8,6 +8,8 @@ license.workspace = true
 serde_json.workspace = true
 rusdoo-core = { path = "../rusdoo-core" }
 rusdoo-orm = { path = "../rusdoo-orm" }
+sqlx.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

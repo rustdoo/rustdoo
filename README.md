@@ -58,7 +58,8 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
    comandos x2many (0–6), `read_group`, defaults, `active_test`,
    LOG_ACCESS, campos computed (com dependências) e related,
    numeração por `ir.sequence`, constraints de modelo (`@api.constrains`),
-   modelos transientes (assistentes), access
+   modelos transientes (assistentes), trabalho agendado (`ir.cron`),
+   access
    rights (`ir.model.access`) e record rules (`ir.rule`) — ambos
    persistidos, lidos a cada boot.
    Falta: contexto/`Environment` completo, constraints SQL.

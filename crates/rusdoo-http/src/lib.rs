@@ -7,6 +7,7 @@
 
 pub mod assets;
 pub mod attachment;
+pub mod cron;
 pub mod dispatch;
 mod group;
 pub mod jsonrpc;

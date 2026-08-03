@@ -114,6 +114,16 @@ impl OrmService {
         self.methods.get(model, method).map(|entry| entry.operation)
     }
 
+    /// The registry and the pool, for the parts of the server that run
+    /// without a request behind them (the scheduler).
+    pub fn registry_ref(&self) -> &Registry {
+        &self.registry
+    }
+
+    pub fn pool_ref(&self) -> &PgPool {
+        &self.pool
+    }
+
     /// Where the attachment bytes live. It belongs to the service, not
     /// to the process: two databases served by one binary keep their
     /// files apart.

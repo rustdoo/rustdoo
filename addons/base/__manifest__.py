@@ -5,6 +5,7 @@
     'summary': 'Os modelos que todo addon usa: parceiros, empresas, usuários e grupos',
     'depends': [],
     'data': [
+        'data/ir_cron.xml',
         'security/res_groups.xml',
         'security/ir.model.access.csv',
         'views/res_partner_views.xml',

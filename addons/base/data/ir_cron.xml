@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- O trabalho que o servidor faz sozinho. -->
+<odoo>
+    <data noupdate="1">
+        <record id="ir_cron_autovacuum" model="ir.cron">
+            <field name="name">Limpeza de registros transientes</field>
+            <field name="model">ir.autovacuum</field>
+            <field name="code">power_on</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active">1</field>
+        </record>
+    </data>
+</odoo>

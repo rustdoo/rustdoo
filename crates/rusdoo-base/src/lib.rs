@@ -7,10 +7,12 @@
 //! `addons/base/` is the data.
 
 use rusdoo_core::RusdooError;
+use rusdoo_orm::access::Operation;
 use rusdoo_orm::fields::{Field, FieldType};
+use rusdoo_orm::methods::{MethodCtx, MethodFuture, MethodRegistry};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
-use serde_json::json;
+use serde_json::{json, Map, Value};
 
 /// The uid of the superuser (`base.user_root`), which bypasses the ACL.
 pub const SUPERUSER_ID: i64 = 1;
@@ -56,6 +58,50 @@ pub fn extend(reg: &mut Registry) -> Result<(), RusdooError> {
     Ok(())
 }
 
+/// How old a dialog has to be before the vacuum sweeps it. Long enough
+/// that nobody loses a wizard they left open over lunch.
+const TRANSIENT_MAX_HOURS: i64 = 12;
+
+/// The methods the framework itself schedules.
+pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
+    methods.register("ir.autovacuum", "power_on", Operation::Unlink, power_on)?;
+    Ok(())
+}
+
+/// `power_on` — delete the transient rows nobody came back to.
+///
+/// Only transient models are touched, and only rows older than the
+/// window: a vacuum that could reach stored data would be a delete
+/// nobody asked for, scheduled.
+fn power_on<'a>(
+    ctx: MethodCtx<'a>,
+    _args: &'a [Value],
+    _kwargs: &'a Map<String, Value>,
+) -> MethodFuture<'a> {
+    Box::pin(async move {
+        let mut swept = 0u64;
+        for model in ctx.registry.models() {
+            if !model.is_transient() {
+                continue;
+            }
+            let table = rusdoo_orm::sql::quote_ident(&model.meta.table)?;
+            let sql = format!(
+                r#"DELETE FROM {table}
+                   WHERE "create_date" IS NOT NULL
+                     AND "create_date" < (CURRENT_TIMESTAMP - ($1 || ' hours')::interval)"#
+            );
+            let done = sqlx::query(&sql)
+                .bind(TRANSIENT_MAX_HOURS.to_string())
+                .execute(ctx.pool)
+                .await
+                .map_err(|error| RusdooError::Database(error.to_string()))?;
+            swept += done.rows_affected();
+        }
+        tracing::info!("autovacuum: {swept} registro(s) transientes removidos");
+        Ok(json!(swept))
+    })
+}
+
 fn models() -> Vec<Model> {
     vec![
         sequence(),
@@ -68,6 +114,8 @@ fn models() -> Vec<Model> {
         act_window(),
         report(),
         attachment(),
+        cron(),
+        autovacuum(),
         ui_menu(),
     ]
 }
@@ -263,6 +311,46 @@ fn attachment() -> Model {
     )
 }
 
+/// `ir.cron` — work the server does on its own, on a clock.
+///
+/// A job names a model and one of its methods: the same methods a client
+/// calls by name, run by the server with nobody watching. There is no
+/// second kind of code to write and no second place for it to live.
+fn cron() -> Model {
+    Model::new(
+        meta("ir.cron", "ir_cron"),
+        vec![
+            char("name").required(),
+            // what to run: a registered model method
+            char("model").required(),
+            char("code").required(),
+            Field::new("interval_number", FieldType::Integer).default_value(json!(1)),
+            Field::new(
+                "interval_type",
+                FieldType::Selection(vec![
+                    ("minutes".into(), "Minutos".into()),
+                    ("hours".into(), "Horas".into()),
+                    ("days".into(), "Dias".into()),
+                    ("weeks".into(), "Semanas".into()),
+                ]),
+            )
+            .default_value(json!("days")),
+            Field::new("nextcall", FieldType::Datetime),
+            Field::new("lastcall", FieldType::Datetime),
+            Field::new("active", FieldType::Boolean).default_value(json!(true)),
+        ],
+    )
+}
+
+/// `ir.autovacuum` — the job that sweeps what nobody kept.
+///
+/// Odoo has this model for the same reason: transient rows are dialogs
+/// somebody had open, and a database that keeps every dialog forever is
+/// a database nobody can explain the size of.
+fn autovacuum() -> Model {
+    Model::new(meta("ir.autovacuum", "ir_autovacuum"), vec![char("name")]).transient()
+}
+
 /// `ir.ui.menu` — the navigation tree.
 fn ui_menu() -> Model {
     Model::new(
@@ -296,6 +384,8 @@ mod tests {
             "ir.actions.act_window",
             "ir.actions.report",
             "ir.attachment",
+            "ir.cron",
+            "ir.autovacuum",
             "ir.ui.menu",
         ] {
             assert!(reg.get(name).is_some(), "{name} must be registered");
