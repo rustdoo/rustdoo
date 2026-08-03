@@ -64,7 +64,9 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
    access
    rights (`ir.model.access`) e record rules (`ir.rule`) — ambos
    persistidos, lidos a cada boot.
-   Falta: contexto/`Environment` completo, constraints SQL.
+   constraints SQL (`_sql_constraints`, aplicadas no boot) e campos
+   traduzíveis — uma coluna `jsonb` por campo, lida no idioma do pedido
+   com cadeia de fallback, inclusive nos filtros de domínio.
 3. **Fase 2 — HTTP/RPC** ✅ no essencial: `/jsonrpc`,
    `/web/dataset/call_kw`, sessões, autenticação, e o caminho do web
    client — `fields_get`, `default_get`, `web_read`, `web_search_read`,
@@ -81,8 +83,11 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
 5. **Fase 4 — QWeb + relatórios** ✅ no essencial: engine QWeb
    (`t-if`/`t-foreach`/`t-out`/`t-call`/`t-set`/`t-att*`), views
    renderizadas server-side e `ir.actions.report` — o documento de um
-   pedido ou fatura em `/report/html/<relatório>/<id>`. Falta: o passo
-   de PDF (o Odoo entrega o mesmo HTML ao wkhtmltopdf).
+   pedido ou fatura em `/report/html/<relatório>/<id>`, e o mesmo
+   documento convertido em `/report/pdf/<relatório>/<id>`. A conversão
+   fica atrás de um trait: o servidor procura um conversor no `PATH`
+   (weasyprint, wkhtmltopdf, chromium) ou obedece `RUSDOO_PDF_BIN`, e sem
+   nenhum recusa dizendo por quê — o HTML continua servindo.
 6. **Fase 5 — Cliente web** ✅ no essencial: o addon `web` traz um
    cliente próprio (JS sem dependências) que fala o mesmo JSON-RPC do
    Odoo: login, apps e menus, view de lista (busca, ordenação, paginação)
@@ -143,6 +148,7 @@ Abra <http://localhost:8069/web>. Variáveis úteis:
 | `RUSDOO_ADDONS_PATH` | diretório de addons (padrão `addons`) |
 | `RUSDOO_INSECURE_COOKIES` | cookies de sessão sem `Secure`, para HTTP local |
 | `RUSDOO_FILESTORE` | onde os anexos ficam em disco (padrão `filestore`) |
+| `RUSDOO_PDF_BIN` | qual conversor imprime os relatórios (padrão: o primeiro achado no `PATH`) |
 
 ## Testes
 

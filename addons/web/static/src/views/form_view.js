@@ -9,7 +9,7 @@
     "use strict";
 
     const { el, fill, fieldLabel, parseArch } = rusdoo.utils;
-    const { callKw } = rusdoo.rpc;
+    const { callKw, canPrintPdf } = rusdoo.rpc;
 
     /** Um `<field>` que está dentro de outro é coluna de linha x2many,
      *  não campo do formulário. */
@@ -288,7 +288,12 @@
                             disabled: !this.resId,
                             onclick: () =>
                                 window.open(
-                                    "/report/html/" +
+                                    // PDF quando o servidor sabe converter,
+                                    // HTML quando não: o mesmo documento,
+                                    // e a página o usuário imprime pelo
+                                    // browser. Nunca pedir o PDF a um
+                                    // servidor que respondería 503.
+                                    (canPrintPdf() ? "/report/pdf/" : "/report/html/") +
                                         encodeURIComponent(node.getAttribute("name")) +
                                         "/" +
                                         this.resId,

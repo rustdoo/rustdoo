@@ -80,6 +80,15 @@
         userContext = context && typeof context === "object" ? context : {};
     }
 
+    /**
+     * Se este servidor sabe converter um relatório em PDF.
+     *
+     * O cliente não tem como enxergar um binário no PATH de quem hospeda,
+     * então quem responde é o servidor, uma vez, no login — e não a cada
+     * clique no botão de imprimir.
+     */
+    let canPrintPdf = false;
+
     /** `call_kw`: um método do ORM sobre um modelo. */
     function callKw(model, method, args, kwargs) {
         const extra = kwargs || {};
@@ -101,9 +110,11 @@
         callKw: callKw,
         setUserContext: setUserContext,
         userContext: () => Object.assign({}, userContext),
+        canPrintPdf: () => canPrintPdf,
         sessionInfo: async () => {
             const info = await rpc("/web/session/get_session_info", {});
             setUserContext(info && info.user_context);
+            canPrintPdf = Boolean(info && info.can_print_pdf);
             return info;
         },
         authenticate: async (login, password) => {
@@ -115,6 +126,7 @@
             // recarregamento da página
             const info = await rpc("/web/session/get_session_info", {});
             setUserContext(info && info.user_context);
+            canPrintPdf = Boolean(info && info.can_print_pdf);
             return answer;
         },
         destroy: () => rpc("/web/session/destroy", {}),

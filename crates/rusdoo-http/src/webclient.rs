@@ -77,6 +77,11 @@ impl OrmService {
             // Odoo's context_get. A model without the fields falls back to
             // the server default rather than claiming a language nobody set
             "user_context": {"lang": lang, "tz": tz, "uid": session.uid},
+            // whether this machine has a converter, so the print button
+            // knows which route to open. Asked once at login rather than
+            // guessed per click, and answered by the server because the
+            // client has no way to see a binary on somebody's PATH.
+            "can_print_pdf": self.pdf.is_some(),
             "db": self.database_name(),
             "server_version": PROTOCOL_VERSION,
             "server_version_info": version_info(),
