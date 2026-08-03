@@ -1,2 +1,4 @@
 /target
 /odoo
+# sessões e worktrees da ferramenta, não fazem parte do port
+/.claude
