@@ -1485,6 +1485,7 @@ dependencies = [
  "quick-xml",
  "rusdoo-core",
  "rusdoo-orm",
+ "rusdoo-python",
  "rusdoo-testing",
  "serde",
  "serde_json",

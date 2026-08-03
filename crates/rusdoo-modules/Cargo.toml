@@ -11,6 +11,11 @@ thiserror.workspace = true
 tracing.workspace = true
 rusdoo-core = { path = "../rusdoo-core" }
 rusdoo-orm = { path = "../rusdoo-orm" }
+# an addon whose models are Python is installed by this crate, so the
+# bridge belongs here rather than in whoever calls it: the models have to
+# be in the registry before the tables are made, and only the install
+# knows when that is
+rusdoo-python = { path = "../rusdoo-python" }
 quick-xml.workspace = true
 csv.workspace = true
 sqlx.workspace = true

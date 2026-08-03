@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="family_fern" model="demo.plant.family">
+        <field name="name">Polypodiaceae</field>
+    </record>
+    <record id="plant_bird_nest" model="demo.plant">
+        <field name="name">Bird's Nest Fern</field>
+        <field name="family_id" ref="family_fern"/>
+        <field name="height_cm">45</field>
+    </record>
+</odoo>

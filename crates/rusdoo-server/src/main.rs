@@ -28,7 +28,21 @@ async fn main() -> anyhow::Result<()> {
     // files are allowed to speak about them.
     let mut registry = code_registry(addons_path)?;
     // the methods those same modules attach to their models
-    let methods = code_methods(addons_path)?;
+    let mut methods = code_methods(addons_path)?;
+    // and the addons whose models are Python rather than a crate. Every
+    // boot, not only `--init`: a model is code, and code is not installed
+    // into the database — a server restarted without `--init` would
+    // otherwise serve half its addons.
+    if addons_path.is_dir() {
+        let declared = rusdoo_modules::installer::register_python_models(
+            &[addons_path],
+            &mut registry,
+            &mut methods,
+        )?;
+        if declared > 0 {
+            tracing::info!("{declared} model(s) declared by an addon's Python");
+        }
+    }
 
     // What the addons ship to the browser is read off the filesystem, so
     // it is resolved on every boot — a server restarted without --init

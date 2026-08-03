@@ -313,10 +313,125 @@ fn load_translations(
     Ok(())
 }
 
+/// The files of a module's `models/` package, in the order its
+/// `__init__.py` asks for.
+///
+/// The order is the addon's to decide and not this function's to guess:
+/// a class that says `_inherit = "demo.plant"` has to run after the one
+/// that declared it, and `from . import plant_family` is where the addon
+/// wrote that down. Anything the `__init__.py` does not name is loaded
+/// after, sorted — a file nobody imports is either dead or was forgotten,
+/// and refusing to load it would be a worse guess than loading it last.
+fn model_sources(module_root: &Path) -> Result<Vec<std::path::PathBuf>, RusdooError> {
+    let models = module_root.join("models");
+    if !models.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut ordered: Vec<std::path::PathBuf> = Vec::new();
+    let init = models.join("__init__.py");
+    if let Ok(source) = std::fs::read_to_string(&init) {
+        for line in source.lines() {
+            let line = line.trim();
+            let Some(names) = line.strip_prefix("from . import ") else {
+                continue;
+            };
+            for name in names.split(',') {
+                let file = models.join(format!("{}.py", name.trim()));
+                if file.is_file() && !ordered.contains(&file) {
+                    ordered.push(file);
+                }
+            }
+        }
+    }
+    let mut rest: Vec<std::path::PathBuf> = std::fs::read_dir(&models)
+        .map_err(|error| {
+            RusdooError::Validation(format!("cannot read {}: {error}", models.display()))
+        })?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().and_then(|e| e.to_str()) == Some("py")
+                && path.file_name().and_then(|n| n.to_str()) != Some("__init__.py")
+                && !ordered.contains(path)
+        })
+        .collect();
+    rest.sort();
+    ordered.extend(rest);
+    Ok(ordered)
+}
+
+/// Load a module's Python models and methods into the registry.
+///
+/// Before the tables are made, and before any data file runs: a record
+/// in `data/plants.xml` needs the model it names to exist, and the model
+/// needs a table to land in.
+fn load_python(
+    manifest: &Manifest,
+    registry: &mut Registry,
+    methods: &mut rusdoo_orm::methods::MethodRegistry,
+) -> Result<usize, RusdooError> {
+    let mut loaded = 0;
+    for path in model_sources(&manifest.path)? {
+        let source = std::fs::read_to_string(&path).map_err(|error| {
+            RusdooError::Validation(format!("cannot read {}: {error}", path.display()))
+        })?;
+        let stem = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("models");
+        // the dotted name an addon's file has in Odoo, so a traceback
+        // says which file of which module broke
+        let module_name = format!("odoo.addons.{}.models.{stem}", manifest.name);
+        let names = rusdoo_python::load_python_module(registry, methods, &module_name, &source)?;
+        tracing::info!(
+            "{}: {} model(s) from {}",
+            manifest.name,
+            names.len(),
+            path.display()
+        );
+        loaded += names.len();
+    }
+    Ok(loaded)
+}
+
+/// Register the models and methods that the addons on disk wrote in
+/// Python, in dependency order.
+///
+/// Every boot, not only `--init`. A model is code, and code is not
+/// installed *into* the database — a Rust module registers its models on
+/// every start and a Python one has to do the same, or a server restarted
+/// without `--init` would serve half its addons.
+///
+/// Before any table is made, for the same reason the Rust modules
+/// register first: `init_tables` writes the schema the registry
+/// describes, and a model that arrived later would have no table.
+pub fn register_python_models(
+    addons_paths: &[&Path],
+    registry: &mut Registry,
+    methods: &mut rusdoo_orm::methods::MethodRegistry,
+) -> Result<usize, RusdooError> {
+    let manifests = discover_addons(addons_paths)?;
+    let order = dependency_order(&manifests)?;
+    let by_name: HashMap<&str, &Manifest> =
+        manifests.iter().map(|m| (m.name.as_str(), m)).collect();
+    let mut loaded = 0;
+    for name in &order {
+        let manifest = by_name[name.as_str()];
+        if manifest.installable {
+            loaded += load_python(manifest, registry, methods)?;
+        }
+    }
+    Ok(loaded)
+}
+
 /// The integrated boot, port of `odoo/modules/loading.py`:
 /// initialize the schema for every registered model, discover the
 /// addons, and load each installable module's data files in
 /// dependency order.
+///
+/// The models are expected to be registered already — Rust ones by their
+/// crates, Python ones by [`register_python_models`]. This writes the
+/// schema they describe and then the data.
 pub async fn install_modules(
     pool: &PgPool,
     registry: &mut Registry,

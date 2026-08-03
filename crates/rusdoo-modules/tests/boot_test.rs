@@ -383,3 +383,126 @@ async fn command_link_loads_m2m_end_to_end() {
         .unwrap();
     assert_eq!(rows[0]["implied_ids"], json!([a]));
 }
+
+/// The install reads an addon's `models/*.py`.
+///
+/// This is what "an addon published tomorrow runs here" finally means:
+/// nobody hands the server the source. The addon is a directory with a
+/// manifest, a `models/` package and data files, and the install finds
+/// all three — the models before the tables are made, so the data file
+/// that follows has somewhere to land.
+#[tokio::test(flavor = "multi_thread")]
+async fn installs_an_addon_whose_models_are_python() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = schema_pool(&url, rusdoo_testing::schema_for("rusdoo_boot_python")).await;
+    let mut registry = Registry::new();
+    let mut methods = rusdoo_orm::methods::MethodRegistry::new();
+    let mut xml_ids = XmlIds::new();
+
+    // the addon's code, like a Rust module's crate would have done —
+    // every boot, before the schema exists
+    let declared = rusdoo_modules::installer::register_python_models(
+        &[Path::new("tests/fixtures/addons_python")],
+        &mut registry,
+        &mut methods,
+    )
+    .expect("the addon's Python declares its models");
+    assert_eq!(declared, 2, "both files of models/ ran");
+
+    let report = install_modules(
+        &pool,
+        &mut registry,
+        &[Path::new("tests/fixtures/addons_python")],
+        &mut xml_ids,
+    )
+    .await
+    .expect("the addon installs");
+    assert_eq!(
+        report.modules.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+        vec!["demo_python"]
+    );
+
+    // the models the addon's Python declared are in the registry, in the
+    // order its `models/__init__.py` asked for — the family first,
+    // because the plant points at it
+    let plant = registry.get("demo.plant").expect("demo.plant is registered");
+    assert_eq!(plant.meta.table, "demo_plant");
+    assert!(
+        matches!(
+            &plant.field("family_id").expect("family_id").ty,
+            FieldType::Many2one { comodel } if comodel == "demo.plant.family"
+        ),
+        "the relation crossed"
+    );
+
+    // its data file loaded into the tables those models made
+    let (name, height): (String, i32) = sqlx::query_as(
+        r#"SELECT "name", "height_cm" FROM "demo_plant" ORDER BY "id" LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("the data file's record is there");
+    assert_eq!(name, "Bird's Nest Fern");
+    assert_eq!(height, 45);
+
+    // the compute the addon wrote runs
+    let rows = registry
+        .read(
+            &pool,
+            "demo.plant",
+            &registry
+                .search(
+                    &pool,
+                    "demo.plant",
+                    &parse_domain(&json!([])).unwrap(),
+                    &SearchOptions::default(),
+                )
+                .await
+                .unwrap(),
+            &["label"],
+        )
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["label"], json!("Bird's Nest Fern (45cm)"));
+
+    // its rule refuses the write that breaks it
+    let ids = registry
+        .search(
+            &pool,
+            "demo.plant",
+            &parse_domain(&json!([])).unwrap(),
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    let error = registry
+        .write_as(&pool, 1, "demo.plant", &ids, vec![("height_cm", json!(0))])
+        .await
+        .expect_err("a plant with no height is refused");
+    assert!(
+        error.to_string().contains("a plant has a height"),
+        "the addon's own message: {error}"
+    );
+
+    // and its method is reachable by name, like a Rust module's
+    let entry = methods
+        .get("demo.plant", "action_prune")
+        .expect("the addon's method is registered");
+    let registry = std::sync::Arc::new(registry);
+    let ctx = rusdoo_orm::methods::MethodCtx::new(
+        std::sync::Arc::clone(&registry),
+        &pool,
+        1,
+        "demo.plant",
+        ids.clone(),
+    )
+    .with_rest(vec![json!(5)]);
+    assert_eq!(
+        entry.call(ctx, &[], &serde_json::Map::new()).await.unwrap(),
+        json!(40),
+        "the method ran and wrote"
+    );
+}
