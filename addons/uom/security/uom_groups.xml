@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Todo mundo lê as unidades: um pedido em caixas não faz sentido para
+     quem não pode ver o que é uma caixa. Mexer nelas é outra história —
+     mudar um fator reescreve o significado de todo estoque já lançado,
+     então isso fica com quem administra o sistema. -->
+<odoo>
+    <data noupdate="1">
+        <record id="group_uom_manager" model="res.groups">
+            <field name="name">Unidades de medida: gerente</field>
+            <field name="category">Direitos de acesso</field>
+            <field name="comment">Cria e edita unidades de medida e seus fatores de conversão.</field>
+        </record>
+    </data>
+</odoo>

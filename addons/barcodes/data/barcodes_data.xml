@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A nomenclatura que todo banco tem, com a regra que diz "qualquer
+     código é o código de um produto". É o mínimo para um leitor servir
+     para alguma coisa antes de alguém configurar o que quer que seja;
+     `noupdate` porque a partir daqui as regras são de quem usa. -->
+<odoo>
+    <data noupdate="1">
+        <record id="default_barcode_nomenclature" model="barcode.nomenclature">
+            <field name="name">Nomenclatura padrão</field>
+            <field name="upc_ean_conv">always</field>
+        </record>
+
+        <!-- sequence alto de propósito: qualquer regra que alguém
+             escrever depois é mais específica que esta, e vale antes -->
+        <record id="barcode_rule_product" model="barcode.rule">
+            <field name="name">Códigos de produto</field>
+            <field name="barcode_nomenclature_id" ref="default_barcode_nomenclature"/>
+            <field name="sequence">90</field>
+            <field name="type">product</field>
+            <field name="encoding">any</field>
+            <field name="pattern">.*</field>
+        </record>
+    </data>
+</odoo>

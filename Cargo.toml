@@ -9,6 +9,13 @@ members = [
     "crates/rusdoo-product",
     "crates/rusdoo-purchase",
     "crates/rusdoo-sale",
+    "crates/rusdoo-uom",
+    "crates/rusdoo-barcodes",
+    "crates/rusdoo-utm",
+    "crates/rusdoo-sales-team",
+    "crates/rusdoo-account-debit-note",
+    "crates/rusdoo-data-recycle",
+    "crates/rusdoo-onboarding",
     "crates/rusdoo-testing",
     "crates/rusdoo-stock",
     "crates/rusdoo-http",
@@ -40,3 +47,5 @@ http-body-util = "0.1"
 quick-xml = "0.41"
 csv = "1"
 argon2 = "0.5"
+# os padrões de regra de código de barras do Odoo são regex de verdade
+regex = "1"

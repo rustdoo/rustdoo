@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- As regras: onde procurar, com que filtro, e o que fazer com o achado. -->
+<odoo>
+    <record id="view_recycle_model_list" model="ir.ui.view">
+        <field name="name">data_recycle.model.list</field>
+        <field name="model">data_recycle.model</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Regra"/><field name="res_model_name" string="Modelo"/><field name="recycle_mode" string="Modo"/><field name="recycle_action" string="Ação"/><field name="records_to_recycle_count" string="A reciclar"/><field name="last_scan" string="Última varredura"/><field name="active" string="Ativa"/></list></field>
+    </record>
+
+    <record id="view_recycle_model_form" model="ir.ui.view">
+        <field name="name">data_recycle.model.form</field>
+        <field name="model">data_recycle.model</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_recycle_records" type="object" string="Executar agora" class="btn-primary"/><group><field name="name" string="Regra"/><field name="res_model_name" string="Modelo (nome técnico)"/><field name="active" string="Ativa"/><field name="records_to_recycle_count" string="Registros a reciclar" readonly="1"/><field name="last_scan" string="Última varredura" readonly="1"/></group><group><field name="recycle_mode" string="Modo"/><field name="recycle_action" string="Ação"/><field name="include_archived" string="Incluir arquivados"/></group><group><field name="domain" string="Filtro (domínio JSON)"/><field name="time_field_name" string="Campo de data"/><field name="time_field_delta" string="Idade mínima"/><field name="time_field_delta_unit" string="Unidade"/></group><field name="recycle_record_ids" string="Registros separados"><list><field name="name" string="Registro"/><field name="res_model_name" string="Modelo"/><field name="res_id" string="ID"/><field name="active" string="Aberto"/></list></field></form></field>
+    </record>
+
+    <record id="view_recycle_model_search" model="ir.ui.view">
+        <field name="name">data_recycle.model.search</field>
+        <field name="model">data_recycle.model</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="res_model_name"/><filter name="automatic" string="Automáticas" domain="[[&quot;recycle_mode&quot;, &quot;=&quot;, &quot;automatic&quot;]]"/><filter name="deleting" string="Que excluem" domain="[[&quot;recycle_action&quot;, &quot;=&quot;, &quot;unlink&quot;]]"/><filter name="archived" string="Desativadas" domain="[[&quot;active&quot;, &quot;=&quot;, false]]"/><groupby name="res_model_name" string="Modelo"/><groupby name="recycle_action" string="Ação"/></search></field>
+    </record>
+
+    <record id="view_recycle_model_kanban" model="ir.ui.view">
+        <field name="name">data_recycle.model.kanban</field>
+        <field name="model">data_recycle.model</field>
+        <field name="type">kanban</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><kanban default_group_by="recycle_action"><field name="name"/><field name="res_model_name" string="Modelo"/><field name="records_to_recycle_count" string="A reciclar"/><field name="recycle_mode" string="Modo"/></kanban></field>
+    </record>
+
+    <record id="action_recycle_rules" model="ir.actions.act_window">
+        <field name="name">Regras de reciclagem</field>
+        <field name="res_model">data_recycle.model</field>
+        <field name="view_mode">list,kanban,form</field>
+    </record>
+</odoo>

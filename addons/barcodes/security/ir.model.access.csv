@@ -1,0 +1,5 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_barcode_nomenclature_user,nomenclatura usuário,barcode.nomenclature,base.group_user,1,0,0,0
+access_barcode_nomenclature_system,nomenclatura admin,barcode.nomenclature,base.group_system,1,1,1,1
+access_barcode_rule_user,regra usuário,barcode.rule,base.group_user,1,0,0,0
+access_barcode_rule_system,regra admin,barcode.rule,base.group_system,1,1,1,1

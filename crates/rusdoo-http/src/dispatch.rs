@@ -916,6 +916,11 @@ impl OrmService {
                 // a leading id list is the recordset; anything else (a
                 // values dict, for an overridden `create`) is an argument
                 ids: parse_ids(args.first()).unwrap_or_default(),
+                // and what follows it are the method's own arguments
+                rest: match parse_ids(args.first()) {
+                    Ok(_) => args.get(1..).unwrap_or(&[]).to_vec(),
+                    Err(_) => args.to_vec(),
+                },
             };
             // the ids a method is called on are records like any other:
             // the record rules that scope a write scope this one too

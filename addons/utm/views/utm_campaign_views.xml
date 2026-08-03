@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- O identificador (`name`) aparece só para leitura: ele segue o nome
+     da campanha, e editá-lo à mão não levaria a lugar nenhum. -->
+<odoo>
+    <record id="view_campaign_list" model="ir.ui.view">
+        <field name="name">utm.campaign.list</field>
+        <field name="model">utm.campaign</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="title" string="Campanha"/><field name="name" string="Identificador"/><field name="stage_id" string="Estágio"/><field name="user_id" string="Responsável"/><field name="tag_ids" string="Etiquetas"/></list></field>
+    </record>
+
+    <record id="view_campaign_form" model="ir.ui.view">
+        <field name="name">utm.campaign.form</field>
+        <field name="model">utm.campaign</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="title" string="Campanha"/><field name="name" string="Identificador" readonly="1"/><field name="stage_id" string="Estágio"/><field name="user_id" string="Responsável"/></group><group><field name="tag_ids" string="Etiquetas"/><field name="color" string="Cor"/><field name="is_auto_campaign" string="Criada por um link" readonly="1"/><field name="active" string="Ativa"/></group></form></field>
+    </record>
+
+    <record id="view_campaign_search" model="ir.ui.view">
+        <field name="name">utm.campaign.search</field>
+        <field name="model">utm.campaign</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="title"/><field name="name"/><filter name="manual" string="Planejadas" domain="[[&quot;is_auto_campaign&quot;, &quot;=&quot;, false]]"/><filter name="automatic" string="Criadas por links" domain="[[&quot;is_auto_campaign&quot;, &quot;=&quot;, true]]"/><filter name="archived" string="Arquivadas" domain="[[&quot;active&quot;, &quot;=&quot;, false]]"/><groupby name="stage_id" string="Estágio"/><groupby name="user_id" string="Responsável"/></search></field>
+    </record>
+
+    <record id="view_campaign_kanban" model="ir.ui.view">
+        <field name="name">utm.campaign.kanban</field>
+        <field name="model">utm.campaign</field>
+        <field name="type">kanban</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><kanban default_group_by="stage_id"><field name="title"/><field name="user_id" string="Responsável"/><field name="tag_ids" string="Etiquetas"/></kanban></field>
+    </record>
+
+    <record id="utm_campaign_action" model="ir.actions.act_window">
+        <field name="name">Campanhas</field>
+        <field name="res_model">utm.campaign</field>
+        <field name="view_mode">list,kanban,form</field>
+    </record>
+</odoo>

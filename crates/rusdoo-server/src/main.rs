@@ -112,6 +112,13 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
         ("account", rusdoo_account::extend as ModelProvider),
         ("stock", rusdoo_stock::extend as ModelProvider),
         ("purchase", rusdoo_purchase::extend as ModelProvider),
+        ("uom", rusdoo_uom::extend as ModelProvider),
+        ("barcodes", rusdoo_barcodes::extend as ModelProvider),
+        ("utm", rusdoo_utm::extend as ModelProvider),
+        ("sales_team", rusdoo_sales_team::extend as ModelProvider),
+        ("account_debit_note", rusdoo_account_debit_note::extend as ModelProvider),
+        ("data_recycle", rusdoo_data_recycle::extend as ModelProvider),
+        ("onboarding", rusdoo_onboarding::extend as ModelProvider),
         ("sale", rusdoo_sale::extend as ModelProvider),
     ]
 }
@@ -177,6 +184,27 @@ fn code_methods(
     if installed.contains(&"purchase") {
         rusdoo_purchase::extend_methods(&mut methods)?;
     }
+    if installed.contains(&"uom") {
+        rusdoo_uom::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"barcodes") {
+        rusdoo_barcodes::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"utm") {
+        rusdoo_utm::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"sales_team") {
+        rusdoo_sales_team::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"account_debit_note") {
+        rusdoo_account_debit_note::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"data_recycle") {
+        rusdoo_data_recycle::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"onboarding") {
+        rusdoo_onboarding::extend_methods(&mut methods)?;
+    }
     if installed.contains(&"sale") {
         rusdoo_sale::extend_methods(&mut methods)?;
     }
@@ -195,6 +223,9 @@ fn code_methods(
         }
         if installed.contains(&"purchase") {
             threads.push("purchase.order");
+        }
+        if installed.contains(&"sales_team") {
+            threads.push("crm.team");
         }
         rusdoo_mail::extend_methods(&mut methods, &threads)?;
     }

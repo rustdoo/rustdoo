@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sob Configurações, como no Odoo: quem mexe aqui é quem instala
+     módulos, não quem usa o sistema. -->
+<odoo>
+    <record id="menu_onboarding" model="ir.ui.menu">
+        <field name="name">Painéis de onboarding</field>
+        <field name="parent_id" ref="base.menu_settings_root"/>
+        <field name="sequence">60</field>
+        <field name="action">onboarding.action_onboarding</field>
+    </record>
+    <record id="menu_onboarding_step" model="ir.ui.menu">
+        <field name="name">Passos de onboarding</field>
+        <field name="parent_id" ref="base.menu_settings_root"/>
+        <field name="sequence">61</field>
+        <field name="action">onboarding.action_onboarding_step</field>
+    </record>
+    <record id="menu_onboarding_progress" model="ir.ui.menu">
+        <field name="name">Progresso do onboarding</field>
+        <field name="parent_id" ref="base.menu_settings_root"/>
+        <field name="sequence">62</field>
+        <field name="action">onboarding.action_onboarding_progress</field>
+    </record>
+</odoo>

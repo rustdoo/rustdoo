@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_barcode_nomenclature_list" model="ir.ui.view">
+        <field name="name">barcode.nomenclature.list</field>
+        <field name="model">barcode.nomenclature</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Nomenclatura"/><field name="upc_ean_conv" string="Conversão UPC/EAN"/></list></field>
+    </record>
+
+    <!-- As regras são editadas dentro da nomenclatura: uma regra sozinha
+         não quer dizer nada, é a ordem delas que decide o que um código é. -->
+    <record id="view_barcode_nomenclature_form" model="ir.ui.view">
+        <field name="name">barcode.nomenclature.form</field>
+        <field name="model">barcode.nomenclature</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Nomenclatura"/><field name="upc_ean_conv" string="Conversão UPC/EAN"/></group><field name="rule_ids" string="Regras"><list><field name="sequence" string="Ordem"/><field name="name" string="Regra"/><field name="type" string="Tipo"/><field name="encoding" string="Codificação"/><field name="pattern" string="Padrão"/><field name="alias" string="Alias"/></list></field></form></field>
+    </record>
+
+    <record id="view_barcode_nomenclature_search" model="ir.ui.view">
+        <field name="name">barcode.nomenclature.search</field>
+        <field name="model">barcode.nomenclature</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><groupby name="upc_ean_conv" string="Conversão UPC/EAN"/></search></field>
+    </record>
+
+    <record id="view_barcode_rule_list" model="ir.ui.view">
+        <field name="name">barcode.rule.list</field>
+        <field name="model">barcode.rule</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="sequence" string="Ordem"/><field name="name" string="Regra"/><field name="barcode_nomenclature_id" string="Nomenclatura"/><field name="type" string="Tipo"/><field name="encoding" string="Codificação"/><field name="pattern" string="Padrão"/></list></field>
+    </record>
+
+    <record id="view_barcode_rule_form" model="ir.ui.view">
+        <field name="name">barcode.rule.form</field>
+        <field name="model">barcode.rule</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Regra"/><field name="barcode_nomenclature_id" string="Nomenclatura"/><field name="sequence" string="Ordem"/><field name="type" string="Tipo"/><field name="encoding" string="Codificação"/><field name="pattern" string="Padrão"/><field name="alias" string="Alias"/></group></form></field>
+    </record>
+
+    <record id="view_barcode_rule_search" model="ir.ui.view">
+        <field name="name">barcode.rule.search</field>
+        <field name="model">barcode.rule</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="pattern"/><filter name="alias" string="Aliases" domain="[[&quot;type&quot;, &quot;=&quot;, &quot;alias&quot;]]"/><filter name="ean13" string="EAN-13" domain="[[&quot;encoding&quot;, &quot;=&quot;, &quot;ean13&quot;]]"/><groupby name="barcode_nomenclature_id" string="Nomenclatura"/><groupby name="encoding" string="Codificação"/></search></field>
+    </record>
+
+    <record id="action_barcode_nomenclature" model="ir.actions.act_window">
+        <field name="name">Nomenclaturas</field>
+        <field name="res_model">barcode.nomenclature</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_barcode_rule" model="ir.actions.act_window">
+        <field name="name">Regras</field>
+        <field name="res_model">barcode.rule</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

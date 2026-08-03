@@ -25,6 +25,43 @@ pub struct MethodCtx<'a> {
     pub model: &'a str,
     /// the ids `call_kw` was given (`self` in Odoo terms); may be empty
     pub ids: Vec<i64>,
+    /// the positional arguments after the recordset.
+    ///
+    /// `call_kw` sends `[ids, arg1, arg2, ...]` for a method called on
+    /// records, so the first real argument is not `args[0]` — that is
+    /// the recordset. A method reads its arguments here and never has
+    /// to know that; the full `args` are still passed for the few
+    /// methods that override `create`, where there is no recordset and
+    /// `args[0]` is the values.
+    pub rest: Vec<Value>,
+}
+
+impl<'a> MethodCtx<'a> {
+    /// A context for a call on `ids`, with no positional arguments —
+    /// what a test that exercises a method directly wants, and what
+    /// keeps a new field on this struct from breaking every one of them.
+    pub fn new(
+        registry: &'a Registry,
+        pool: &'a PgPool,
+        uid: i64,
+        model: &'a str,
+        ids: Vec<i64>,
+    ) -> MethodCtx<'a> {
+        MethodCtx {
+            registry,
+            pool,
+            uid,
+            model,
+            ids,
+            rest: Vec::new(),
+        }
+    }
+
+    /// The same, with the positional arguments the call carried.
+    pub fn with_rest(mut self, rest: Vec<Value>) -> MethodCtx<'a> {
+        self.rest = rest;
+        self
+    }
 }
 
 /// The future a method returns, boxed so methods can be plain functions

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- O estágio inicial vem com o módulo, não com os dados de exemplo: a
+     campanha exige um estágio, e sem nenhum no banco ninguém consegue
+     criar a primeira. -->
+<odoo>
+    <data noupdate="1">
+        <record id="default_utm_stage" model="utm.stage">
+            <field name="name">Novo</field>
+            <field name="sequence">10</field>
+        </record>
+        <record id="utm_stage_running" model="utm.stage">
+            <field name="name">Em andamento</field>
+            <field name="sequence">20</field>
+        </record>
+        <record id="utm_stage_done" model="utm.stage">
+            <field name="name">Concluída</field>
+            <field name="sequence">30</field>
+        </record>
+    </data>
+</odoo>

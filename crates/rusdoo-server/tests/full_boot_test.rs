@@ -52,6 +52,14 @@ fn registry() -> Registry {
     rusdoo_account::extend(&mut registry).expect("account models");
     rusdoo_stock::extend(&mut registry).expect("stock models");
     rusdoo_purchase::extend(&mut registry).expect("purchase models");
+    // os módulos do lote piloto
+    rusdoo_uom::extend(&mut registry).expect("uom models");
+    rusdoo_barcodes::extend(&mut registry).expect("barcodes models");
+    rusdoo_utm::extend(&mut registry).expect("utm models");
+    rusdoo_sales_team::extend(&mut registry).expect("sales_team models");
+    rusdoo_account_debit_note::extend(&mut registry).expect("account_debit_note models");
+    rusdoo_data_recycle::extend(&mut registry).expect("data_recycle models");
+    rusdoo_onboarding::extend(&mut registry).expect("onboarding models");
     rusdoo_sale::extend(&mut registry).expect("sale models");
     registry
 }
@@ -77,6 +85,8 @@ async fn the_addons_tree_installs_and_adds_up_live() {
         .collect();
     for module in [
         "base", "web", "mail", "product", "account", "stock", "purchase", "sale",
+        "uom", "barcodes", "utm", "sales_team", "account_debit_note", "data_recycle",
+        "onboarding",
     ] {
         assert!(installed.contains(&module), "installed: {installed:?}");
     }

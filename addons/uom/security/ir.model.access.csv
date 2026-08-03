@@ -1,0 +1,4 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_uom_uom_user,unidade de medida usuário,uom.uom,base.group_user,1,0,0,0
+access_uom_uom_manager,unidade de medida gerente,uom.uom,group_uom_manager,1,1,1,1
+access_uom_uom_system,unidade de medida admin,uom.uom,base.group_system,1,1,1,1

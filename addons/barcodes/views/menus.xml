@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_barcodes_root" model="ir.ui.menu">
+        <field name="name">Código de barras</field>
+        <field name="sequence">80</field>
+    </record>
+    <record id="menu_barcode_nomenclature" model="ir.ui.menu">
+        <field name="name">Nomenclaturas</field>
+        <field name="parent_id" ref="menu_barcodes_root"/>
+        <field name="sequence">10</field>
+        <field name="action">barcodes.action_barcode_nomenclature</field>
+    </record>
+    <record id="menu_barcode_rule" model="ir.ui.menu">
+        <field name="name">Regras</field>
+        <field name="parent_id" ref="menu_barcodes_root"/>
+        <field name="sequence">20</field>
+        <field name="action">barcodes.action_barcode_rule</field>
+    </record>
+</odoo>

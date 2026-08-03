@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_account_debit_note_form" model="ir.ui.view">
+        <field name="name">account.debit.note.form</field>
+        <field name="model">account.debit.note</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="create_debit" type="object" string="Emitir a nota de débito" class="btn-primary"/><group><field name="move_ids" string="Faturas debitadas" readonly="1"/><field name="date" string="Data da nota"/></group><group><field name="reason" string="Motivo"/><field name="copy_lines" string="Copiar as linhas da fatura"/></group></form></field>
+    </record>
+</odoo>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_debit_notes" model="ir.ui.menu">
+        <field name="name">Notas de débito</field>
+        <field name="parent_id" ref="account.menu_account_root"/>
+        <field name="sequence">20</field>
+        <field name="action">account_debit_note.action_debit_notes</field>
+    </record>
+</odoo>

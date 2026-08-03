@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- As telas são de administração: quem instala um módulo confere aqui
+     os passos que ele pendurou no painel, e o quanto cada empresa já
+     andou. O painel em si é desenhado pelo cliente, não por estas views. -->
+<odoo>
+    <record id="view_onboarding_list" model="ir.ui.view">
+        <field name="name">onboarding.onboarding.list</field>
+        <field name="model">onboarding.onboarding</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="sequence" string="Ordem"/><field name="name" string="Painel"/><field name="route_name" string="Rota"/><field name="is_per_company" string="Por empresa"/></list></field>
+    </record>
+
+    <record id="view_onboarding_form" model="ir.ui.view">
+        <field name="name">onboarding.onboarding.form</field>
+        <field name="model">onboarding.onboarding</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_open_progress" type="object" string="Ver progresso" class="btn-primary"/><button name="action_toggle_visibility" type="object" string="Mostrar ou esconder"/><button name="action_close" type="object" string="Fechar o painel"/><group><field name="name" string="Painel"/><field name="route_name" string="Rota"/><field name="sequence" string="Ordem"/></group><group><field name="is_per_company" string="Por empresa"/><field name="panel_close_action_name" string="Ação ao fechar"/><field name="text_completed" string="Mensagem de conclusão"/></group><field name="step_ids" string="Passos"><list><field name="sequence" string="Ordem"/><field name="title" string="Título"/><field name="panel_step_open_action_name" string="Ação de abertura"/><field name="is_per_company" string="Por empresa"/></list></field></form></field>
+    </record>
+
+    <record id="view_onboarding_search" model="ir.ui.view">
+        <field name="name">onboarding.onboarding.search</field>
+        <field name="model">onboarding.onboarding</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="route_name"/></search></field>
+    </record>
+
+    <record id="view_onboarding_step_list" model="ir.ui.view">
+        <field name="name">onboarding.onboarding.step.list</field>
+        <field name="model">onboarding.onboarding.step</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="sequence" string="Ordem"/><field name="title" string="Título"/><field name="panel_step_open_action_name" string="Ação de abertura"/><field name="is_per_company" string="Por empresa"/></list></field>
+    </record>
+
+    <record id="view_onboarding_step_form" model="ir.ui.view">
+        <field name="name">onboarding.onboarding.step.form</field>
+        <field name="model">onboarding.onboarding.step</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_set_just_done" type="object" string="Marcar como feito" class="btn-primary"/><group><field name="title" string="Título"/><field name="description" string="Descrição"/><field name="panel_step_open_action_name" string="Ação de abertura"/><field name="sequence" string="Ordem"/></group><group><field name="is_per_company" string="Por empresa"/><field name="button_text" string="Texto do botão"/><field name="done_text" string="Texto quando feito"/><field name="done_icon" string="Ícone quando feito"/></group><field name="onboarding_ids" string="Painéis que usam este passo"><list><field name="name" string="Painel"/><field name="route_name" string="Rota"/></list></field></form></field>
+    </record>
+
+    <record id="view_onboarding_step_search" model="ir.ui.view">
+        <field name="name">onboarding.onboarding.step.search</field>
+        <field name="model">onboarding.onboarding.step</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="title"/><filter name="per_company" string="Por empresa" domain="[[&quot;is_per_company&quot;, &quot;=&quot;, true]]"/><groupby name="is_per_company" string="Por empresa"/></search></field>
+    </record>
+
+    <record id="view_onboarding_progress_list" model="ir.ui.view">
+        <field name="name">onboarding.progress.list</field>
+        <field name="model">onboarding.progress</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="onboarding_id" string="Painel"/><field name="company_id" string="Empresa"/><field name="onboarding_state" string="Situação"/><field name="is_onboarding_closed" string="Fechado"/></list></field>
+    </record>
+
+    <record id="view_onboarding_progress_form" model="ir.ui.view">
+        <field name="name">onboarding.progress.form</field>
+        <field name="model">onboarding.progress</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_step_states" type="object" string="Ler o estado dos passos" class="btn-primary"/><group><field name="onboarding_id" string="Painel"/><field name="company_id" string="Empresa"/></group><group><field name="onboarding_state" string="Situação"/><field name="is_onboarding_closed" string="Fechado"/></group><field name="progress_step_ids" string="Passos já iniciados"><list><field name="step_id" string="Passo"/><field name="company_id" string="Empresa"/><field name="step_state" string="Situação"/></list></field></form></field>
+    </record>
+
+    <record id="view_onboarding_progress_search" model="ir.ui.view">
+        <field name="name">onboarding.progress.search</field>
+        <field name="model">onboarding.progress</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="onboarding_id"/><filter name="pending" string="Pendentes" domain="[[&quot;onboarding_state&quot;, &quot;=&quot;, &quot;not_done&quot;]]"/><filter name="done" string="Concluídos" domain="[[&quot;onboarding_state&quot;, &quot;=&quot;, &quot;done&quot;]]"/><groupby name="onboarding_state" string="Situação"/><groupby name="company_id" string="Empresa"/></search></field>
+    </record>
+
+    <record id="view_onboarding_progress_kanban" model="ir.ui.view">
+        <field name="name">onboarding.progress.kanban</field>
+        <field name="model">onboarding.progress</field>
+        <field name="type">kanban</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><kanban default_group_by="onboarding_state"><field name="onboarding_id"/><field name="company_id" string="Empresa"/><field name="is_onboarding_closed" string="Fechado"/></kanban></field>
+    </record>
+
+    <record id="action_onboarding" model="ir.actions.act_window">
+        <field name="name">Painéis de onboarding</field>
+        <field name="res_model">onboarding.onboarding</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_onboarding_step" model="ir.actions.act_window">
+        <field name="name">Passos de onboarding</field>
+        <field name="res_model">onboarding.onboarding.step</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_onboarding_progress" model="ir.actions.act_window">
+        <field name="name">Progresso do onboarding</field>
+        <field name="res_model">onboarding.progress</field>
+        <field name="view_mode">list,kanban,form</field>
+    </record>
+</odoo>

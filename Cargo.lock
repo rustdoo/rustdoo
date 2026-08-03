@@ -1209,6 +1209,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex"
+version = "1.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a0e75113e14dc5acb068cd0786884f214f1312650a3d36d269f5c4f3cdee8a2"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "regex-automata"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1258,6 +1270,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-account-debit-note"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusdoo-account",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "rusdoo-product",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
+name = "rusdoo-barcodes"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-base"
 version = "0.1.0"
 dependencies = [
@@ -1276,6 +1316,20 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "rusdoo-data-recycle"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "serde_json",
+ "sqlx",
+ "tokio",
  "tracing",
 ]
 
@@ -1334,6 +1388,18 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "rusdoo-onboarding"
+version = "0.1.0"
+dependencies = [
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "serde_json",
+ "sqlx",
+ "tokio",
 ]
 
 [[package]]
@@ -1402,22 +1468,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-sales-team"
+version = "0.1.0"
+dependencies = [
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "rusdoo-account",
+ "rusdoo-account-debit-note",
+ "rusdoo-barcodes",
  "rusdoo-base",
  "rusdoo-core",
+ "rusdoo-data-recycle",
  "rusdoo-http",
  "rusdoo-mail",
  "rusdoo-modules",
+ "rusdoo-onboarding",
  "rusdoo-orm",
  "rusdoo-product",
  "rusdoo-purchase",
  "rusdoo-qweb",
  "rusdoo-sale",
+ "rusdoo-sales-team",
  "rusdoo-stock",
+ "rusdoo-uom",
+ "rusdoo-utm",
  "serde_json",
  "sqlx",
  "tokio",
@@ -1454,6 +1539,30 @@ dependencies = [
  "sqlx",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "rusdoo-uom"
+version = "0.1.0"
+dependencies = [
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
+name = "rusdoo-utm"
+version = "0.1.0"
+dependencies = [
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "serde_json",
+ "sqlx",
+ "tokio",
 ]
 
 [[package]]

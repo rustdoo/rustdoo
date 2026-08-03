@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="crm_team_view_list" model="ir.ui.view">
+        <field name="name">crm.team.list</field>
+        <field name="model">crm.team</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="sequence" string="Ordem"/><field name="name" string="Equipe"/><field name="user_id" string="Líder"/><field name="member_count" string="Vendedores"/><field name="company_id" string="Empresa"/></list></field>
+    </record>
+
+    <record id="crm_team_view_form" model="ir.ui.view">
+        <field name="name">crm.team.form</field>
+        <field name="model">crm.team</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_toggle_favorite" type="object" string="Fixar no meu painel"/><group><field name="name" string="Equipe"/><field name="user_id" string="Líder"/><field name="company_id" string="Empresa"/></group><group><field name="sequence" string="Ordem"/><field name="color" string="Cor"/><field name="active" string="Ativa"/><field name="member_count" string="Vendedores"/></group><field name="crm_team_member_ids" string="Vendedores da equipe"><list><field name="user_id" string="Vendedor"/><field name="email" string="E-mail"/><field name="company_id" string="Empresa"/></list></field><chatter/></form></field>
+    </record>
+
+    <record id="crm_team_view_search" model="ir.ui.view">
+        <field name="name">crm.team.search</field>
+        <field name="model">crm.team</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><filter name="inactive" string="Arquivadas" domain="[[&quot;active&quot;, &quot;=&quot;, false]]"/><groupby name="user_id" string="Líder"/><groupby name="company_id" string="Empresa"/></search></field>
+    </record>
+
+    <!-- Uma parede de cartões, sem colunas: uma equipe não tem estado
+         por onde agrupar, e agrupar por líder esconderia as equipes sem
+         líder atrás de uma coluna vazia. -->
+    <record id="crm_team_view_kanban" model="ir.ui.view">
+        <field name="name">crm.team.kanban</field>
+        <field name="model">crm.team</field>
+        <field name="type">kanban</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><kanban><field name="name"/><field name="user_id" string="Líder"/><field name="member_count" string="Vendedores"/></kanban></field>
+    </record>
+
+    <record id="crm_team_action" model="ir.actions.act_window">
+        <field name="name">Equipes de venda</field>
+        <field name="res_model">crm.team</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+</odoo>

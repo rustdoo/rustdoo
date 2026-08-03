@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- A lista mostra o fator relativo ao lado da referência porque é
+         assim que a frase se lê inteira: "1 kg contém 1000 g". O fator
+         absoluto vem depois, para quem quer conferir a conta da cadeia
+         toda sem abrir unidade por unidade. -->
+    <record id="view_uom_list" model="ir.ui.view">
+        <field name="name">uom.uom.list</field>
+        <field name="model">uom.uom</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Unidade"/><field name="relative_factor" string="Contém"/><field name="relative_uom_id" string="Unidade de referência"/><field name="factor" string="Quantidade absoluta"/><field name="reference_name" string="Categoria"/><field name="rounding" string="Arredondamento"/></list></field>
+    </record>
+
+    <record id="view_uom_form" model="ir.ui.view">
+        <field name="name">uom.uom.form</field>
+        <field name="model">uom.uom</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Unidade"/><field name="relative_factor" string="Contém"/><field name="relative_uom_id" string="Unidade de referência"/><field name="rounding" string="Arredondamento"/><field name="active" string="Ativa"/></group><group><field name="factor" string="Quantidade absoluta"/><field name="reference_name" string="Categoria"/><field name="related_uom_ids" string="Unidades derivadas desta"><list><field name="name" string="Unidade"/><field name="relative_factor" string="Contém"/></list></field></group></form></field>
+    </record>
+
+    <!-- "Arquivadas" existe porque a instalação já traz duas dezenas de
+         unidades desligadas: quem precisa de onças vai procurá-las aqui. -->
+    <record id="view_uom_search" model="ir.ui.view">
+        <field name="name">uom.uom.search</field>
+        <field name="model">uom.uom</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="relative_uom_id"/><filter name="inactive" string="Arquivadas" domain="[[&quot;active&quot;, &quot;=&quot;, false]]"/><filter name="references" string="Unidades de referência" domain="[[&quot;relative_uom_id&quot;, &quot;=&quot;, false]]"/><groupby name="relative_uom_id" string="Unidade de referência"/></search></field>
+    </record>
+
+    <record id="action_uoms" model="ir.actions.act_window">
+        <field name="name">Unidades de medida</field>
+        <field name="res_model">uom.uom</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

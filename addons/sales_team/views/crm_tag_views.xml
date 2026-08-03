@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="crm_tag_view_list" model="ir.ui.view">
+        <field name="name">crm.tag.list</field>
+        <field name="model">crm.tag</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Etiqueta"/><field name="color" string="Cor"/></list></field>
+    </record>
+
+    <record id="crm_tag_view_form" model="ir.ui.view">
+        <field name="name">crm.tag.form</field>
+        <field name="model">crm.tag</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Etiqueta"/><field name="color" string="Cor"/></group></form></field>
+    </record>
+
+    <record id="crm_tag_view_search" model="ir.ui.view">
+        <field name="name">crm.tag.search</field>
+        <field name="model">crm.tag</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/></search></field>
+    </record>
+
+    <record id="crm_tag_action" model="ir.actions.act_window">
+        <field name="name">Etiquetas</field>
+        <field name="res_model">crm.tag</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_data_cleaning_root" model="ir.ui.menu">
+        <field name="name">Limpeza de dados</field>
+        <field name="sequence">250</field>
+    </record>
+    <record id="menu_recycle_records" model="ir.ui.menu">
+        <field name="name">Registros a reciclar</field>
+        <field name="parent_id" ref="menu_data_cleaning_root"/>
+        <field name="sequence">10</field>
+        <field name="action">data_recycle.action_recycle_records</field>
+    </record>
+    <record id="menu_recycle_rules" model="ir.ui.menu">
+        <field name="name">Regras</field>
+        <field name="parent_id" ref="menu_data_cleaning_root"/>
+        <field name="sequence">100</field>
+        <field name="action">data_recycle.action_recycle_rules</field>
+    </record>
+</odoo>

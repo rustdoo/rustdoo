@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="crm_team_member_view_list" model="ir.ui.view">
+        <field name="name">crm.team.member.list</field>
+        <field name="model">crm.team.member</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="crm_team_id" string="Equipe"/><field name="user_id" string="Vendedor"/><field name="email" string="E-mail"/><field name="company_id" string="Empresa"/></list></field>
+    </record>
+
+    <record id="crm_team_member_view_form" model="ir.ui.view">
+        <field name="name">crm.team.member.form</field>
+        <field name="model">crm.team.member</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="crm_team_id" string="Equipe"/><field name="user_id" string="Vendedor"/></group><group><field name="name" string="Nome"/><field name="email" string="E-mail"/><field name="company_id" string="Empresa"/></group></form></field>
+    </record>
+
+    <record id="crm_team_member_view_search" model="ir.ui.view">
+        <field name="name">crm.team.member.search</field>
+        <field name="model">crm.team.member</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="email"/><groupby name="crm_team_id" string="Equipe"/></search></field>
+    </record>
+
+    <!-- O quadro que Odoo usa para os membros: uma coluna por equipe, e
+         cada cartão é uma pessoa. É a tela em que se enxerga de longe
+         quem está com quem. -->
+    <record id="crm_team_member_view_kanban" model="ir.ui.view">
+        <field name="name">crm.team.member.kanban</field>
+        <field name="model">crm.team.member</field>
+        <field name="type">kanban</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><kanban default_group_by="crm_team_id"><field name="user_id" string="Vendedor"/><field name="email" string="E-mail"/></kanban></field>
+    </record>
+
+    <record id="crm_team_member_action" model="ir.actions.act_window">
+        <field name="name">Vendedores</field>
+        <field name="res_model">crm.team.member</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+</odoo>

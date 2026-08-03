@@ -23,7 +23,16 @@ rusdoo-product = { path = "../rusdoo-product" }
 rusdoo-purchase = { path = "../rusdoo-purchase" }
 rusdoo-sale = { path = "../rusdoo-sale" }
 rusdoo-stock = { path = "../rusdoo-stock" }
+rusdoo-uom = { path = "../rusdoo-uom" }
+rusdoo-barcodes = { path = "../rusdoo-barcodes" }
+rusdoo-utm = { path = "../rusdoo-utm" }
+rusdoo-sales-team = { path = "../rusdoo-sales-team" }
+rusdoo-account-debit-note = { path = "../rusdoo-account-debit-note" }
+rusdoo-data-recycle = { path = "../rusdoo-data-recycle" }
+rusdoo-onboarding = { path = "../rusdoo-onboarding" }
 rusdoo-http = { path = "../rusdoo-http" }
 rusdoo-qweb = { path = "../rusdoo-qweb" }
 rusdoo-modules = { path = "../rusdoo-modules" }
 sqlx.workspace = true
+
+[dev-dependencies]

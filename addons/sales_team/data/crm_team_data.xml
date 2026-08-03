@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- As equipes que todo Odoo já vem com. As duas últimas nascem
+     arquivadas: elas existem para que o site e o ponto de venda tenham
+     onde pendurar seus pedidos quando forem instalados, e até lá não
+     têm por que aparecer no quadro. -->
+<odoo>
+    <data noupdate="1">
+        <record id="team_sales_department" model="crm.team">
+            <field name="name">Vendas</field>
+            <field name="sequence">0</field>
+        </record>
+
+        <record id="salesteam_website_sales" model="crm.team">
+            <field name="name">Site</field>
+            <field name="active" eval="False"/>
+        </record>
+
+        <record id="pos_sales_team" model="crm.team">
+            <field name="name">Ponto de venda</field>
+            <field name="active" eval="False"/>
+        </record>
+    </data>
+</odoo>

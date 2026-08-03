@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Unidade de medida não é um aplicativo: ninguém abre o sistema para
+     olhar gramas. Fica em Configurações, que é onde se vai quando uma
+     unidade precisa ser criada ou desarquivada. -->
+<odoo>
+    <record id="menu_uom" model="ir.ui.menu">
+        <field name="name">Unidades de medida</field>
+        <field name="parent_id" ref="base.menu_settings_root"/>
+        <field name="sequence">40</field>
+        <field name="action">uom.action_uoms</field>
+    </record>
+</odoo>

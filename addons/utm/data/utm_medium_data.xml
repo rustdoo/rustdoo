@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- `noupdate`: os ids externos são o que outros módulos referenciam, mas
+     o nome é do usuário — renomear "Banner" não pode ser desfeito por uma
+     atualização do módulo. -->
+<odoo>
+    <data noupdate="1">
+        <record id="utm_medium_website" model="utm.medium">
+            <field name="name">Site</field>
+        </record>
+        <record id="utm_medium_phone" model="utm.medium">
+            <field name="name">Telefone</field>
+        </record>
+        <record id="utm_medium_direct" model="utm.medium">
+            <field name="name">Direto</field>
+        </record>
+        <record id="utm_medium_email" model="utm.medium">
+            <field name="name">E-mail</field>
+        </record>
+        <record id="utm_medium_banner" model="utm.medium">
+            <field name="name">Banner</field>
+        </record>
+        <record id="utm_medium_twitter" model="utm.medium">
+            <field name="name">X</field>
+        </record>
+        <record id="utm_medium_facebook" model="utm.medium">
+            <field name="name">Facebook</field>
+        </record>
+        <record id="utm_medium_linkedin" model="utm.medium">
+            <field name="name">LinkedIn</field>
+        </record>
+        <record id="utm_medium_television" model="utm.medium">
+            <field name="name">Televisão</field>
+        </record>
+        <record id="utm_medium_google_adwords" model="utm.medium">
+            <field name="name">Google Adwords</field>
+        </record>
+    </data>
+</odoo>

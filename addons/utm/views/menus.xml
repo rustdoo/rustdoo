@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- No Odoo estes menus ficam escondidos atrás do modo desenvolvedor,
+     porque quem os usa de verdade é o módulo de marketing por cima. Aqui
+     o utm é o que existe: sem menu ele seria inalcançável. -->
+<odoo>
+    <record id="menu_utm_root" model="ir.ui.menu">
+        <field name="name">Marketing</field>
+        <field name="sequence">40</field>
+    </record>
+    <record id="menu_campaigns" model="ir.ui.menu">
+        <field name="name">Campanhas</field>
+        <field name="parent_id" ref="menu_utm_root"/>
+        <field name="sequence">10</field>
+        <field name="action">utm.utm_campaign_action</field>
+    </record>
+    <record id="menu_mediums" model="ir.ui.menu">
+        <field name="name">Meios</field>
+        <field name="parent_id" ref="menu_utm_root"/>
+        <field name="sequence">20</field>
+        <field name="action">utm.utm_medium_action</field>
+    </record>
+    <record id="menu_sources" model="ir.ui.menu">
+        <field name="name">Origens</field>
+        <field name="parent_id" ref="menu_utm_root"/>
+        <field name="sequence">30</field>
+        <field name="action">utm.utm_source_action</field>
+    </record>
+    <record id="menu_stages" model="ir.ui.menu">
+        <field name="name">Estágios</field>
+        <field name="parent_id" ref="menu_utm_root"/>
+        <field name="sequence">40</field>
+        <field name="action">utm.utm_stage_action</field>
+    </record>
+    <record id="menu_tags" model="ir.ui.menu">
+        <field name="name">Etiquetas</field>
+        <field name="parent_id" ref="menu_utm_root"/>
+        <field name="sequence">50</field>
+        <field name="action">utm.utm_tag_action</field>
+    </record>
+</odoo>

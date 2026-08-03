@@ -1,0 +1,9 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_onboarding_onboarding_user,painel usuário,onboarding.onboarding,base.group_user,1,0,0,0
+access_onboarding_onboarding_system,painel admin,onboarding.onboarding,base.group_system,1,1,1,1
+access_onboarding_step_user,passo usuário,onboarding.onboarding.step,base.group_user,1,0,0,0
+access_onboarding_step_system,passo admin,onboarding.onboarding.step,base.group_system,1,1,1,1
+access_onboarding_progress_user,progresso usuário,onboarding.progress,base.group_user,1,1,1,0
+access_onboarding_progress_system,progresso admin,onboarding.progress,base.group_system,1,1,1,1
+access_onboarding_progress_step_user,progresso do passo usuário,onboarding.progress.step,base.group_user,1,1,1,0
+access_onboarding_progress_step_system,progresso do passo admin,onboarding.progress.step,base.group_system,1,1,1,1

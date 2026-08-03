@@ -1,0 +1,11 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_utm_campaign_user,campanha usuário,utm.campaign,base.group_user,1,1,1,0
+access_utm_campaign_system,campanha admin,utm.campaign,base.group_system,1,1,1,1
+access_utm_medium_user,meio usuário,utm.medium,base.group_user,1,1,1,0
+access_utm_medium_system,meio admin,utm.medium,base.group_system,1,1,1,1
+access_utm_source_user,origem usuário,utm.source,base.group_user,1,1,1,0
+access_utm_source_system,origem admin,utm.source,base.group_system,1,1,1,1
+access_utm_stage_user,estágio usuário,utm.stage,base.group_user,1,0,0,0
+access_utm_stage_system,estágio admin,utm.stage,base.group_system,1,1,1,1
+access_utm_tag_user,etiqueta usuário,utm.tag,base.group_user,1,0,0,0
+access_utm_tag_system,etiqueta admin,utm.tag,base.group_system,1,1,1,1
