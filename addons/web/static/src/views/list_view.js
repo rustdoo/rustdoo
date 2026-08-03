@@ -89,6 +89,8 @@
             this.onOpen = config.onOpen || function () {};
             this.onCreate = config.onCreate || null;
             this.onError = config.onError || function () {};
+            this.viewTypes = config.viewTypes || [];
+            this.onSwitch = config.onSwitch || function () {};
 
             const root = parseArch(config.arch);
             this.columns = archFields(root)
@@ -417,6 +419,7 @@
                         },
                         "›"
                     ),
+                    rusdoo.viewSwitcher(this.viewTypes, "list", this.onSwitch),
                 ]),
             ]);
         }

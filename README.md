@@ -81,7 +81,8 @@ O Odoo inteiro depende de ~5% do código (o framework). A ordem é ditada por is
    view de formulário (criar, editar, excluir), linhas x2many editáveis
    (as linhas de um pedido), botões de ação do arch, o chatter e os
    filtros e agrupamento da view de busca (com contagem e somas por
-   grupo). Falta: kanban, anexos, relatórios.
+   grupo) e a view kanban (colunas por grupo, com troca list/quadro).
+   Falta: anexos, relatórios.
 7. **Fase 6 — Addons de negócio** *(atual)*: port módulo a módulo em ordem
    do grafo de dependências. Já portados: `mail` (chatter), `product`,
    `sale` (pedidos, linhas, totais e botões de estado) e `account`

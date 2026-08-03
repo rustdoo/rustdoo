@@ -14,6 +14,7 @@
             'web/static/src/core/field_widget.js',
             'web/static/src/views/x2many_field.js',
             'web/static/src/views/list_view.js',
+            'web/static/src/views/kanban_view.js',
             'web/static/src/views/chatter.js',
             'web/static/src/views/form_view.js',
             'web/static/src/webclient/webclient.js',

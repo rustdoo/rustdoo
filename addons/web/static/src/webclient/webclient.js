@@ -10,7 +10,7 @@
     const api = rusdoo.rpc;
 
     /** As views que uma ação pode pedir e este cliente sabe desenhar. */
-    const SUPPORTED_VIEWS = ["list", "form"];
+    const SUPPORTED_VIEWS = ["list", "kanban", "form"];
 
     /** A view de busca não é pedida pela ação: acompanha a lista. */
     const SEARCH_VIEW = [false, "search"];
@@ -212,15 +212,61 @@
                 views: payload.views,
                 types: wanted,
             };
-            if (wanted.includes("list")) {
+            // a ação diz por qual view abre: a primeira que sabemos
+            // desenhar e não é o formulário
+            const first = wanted.find((kind) => kind !== "form");
+            if (first === "kanban") {
+                this.showKanban();
+            } else if (first === "list") {
                 this.showList();
             } else {
                 this.showForm(null);
             }
         }
 
+        /** As views que o usuário pode alternar nesta ação. */
+        switchableViews() {
+            const { views, types } = this.action;
+            return types.filter((kind) => kind !== "form" && views[kind]);
+        }
+
+        switchTo(kind) {
+            if (kind === "kanban") {
+                this.showKanban();
+            } else {
+                this.showList();
+            }
+        }
+
+        showKanban() {
+            const { action, fields, views } = this.action;
+            if (!views.kanban) {
+                this.showList();
+                return;
+            }
+            const view = new rusdoo.KanbanView({
+                model: action.res_model,
+                arch: views.kanban.arch,
+                fields: fields,
+                domain: action.domain || [],
+                title: action.name || action.res_model,
+                viewTypes: this.switchableViews(),
+                onSwitch: (kind) => this.switchTo(kind),
+                onOpen: (id) => this.showForm(id),
+                onCreate: views.form ? () => this.showForm(null) : null,
+                onError: (error) => this.notify(error),
+            });
+            this.lastView = "kanban";
+            fill(this.content, view.root);
+            view.refresh();
+        }
+
         showList() {
             const { action, fields, views } = this.action;
+            if (!views.list) {
+                this.showKanban();
+                return;
+            }
             const view = new rusdoo.ListView({
                 model: action.res_model,
                 arch: views.list.arch,
@@ -228,6 +274,8 @@
                 domain: action.domain || [],
                 title: action.name || action.res_model,
                 searchArch: views.search ? views.search.arch : null,
+                viewTypes: this.switchableViews(),
+                onSwitch: (kind) => this.switchTo(kind),
                 onOpen: (id) => this.showForm(id),
                 onCreate: views.form ? () => this.showForm(null) : null,
                 onError: (error) => this.notify(error),
@@ -278,7 +326,7 @@
                 fields: fields,
                 resId: resId,
                 title: action.name || action.res_model,
-                onBack: () => this.showList(),
+                onBack: () => this.switchTo(this.lastView || "list"),
                 onSaved: () => this.notifySaved(),
                 onAction: (action) => this.openAction(action),
                 onError: (error) => this.notify(error),

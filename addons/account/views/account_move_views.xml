@@ -19,7 +19,7 @@
     <record id="action_moves" model="ir.actions.act_window">
         <field name="name">Faturas</field>
         <field name="res_model">account.move</field>
-        <field name="view_mode">list,form</field>
+        <field name="view_mode">list,kanban,form</field>
     </record>
 
     <record id="view_move_search" model="ir.ui.view">
@@ -28,5 +28,13 @@
         <field name="type">search</field>
         <field name="priority">10</field>
         <field name="arch" type="xml"><search><field name="name"/><field name="invoice_origin"/><filter name="draft" string="Rascunhos" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;draft&quot;]]"/><filter name="posted" string="Lançadas" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;posted&quot;]]"/><groupby name="state" string="Situação"/><groupby name="partner_id" string="Cliente"/></search></field>
+    </record>
+
+    <record id="view_move_kanban" model="ir.ui.view">
+        <field name="name">account.move.kanban</field>
+        <field name="model">account.move</field>
+        <field name="type">kanban</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="partner_id" string="Cliente"/><field name="amount_total" string="Total"/><field name="invoice_origin" string="Origem"/></kanban></field>
     </record>
 </odoo>

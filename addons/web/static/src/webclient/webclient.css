@@ -519,3 +519,75 @@ input[type="checkbox"].o_input {
     font-weight: 400;
     margin-left: 12px;
 }
+
+/* quadro (kanban) --------------------------------------------------------- */
+
+.o_view_switcher {
+    display: inline-flex;
+    margin-left: 4px;
+}
+
+.o_view_switcher .btn.o_active {
+    background: var(--o-brand);
+    border-color: var(--o-brand);
+    color: #fff;
+}
+
+.o_kanban_board {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    overflow-x: auto;
+    padding-bottom: 8px;
+}
+
+.o_kanban_column {
+    flex: 0 0 280px;
+    background: #eeeaec;
+    border-radius: 6px;
+    padding: 8px;
+}
+
+.o_kanban_column_head {
+    font-weight: 600;
+    padding: 4px 6px 10px;
+}
+
+.o_kanban_cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.o_kanban_flat {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.o_kanban_card {
+    background: var(--o-surface);
+    border: 1px solid var(--o-border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    cursor: pointer;
+}
+
+.o_kanban_card:hover {
+    border-color: var(--o-brand);
+}
+
+.o_kanban_title {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.o_kanban_field {
+    display: flex;
+    gap: 6px;
+    color: var(--o-muted);
+    font-size: 13px;
+}
+
+.o_kanban_label::after {
+    content: ":";
+}
