@@ -3556,3 +3556,166 @@ async fn onchange_answers_no_change_for_a_model_without_logic() {
     .await;
     assert!(resp.get("error").is_some(), "{resp}");
 }
+
+/// The same record, read by two users whose languages differ.
+///
+/// The last thing issue #6 asks for, and the only one that proves the
+/// whole chain rather than a link of it: the language is on the user,
+/// the session hands it to the client as `user_context`, the client
+/// sends it back on every call, and the ORM reads the `jsonb` column in
+/// it. Any of those four failing gives one screen in two languages,
+/// which is what the port had.
+#[tokio::test]
+async fn two_users_read_one_record_in_their_own_languages_live() {
+    let Ok(_url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = rusdoo_testing::pool_in("rusdoo_rpc_test_two_languages").unwrap();
+    let mut reg = Registry::new();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.users".into(),
+            table: "rusdoo_test_lang_users".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![
+            Field::new("login", FieldType::Char { size: None }).required(),
+            Field::new("password", FieldType::Char { size: None }),
+            Field::new("lang", FieldType::Char { size: None }),
+            Field::new(
+                "groups_id",
+                FieldType::Many2many {
+                    comodel: "res.groups".into(),
+                    relation: "rusdoo_test_lang_rel".into(),
+                    column1: "uid".into(),
+                    column2: "gid".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "res.groups".into(),
+            table: "rusdoo_test_lang_groups".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None }).required()],
+    ))
+    .unwrap();
+    reg.register(Model::new(
+        ModelMeta {
+            name: "shop.tag".into(),
+            table: "rusdoo_test_lang_tag".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![Field::new("name", FieldType::Char { size: None }).translatable()],
+    ))
+    .unwrap();
+    for table in [
+        "rusdoo_test_lang_rel",
+        "rusdoo_test_lang_users",
+        "rusdoo_test_lang_groups",
+        "rusdoo_test_lang_tag",
+    ] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{table}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    reg.init_tables(&pool).await.unwrap();
+
+    let hash = rusdoo_http::session::hash_password("segredo").unwrap();
+    let staff = reg
+        .create(&pool, "res.groups", vec![("name", json!("Staff"))])
+        .await
+        .unwrap();
+    // uid 1 is the superuser and bypasses every check, so neither of the
+    // two under test may be it: what is being proved has to hold for an
+    // ordinary user, whose reads go through the ACL like everyone's
+    reg.create(&pool, "res.users", vec![("login", json!("root"))])
+        .await
+        .unwrap();
+    for (login, lang) in [("ana", "pt_BR"), ("ben", "en_US")] {
+        reg.create(
+            &pool,
+            "res.users",
+            vec![
+                ("login", json!(login)),
+                ("password", json!(hash)),
+                ("lang", json!(lang)),
+                ("groups_id", json!([[6, 0, [staff]]])),
+            ],
+        )
+        .await
+        .unwrap();
+    }
+    // the record as its module shipped it, then as a `.po` translated it
+    let tag = reg
+        .create(&pool, "shop.tag", vec![("name", json!("Discount"))])
+        .await
+        .unwrap();
+    reg.write_as_lang(
+        &pool,
+        1,
+        "shop.tag",
+        &[tag],
+        vec![("name", json!("Desconto"))],
+        "pt_BR",
+    )
+    .await
+    .unwrap();
+
+    let mut access = rusdoo_orm::access::AccessControl::new();
+    access.grant(
+        "shop.tag",
+        staff,
+        &[rusdoo_orm::access::Operation::Read],
+    );
+    let service = OrmService::new(Arc::new(reg), pool).with_access(access);
+
+    let mut seen = Vec::new();
+    for login in ["ana", "ben"] {
+        let (_, answer, cookie) = rpc_full(
+            router(service.clone()),
+            "/web/session/authenticate",
+            json!({"jsonrpc": "2.0", "method": "call",
+                   "params": {"login": login, "password": "segredo"}}),
+            None,
+        )
+        .await;
+        assert!(answer["result"]["uid"].is_i64(), "{login} logged in: {answer}");
+        let cookie = cookie.expect("a session cookie");
+
+        // the client learns the language from the session, exactly as the
+        // real one does — it is not told which to ask for
+        let (_, info, _) = rpc_full(
+            router(service.clone()),
+            "/web/session/get_session_info",
+            json!({"jsonrpc": "2.0", "method": "call", "params": {}}),
+            Some(&cookie),
+        )
+        .await;
+        let context = info["result"]["user_context"].clone();
+
+        // and sends it back on the call, which is what a `with_context`
+        // is made of
+        let (_, read, _) = rpc_full(
+            router(service.clone()),
+            "/web/dataset/call_kw",
+            json!({"jsonrpc": "2.0", "method": "call", "params": {
+                "model": "shop.tag", "method": "read",
+                "args": [[tag], ["name"]], "kwargs": {"context": context}}}),
+            Some(&cookie),
+        )
+        .await;
+        seen.push(read["result"][0]["name"].clone());
+    }
+
+    assert_eq!(seen[0], json!("Desconto"), "ana reads it in pt_BR: {seen:?}");
+    assert_eq!(seen[1], json!("Discount"), "ben reads it in en_US: {seen:?}");
+}
