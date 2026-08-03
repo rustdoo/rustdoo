@@ -50,6 +50,7 @@ const ODOO_INIT: &str = include_str!("../python/odoo/__init__.py");
 const ODOO_FIELDS: &str = include_str!("../python/odoo/fields.py");
 const ODOO_MODELS: &str = include_str!("../python/odoo/models.py");
 const ODOO_API: &str = include_str!("../python/odoo/api.py");
+const ODOO_EXCEPTIONS: &str = include_str!("../python/odoo/exceptions.py");
 
 /// What Python declared while a load was running.
 ///
@@ -503,6 +504,7 @@ pub(crate) fn install_shim(py: Python<'_>) -> Result<(), RusdooError> {
     // own import of models is deferred to call time on purpose, so the
     // three can be installed in one pass
     for (leaf, code) in [
+        ("exceptions", ODOO_EXCEPTIONS),
         ("fields", ODOO_FIELDS),
         ("models", ODOO_MODELS),
         ("api", ODOO_API),
@@ -538,13 +540,20 @@ pub(crate) fn install_shim(py: Python<'_>) -> Result<(), RusdooError> {
     Ok(())
 }
 
-/// A Python exception as a rusdoo error, traceback and all.
+/// A Python exception as a rusdoo error.
 ///
-/// The traceback is the whole point: an addon that fails to import fails
-/// somewhere inside its own file, and a message that said only
-/// "ImportError" would send whoever installed it looking at the wrong
-/// thing.
+/// A refusal an addon meant — `raise UserError("the hotel is full")` —
+/// crosses as the matching [`RusdooError`] variant and carries only its
+/// message: the addon chose those words for the user, and a traceback
+/// under them would say nothing the user can act on.
+///
+/// Anything else is a bug in the addon, and there the traceback is the
+/// whole point: a message that said only "KeyError" would send whoever
+/// installed it looking at the wrong file.
 pub(crate) fn python_error(py: Python<'_>, error: PyErr) -> RusdooError {
+    if let Some(refusal) = refusal(py, &error) {
+        return refusal;
+    }
     let mut message = error.to_string();
     if let Some(traceback) = error.traceback(py) {
         if let Ok(text) = traceback.format() {
@@ -552,6 +561,34 @@ pub(crate) fn python_error(py: Python<'_>, error: PyErr) -> RusdooError {
         }
     }
     RusdooError::Validation(message)
+}
+
+/// The rusdoo error behind an `odoo.exceptions` the addon raised, if it
+/// raised one of those.
+///
+/// Most specific first: `ValidationError` and `AccessError` are both
+/// `UserError` subclasses in Odoo's hierarchy, so asking about
+/// `UserError` first would flatten all three into one.
+fn refusal(py: Python<'_>, error: &PyErr) -> Option<RusdooError> {
+    let exceptions = py.import("odoo.exceptions").ok()?;
+    let message = error.value(py).str().ok()?.to_string_lossy().into_owned();
+    for (name, build) in [
+        (
+            "ValidationError",
+            RusdooError::Validation as fn(String) -> RusdooError,
+        ),
+        ("AccessError", RusdooError::Access),
+        ("MissingError", RusdooError::Missing),
+        ("UserError", RusdooError::User),
+    ] {
+        let Ok(class) = exceptions.getattr(name) else {
+            continue;
+        };
+        if error.is_instance(py, &class) {
+            return Some(build(message));
+        }
+    }
+    None
 }
 
 /// One declared model, as a [`Model`] the registry accepts.
@@ -593,7 +630,69 @@ fn model_from_spec(spec: &Value) -> Result<Model, RusdooError> {
     if let Some(order) = spec.get("order").and_then(Value::as_str) {
         model = model.ordered(order);
     }
+    for declared in spec
+        .get("constraints")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+    {
+        let method = spec_str(declared, "method")?;
+        let watched: Vec<String> = declared
+            .get("fields")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if watched.is_empty() {
+            return Err(RusdooError::Validation(format!(
+                "{}.{method}: @api.constrains names no field — the check \
+                 would be handed an empty record",
+                model.meta.name
+            )));
+        }
+        let name = format!("{}.{method}", model.meta.name);
+        let check = crate::compute::PyConstraint::new(&model.meta.name, &method);
+        let reads = readable_columns(&model, &watched);
+        model = model.constrained_with(
+            &name,
+            watched,
+            reads,
+            rusdoo_orm::model::ConstraintFn::Dynamic(std::sync::Arc::new(check)),
+        );
+    }
     Ok(model)
+}
+
+/// What a bridged constraint is handed: `watched`, plus the record's own
+/// scalar columns.
+///
+/// `self` inside an `@api.constrains` is an ordinary record in Odoo, and
+/// the message a refusal shows almost always names a field other than
+/// the one that changed ("Order SO001 …"). Reading them costs nothing:
+/// they are columns of the row being selected anyway.
+///
+/// Relations are left out, and that is the one place this is narrower
+/// than Odoo. A many2one is not a column read but a second query for the
+/// target's display name, and an x2many a third; a rule that checks
+/// every create should not pay for one per link it did not ask about.
+/// A constraint that reaches for one gets an error naming the field.
+fn readable_columns(model: &Model, watched: &[String]) -> Vec<String> {
+    let mut reads = watched.to_vec();
+    for field in model.fields() {
+        let scalar = !matches!(
+            field.ty,
+            FieldType::One2many { .. } | FieldType::Many2many { .. } | FieldType::Many2one { .. }
+        );
+        if scalar && field.stored && field.related.is_none() && !reads.contains(&field.name) {
+            reads.push(field.name.clone());
+        }
+    }
+    reads
 }
 
 fn field_from_spec(model: &str, spec: &Value) -> Result<Field, RusdooError> {

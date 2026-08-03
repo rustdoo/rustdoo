@@ -14,6 +14,41 @@ pub struct ModelMeta {
     pub inherits: Vec<(String, String)>,
 }
 
+/// A check whose behaviour needs state of its own — the one an addon
+/// wrote in Python, which has to know *which* check it is.
+///
+/// It answers with a [`RusdooError`] rather than a string because a
+/// Python check raises, and which exception it raised is part of the
+/// answer: `ValidationError` and `AccessError` are different things for
+/// a client to show.
+pub trait DynConstraint: Send + Sync {
+    fn check(
+        &self,
+        row: &serde_json::Map<String, serde_json::Value>,
+    ) -> Result<(), rusdoo_core::RusdooError>;
+}
+
+/// How a record is checked.
+#[derive(Clone)]
+pub enum ConstraintFn {
+    /// compiled into the server; `Err(reason)` is the text the user reads
+    Native(fn(&serde_json::Map<String, serde_json::Value>) -> Result<(), String>),
+    /// written somewhere the compiler cannot see — an addon's Python
+    Dynamic(std::sync::Arc<dyn DynConstraint>),
+}
+
+impl ConstraintFn {
+    pub fn check(
+        &self,
+        row: &serde_json::Map<String, serde_json::Value>,
+    ) -> Result<(), rusdoo_core::RusdooError> {
+        match self {
+            ConstraintFn::Native(check) => check(row).map_err(rusdoo_core::RusdooError::Validation),
+            ConstraintFn::Dynamic(check) => check.check(row),
+        }
+    }
+}
+
 /// A rule a record must satisfy, port of `@api.constrains`.
 ///
 /// It watches fields and answers with what is wrong, not with a bool: a
@@ -24,8 +59,18 @@ pub struct Constraint {
     pub name: String,
     /// the fields whose change makes it worth checking again
     pub fields: Vec<String>,
-    /// `Ok` when the record is fine, `Err(reason)` when it is not
-    pub check: fn(&serde_json::Map<String, serde_json::Value>) -> Result<(), String>,
+    /// the fields read into the row the check is handed.
+    ///
+    /// Not the same list as `fields`, and Odoo is the reason:
+    /// `@api.constrains` says *when* to check, while `self` inside the
+    /// check is an ordinary record the rule may read anything from. A
+    /// Rust check declares both at once because it reads exactly what it
+    /// watches; a bridged one asks for the record's own columns, because
+    /// its message almost always names a field other than the one that
+    /// changed.
+    pub reads: Vec<String>,
+    /// `Ok` when the record is fine, an error saying why when it is not
+    pub check: ConstraintFn,
 }
 
 impl std::fmt::Debug for Constraint {
@@ -139,14 +184,29 @@ impl Model {
 
     /// Attach a rule every record of this model must satisfy.
     pub fn constrained(
-        mut self,
+        self,
         name: &str,
         fields: &[&str],
         check: fn(&serde_json::Map<String, serde_json::Value>) -> Result<(), String>,
     ) -> Self {
+        let fields: Vec<String> = fields.iter().map(|f| (*f).to_string()).collect();
+        self.constrained_with(name, fields.clone(), fields, ConstraintFn::Native(check))
+    }
+
+    /// [`Model::constrained`] for a check the compiler cannot see — the
+    /// one an addon wrote in Python, which watches one list and reads
+    /// another. See [`Constraint::reads`].
+    pub fn constrained_with(
+        mut self,
+        name: &str,
+        fields: Vec<String>,
+        reads: Vec<String>,
+        check: ConstraintFn,
+    ) -> Self {
         self.constraints.push(Constraint {
             name: name.to_string(),
-            fields: fields.iter().map(|f| (*f).to_string()).collect(),
+            fields,
+            reads,
             check,
         });
         self

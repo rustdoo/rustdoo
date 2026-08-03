@@ -4,11 +4,16 @@ The environment is what `self.env` is: something you index by model name
 to get an empty recordset of it. Everything else an addon does starts
 from there.
 
-The decorators record what they are told and hand it back unchanged. A
-model's `@api.depends('line_ids.price')` has to survive the import even
-before the bridge can act on it, because dropping it would silently turn
-a computed field into a field that never recomputes — and that is the
-kind of wrong that looks right for months.
+The decorators record what they are told and hand it back unchanged: the
+metaclass reads the mark off the method afterwards, which is the only
+moment both the field declaration and the method it names exist.
+
+`@api.depends` and `@api.constrains` are acted on — a computed field is
+computed by the method it points at, and a rule refuses the write that
+breaks it. `@api.onchange` and `@api.ondelete` are still only recorded;
+they are kept rather than dropped because a decorator that vanished
+would turn a rule into silence, and that is the kind of wrong that looks
+right for months.
 """
 
 import _rusdoo

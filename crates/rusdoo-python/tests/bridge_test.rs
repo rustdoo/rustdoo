@@ -727,3 +727,126 @@ class Sloppy(models.Model):
             .unwrap();
     }
 }
+
+/// `@api.constrains`, and the exceptions an addon raises to refuse a
+/// write.
+///
+/// The two belong in one test because they are one path: a constraint
+/// that could not refuse would be decoration, and a refusal that arrived
+/// as a bare string would lose which *kind* of refusal it was — a
+/// `UserError` and a `ValidationError` are different rows in Odoo's own
+/// hierarchy and different things for a client to show.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_python_constraint_refuses_a_write_live() {
+    let Some(pool) = rusdoo_testing::pool_in("rusdoo_py_constrains") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut registry = Registry::new();
+    let mut methods = rusdoo_orm::methods::MethodRegistry::new();
+    rusdoo_python::load_python_module(
+        &mut registry,
+        &mut methods,
+        "hotel",
+        r#"
+from odoo import models, fields, api
+from odoo.exceptions import UserError, ValidationError
+
+
+class Booking(models.Model):
+    _name = "hotel.booking"
+    _order = "id"
+
+    name = fields.Char(required=True)
+    guests = fields.Integer(default=1)
+
+    @api.constrains("guests")
+    def _check_guests(self):
+        for booking in self:
+            if booking.guests < 1:
+                raise ValidationError(
+                    "%s: a booking needs at least one guest" % booking.name
+                )
+
+    def action_overbook(self):
+        raise UserError("the hotel is full")
+"#,
+    )
+    .expect("the addon loads");
+    registry.init_tables(&pool).await.expect("the table is made");
+
+    // a create the constraint refuses never reaches the database
+    let error = registry
+        .create_as(
+            &pool,
+            1,
+            "hotel.booking",
+            vec![("name", json!("Empty")), ("guests", json!(0))],
+        )
+        .await
+        .expect_err("a booking with no guests is refused");
+    assert!(
+        matches!(error, rusdoo_core::RusdooError::Validation(_)),
+        "a ValidationError arrives as one: {error:?}"
+    );
+    assert!(
+        error.to_string().contains("at least one guest"),
+        "the Python message survives: {error}"
+    );
+    let registry = std::sync::Arc::new(registry);
+    let left = registry
+        .search(
+            &pool,
+            "hotel.booking",
+            &parse_domain(&json!([])).unwrap(),
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert!(left.is_empty(), "the refused create rolled back: {left:?}");
+
+    // one that satisfies it goes through, and the same constraint guards
+    // the write
+    let id = registry
+        .create_as(
+            &pool,
+            1,
+            "hotel.booking",
+            vec![("name", json!("Suite")), ("guests", json!(2))],
+        )
+        .await
+        .expect("a booking with guests is allowed");
+    let error = registry
+        .write_as(&pool, 1, "hotel.booking", &[id], vec![("guests", json!(0))])
+        .await
+        .expect_err("writing the guests away is refused");
+    assert!(
+        error.to_string().contains("Suite"),
+        "the constraint read the record it refused: {error}"
+    );
+
+    // and a UserError from a method is a user error, not a validation one
+    let ctx = rusdoo_orm::methods::MethodCtx::new(
+        std::sync::Arc::clone(&registry),
+        &pool,
+        1,
+        "hotel.booking",
+        vec![id],
+    );
+    let error = methods
+        .get("hotel.booking", "action_overbook")
+        .expect("the method is registered")
+        .call(ctx, &[], &serde_json::Map::new())
+        .await
+        .expect_err("the method refuses");
+    assert!(
+        matches!(error, rusdoo_core::RusdooError::User(_)),
+        "a UserError keeps its kind: {error:?}"
+    );
+    assert!(error.to_string().contains("the hotel is full"), "{error}");
+
+    sqlx::query("DROP TABLE IF EXISTS hotel_booking")
+        .execute(&pool)
+        .await
+        .unwrap();
+}

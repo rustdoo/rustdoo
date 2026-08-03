@@ -69,10 +69,19 @@ class MetaModel(type):
             cls = previous
         else:
             MODEL_CLASSES[model_name] = cls
+        # the rules the model's records must satisfy. Unlike a compute,
+        # which a field points at, a constraint is found by looking at the
+        # methods: `@api.constrains` is the whole declaration.
+        constraints = [
+            {"method": attr, "fields": list(value._constrains)}
+            for attr, value in sorted(namespace.items())
+            if callable(value) and getattr(value, "_constrains", None)
+        ]
         _rusdoo.declare_model(
             {
                 "name": model_name,
                 "methods": methods,
+                "constraints": constraints,
                 # Odoo's own rule: the table is the model with its dots
                 # turned into underscores, unless the model says otherwise
                 "table": getattr(cls, "_table", None) or model_name.replace(".", "_"),
@@ -335,19 +344,21 @@ def _flatten_relational(model_name, field, values, env):
     return RecordSet(comodel, ids, env)
 
 
-class ComputeRecord:
-    """`self` inside a compute: one record, and only what it declared.
+class RowRecord:
+    """`self` inside a compute or a constraint: one record, and only
+    what the decorator declared.
 
-    A compute runs in the middle of the read that asked for it — the ORM
-    has a connection open and a batch of rows half-built — so it cannot
-    go back to the database for a field it feels like reading. It does
-    not need to: `@api.depends` already told the ORM everything the
-    method reads, and the ORM read exactly that before calling.
+    Both run in the middle of something the ORM already has open — the
+    read that asked for the value, the transaction about to commit the
+    write — so neither can go back to the database for a field it feels
+    like reading. Neither needs to: `@api.depends` and `@api.constrains`
+    already named everything the method reads, and the ORM read exactly
+    that before calling.
 
     So the record answers from that row and nothing else. A field the
-    method reads without declaring is an error naming the field, which
-    is the whole difference between an addon somebody fixes in a minute
-    and a total that is quietly wrong.
+    method reads without declaring is an error naming the field and the
+    decorator to add it to, which is the whole difference between an
+    addon somebody fixes in a minute and a total that is quietly wrong.
 
     Assignment does not write. `record.amount = 10` inside a compute is
     how Odoo spells "this is the value", not a write to the database —
@@ -355,15 +366,17 @@ class ComputeRecord:
     stored one the ORM writes it itself once the compute answers.
     """
 
-    __slots__ = ("_model", "_row", "_pending")
+    __slots__ = ("_model", "_row", "_pending", "_hint")
 
-    def __init__(self, model_name, row):
+    def __init__(self, model_name, row, hint):
         object.__setattr__(self, "_model", model_name)
         object.__setattr__(self, "_row", row)
         object.__setattr__(self, "_pending", {})
+        #: the decorator an undeclared read should have been added to
+        object.__setattr__(self, "_hint", hint)
 
-    # a compute is written `for record in self:`, and here `self` is the
-    # one record the ORM is computing
+    # both are written `for record in self:`, and here `self` is the one
+    # record the ORM is asking about
     def __iter__(self):
         yield self
 
@@ -395,10 +408,10 @@ class ComputeRecord:
             return self._row[name]
         prefix = name + "."
         if any(key.startswith(prefix) for key in self._row):
-            return DependHop(self._model, name, self._row)
+            return DependHop(self._model, name, self._row, self._hint)
         raise AttributeError(
-            "%s.%s is not readable in this compute: add %r to its "
-            "@api.depends" % (self._model, name, name)
+            "%s.%s is not readable here: add %r to its %s"
+            % (self._model, name, name, self._hint)
         )
 
     def __setattr__(self, name, value):
@@ -418,19 +431,20 @@ class DependHop:
     connection to fetch them with.
     """
 
-    __slots__ = ("_model", "_field", "_row")
+    __slots__ = ("_model", "_field", "_row", "_hint")
 
-    def __init__(self, model_name, field, row):
+    def __init__(self, model_name, field, row, hint):
         self._model = model_name
         self._field = field
         self._row = row
+        self._hint = hint
 
     def _gathered(self, path):
         key = "%s.%s" % (self._field, path)
         if key not in self._row:
             raise AttributeError(
-                "%s.%s is not readable in this compute: add %r to its "
-                "@api.depends" % (self._model, key, key)
+                "%s.%s is not readable here: add %r to its %s"
+                % (self._model, key, key, self._hint)
             )
         values = self._row[key]
         return list(values) if isinstance(values, list) else [values]
@@ -470,7 +484,7 @@ def dispatch_compute(model_name, method_name, field_name, row):
     method = getattr(cls, method_name, None)
     if not callable(method):
         raise AttributeError("%s has no compute %r" % (model_name, method_name))
-    record = ComputeRecord(model_name, row)
+    record = RowRecord(model_name, row, "@api.depends")
     method(record)
     pending = object.__getattribute__(record, "_pending")
     if field_name not in pending:
@@ -481,6 +495,27 @@ def dispatch_compute(model_name, method_name, field_name, row):
             "%s.%s left %s unassigned" % (model_name, method_name, field_name)
         )
     return pending[field_name]
+
+
+def dispatch_constraint(model_name, method_name, row):
+    """Run an `@api.constrains` method over one record.
+
+    It answers nothing: a constraint that is satisfied returns, and one
+    that is not raises — which is the same thing Odoo's does, and what
+    the Rust side turns back into a refused write.
+    """
+    cls = MODEL_CLASSES.get(model_name)
+    if cls is None:
+        raise AttributeError("no Python model named %r" % model_name)
+    method = getattr(cls, method_name, None)
+    if not callable(method):
+        raise AttributeError("%s has no constraint %r" % (model_name, method_name))
+    # the row already holds the record's own columns, not only the
+    # watched ones: `@api.constrains` says *when* to check, not what the
+    # check may read. A field still missing is one with no column —
+    # another model's, reached through a relation — and naming it beats
+    # a `None` the message would print as "None".
+    method(RowRecord(model_name, row, "@api.constrains"))
 
 
 def dispatch(model_name, method_name, ids, args, kwargs):

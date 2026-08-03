@@ -7,6 +7,7 @@ import time rather than a wrong answer at runtime.
 """
 
 from . import api
+from . import exceptions
 from . import fields
 from . import models
 from .api import Environment
@@ -14,6 +15,7 @@ from .models import AbstractModel, BaseModel, Model, RecordSet, TransientModel
 
 __all__ = [
     "api",
+    "exceptions",
     "fields",
     "models",
     "Environment",

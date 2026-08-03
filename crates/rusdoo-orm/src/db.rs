@@ -1204,12 +1204,10 @@ impl Registry {
             if !touched {
                 continue;
             }
-            let watched: Vec<&str> = constraint.fields.iter().map(String::as_str).collect();
-            let rows = self.read_conn(&mut *conn, model_name, ids, &watched).await?;
+            let read: Vec<&str> = constraint.reads.iter().map(String::as_str).collect();
+            let rows = self.read_conn(&mut *conn, model_name, ids, &read).await?;
             for row in rows {
-                if let Err(reason) = (constraint.check)(&row) {
-                    return Err(RusdooError::Validation(reason));
-                }
+                constraint.check.check(&row)?;
             }
         }
         Ok(())
