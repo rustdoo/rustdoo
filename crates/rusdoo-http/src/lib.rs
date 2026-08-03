@@ -17,6 +17,7 @@ pub mod report;
 pub mod routes;
 pub mod session;
 mod shell;
+mod translations;
 pub mod view_inherit;
 mod web_read;
 mod webclient;

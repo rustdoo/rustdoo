@@ -30,6 +30,10 @@ pub fn router(service: OrmService) -> Router {
         .route("/web/session/destroy", post(destroy))
         .route("/web/session/get_session_info", post(session_info))
         .route("/web/webclient/load_menus", get(load_menus))
+        .route(
+            "/web/webclient/translations",
+            get(crate::translations::translations),
+        )
         .route("/web/action/load", post(action_load))
         .route("/web", get(web_index))
         .route("/web/view/{xml_id}", get(render_view_page))
@@ -320,7 +324,7 @@ pub(crate) fn session_of(
     current_session(service, headers)
 }
 
-fn current_session(service: &OrmService, headers: &HeaderMap) -> Option<crate::session::Session> {
+pub(crate) fn current_session(service: &OrmService, headers: &HeaderMap) -> Option<crate::session::Session> {
     let cookie = headers.get(header::COOKIE)?.to_str().ok()?;
     let token = cookie
         .split(';')

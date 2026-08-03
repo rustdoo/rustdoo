@@ -69,6 +69,15 @@ impl AssetHub {
         &self.bundles
     }
 
+    /// Where each installed module lives. The bundles are one thing an
+    /// addon directory holds; its `i18n/` catalogues are another, and
+    /// both are found the same way.
+    pub fn module_roots(&self) -> impl Iterator<Item = (&str, &std::path::Path)> {
+        self.roots
+            .iter()
+            .map(|(module, root)| (module.as_str(), root.as_path()))
+    }
+
     /// Concatenate a bundle, or answer `None` when the name matches no
     /// bundle (or no file of that type inside one).
     fn render_bundle(&self, name: &str) -> Option<Arc<Rendered>> {

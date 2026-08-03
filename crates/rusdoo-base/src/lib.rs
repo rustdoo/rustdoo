@@ -152,6 +152,34 @@ fn lang() -> Model {
             char("time_format").default_value(json!("%H:%M:%S")),
             char("decimal_point").default_value(json!(".")),
             char("thousands_sep").default_value(json!(",")),
+            // how a number is grouped, as the client reads it: the text
+            // of a list, `[3,0]` for 123,456,789 and `[3,2,0]` for the
+            // Indian 12,34,56,789. A string and not a list because that
+            // is what `res.lang` stores and what the client parses.
+            Field::new(
+                "grouping",
+                FieldType::Selection(vec![
+                    ("[3,0]".into(), "International Grouping".into()),
+                    ("[3,2,0]".into(), "Indian Grouping".into()),
+                ]),
+            )
+            .default_value(json!("[3,0]")),
+            // which day a week starts on, 1 = Monday .. 7 = Sunday. The
+            // calendar and the date pickers read it, so a wrong default
+            // is a week drawn wrong.
+            Field::new(
+                "week_start",
+                FieldType::Selection(vec![
+                    ("1".into(), "Monday".into()),
+                    ("2".into(), "Tuesday".into()),
+                    ("3".into(), "Wednesday".into()),
+                    ("4".into(), "Thursday".into()),
+                    ("5".into(), "Friday".into()),
+                    ("6".into(), "Saturday".into()),
+                    ("7".into(), "Sunday".into()),
+                ]),
+            )
+            .default_value(json!("7")),
         ],
     )
     .sql_constrained(

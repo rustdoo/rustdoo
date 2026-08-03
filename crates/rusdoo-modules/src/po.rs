@@ -26,9 +26,26 @@ pub struct Entry {
     /// the `#:` lines — `model:ir.model.fields,field_description:...`,
     /// `code:addons/...`, `model_terms:ir.ui.view,arch_db:...`
     pub references: Vec<String>,
+    /// the `#.` lines — the extracted comments, which is where the
+    /// generator says which half of the program a text belongs to
+    /// (`odoo-javascript`, `odoo-python`) and which module shipped it
+    pub comments: Vec<String>,
 }
 
 impl Entry {
+    /// Whether this text belongs to the client rather than the server.
+    ///
+    /// `/web/webclient/translations` serves the browser only what the
+    /// browser can use: Odoo marks those with `#. odoo-javascript`
+    /// (`JAVASCRIPT_TRANSLATION_COMMENT` in `odoo/tools/translate.py`),
+    /// and sending the rest would mean shipping the whole server's
+    /// vocabulary on every page load.
+    pub fn is_javascript(&self) -> bool {
+        self.comments
+            .iter()
+            .any(|comment| comment == "odoo-javascript")
+    }
+
     /// If this entry translates a field's label, the pair
     /// `(model, field)` it names.
     ///
@@ -90,6 +107,7 @@ pub type Catalogue = HashMap<String, String>;
 pub fn parse_po(source: &str) -> Vec<Entry> {
     let mut entries = Vec::new();
     let mut references: Vec<String> = Vec::new();
+    let mut comments: Vec<String> = Vec::new();
     let mut msgid: Option<String> = None;
     let mut msgstr: Option<String> = None;
     // which field the loose `"..."` lines continue
@@ -98,12 +116,22 @@ pub fn parse_po(source: &str) -> Vec<Entry> {
     for line in source.lines() {
         let line = line.trim();
         if line.is_empty() {
-            flush(&mut entries, &mut msgid, &mut msgstr, &mut references);
+            flush(
+                &mut entries,
+                &mut msgid,
+                &mut msgstr,
+                &mut references,
+                &mut comments,
+            );
             current = None;
             continue;
         }
         if let Some(reference) = line.strip_prefix("#:") {
             references.push(reference.trim().to_string());
+            continue;
+        }
+        if let Some(comment) = line.strip_prefix("#.") {
+            comments.push(comment.trim().to_string());
             continue;
         }
         if line.starts_with('#') {
@@ -112,7 +140,13 @@ pub fn parse_po(source: &str) -> Vec<Entry> {
         if let Some(rest) = line.strip_prefix("msgid ") {
             // a new msgid with no blank line before it closes the last
             if msgstr.is_some() {
-                flush(&mut entries, &mut msgid, &mut msgstr, &mut references);
+                flush(
+                    &mut entries,
+                    &mut msgid,
+                    &mut msgstr,
+                    &mut references,
+                    &mut comments,
+                );
             }
             msgid = Some(unquote(rest));
             current = Some(Field::Id);
@@ -135,7 +169,13 @@ pub fn parse_po(source: &str) -> Vec<Entry> {
         // msgctxt, msgid_plural, msgstr[n]: outside the subset
         current = None;
     }
-    flush(&mut entries, &mut msgid, &mut msgstr, &mut references);
+    flush(
+        &mut entries,
+        &mut msgid,
+        &mut msgstr,
+        &mut references,
+        &mut comments,
+    );
     entries
 }
 
@@ -157,9 +197,11 @@ fn flush(
     msgid: &mut Option<String>,
     msgstr: &mut Option<String>,
     references: &mut Vec<String>,
+    comments: &mut Vec<String>,
 ) {
     let (Some(id), Some(text)) = (msgid.take(), msgstr.take()) else {
         references.clear();
+        comments.clear();
         return;
     };
     // the header, and what nobody has translated yet
@@ -168,9 +210,11 @@ fn flush(
             msgid: id,
             msgstr: text,
             references: std::mem::take(references),
+            comments: std::mem::take(comments),
         });
     } else {
         references.clear();
+        comments.clear();
     }
 }
 
