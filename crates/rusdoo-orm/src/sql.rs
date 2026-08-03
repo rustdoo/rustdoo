@@ -24,6 +24,13 @@ const MAX_RENDER_DEPTH: usize = 100;
 pub struct Ctx<'a> {
     pub model: Option<&'a Model>,
     pub registry: Option<&'a Registry>,
+    /// the language a condition on a translated field compares in.
+    ///
+    /// Without it a filter on a translated column compares the whole
+    /// language map against a string, which PostgreSQL refuses outright
+    /// (`operator does not exist: jsonb = text`) — a search bar that
+    /// errors instead of filtering.
+    pub lang: &'a str,
 }
 
 impl<'a> Ctx<'a> {
@@ -31,13 +38,21 @@ impl<'a> Ctx<'a> {
         Ctx {
             model: None,
             registry: None,
+            lang: crate::context::DEFAULT_LANG,
         }
+    }
+
+    /// The same context, comparing translated fields in `lang`.
+    pub fn in_lang(mut self, lang: &'a str) -> Ctx<'a> {
+        self.lang = lang;
+        self
     }
 
     pub fn model(model: &'a Model) -> Ctx<'a> {
         Ctx {
             model: Some(model),
             registry: None,
+            lang: crate::context::DEFAULT_LANG,
         }
     }
 
@@ -45,6 +60,7 @@ impl<'a> Ctx<'a> {
         Ctx {
             model: Some(model),
             registry: Some(registry),
+            lang: crate::context::DEFAULT_LANG,
         }
     }
 
@@ -160,6 +176,25 @@ pub(crate) fn read_cast_for(ty: &FieldType) -> &'static str {
 /// text and PostgreSQL finds no `date >= text` operator; casting the
 /// parameter (never the column) keeps the comparison typed and leaves
 /// any index on the column usable.
+/// Reading a translated column: the asked-for language, falling back to
+/// the source one. Odoo's `get_translation_fallback_langs`.
+///
+/// The language is an identifier from a context the client controls, so
+/// it is quoted as a literal rather than pasted in — a `lang` of
+/// `x' || (SELECT ...) || '` would otherwise be a query of its own.
+pub(crate) fn translated_read(column: &str, lang: &str) -> Result<String, RusdooError> {
+    let lang = quote_literal(lang);
+    if lang == "'en_US'" {
+        return Ok(format!("{column}->>'en_US'"));
+    }
+    Ok(format!("COALESCE({column}->>{lang}, {column}->>'en_US')"))
+}
+
+/// A string as a PostgreSQL literal, quotes doubled.
+pub(crate) fn quote_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
 pub(crate) fn value_cast_for(ty: Option<&FieldType>) -> &'static str {
     match ty {
         Some(FieldType::Date) => "::date",
@@ -171,6 +206,16 @@ pub(crate) fn value_cast_for(ty: Option<&FieldType>) -> &'static str {
         // a price with decimals storable at all.
         Some(FieldType::Float { digits: Some(_) } | FieldType::Monetary) => "::float8",
         _ => "",
+    }
+}
+
+/// The column a condition compares against: the plain identifier, or
+/// the translated read when the field holds one value per language.
+pub(crate) fn column_expr(field: &str, ctx: Ctx) -> Result<String, RusdooError> {
+    let quoted = quote_ident(field)?;
+    match ctx.model.and_then(|m| m.field(field)) {
+        Some(f) if f.translate => translated_read(&quoted, ctx.lang),
+        _ => Ok(quoted),
     }
 }
 
@@ -280,7 +325,7 @@ fn render_term(
         }
     }
 
-    let col = quote_ident(&term.field)?;
+    let col = column_expr(&term.field, ctx)?;
     let value = &term.value;
     let cast = value_cast(&term.field, ctx);
     use Operator::*;

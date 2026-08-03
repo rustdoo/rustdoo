@@ -95,7 +95,7 @@ impl Model {
         domain: &Domain,
         opts: &SearchOptions,
     ) -> Result<(String, Vec<Value>), RusdooError> {
-        self.search_sql_with(domain, opts, Ctx::model(self))
+        self.search_sql_with(domain, opts, Ctx::model(self).in_lang(opts.context.lang()))
     }
 
     pub(crate) fn search_sql_with(
@@ -145,7 +145,7 @@ impl Model {
         domain: &Domain,
         opts: &SearchOptions,
     ) -> Result<(String, Vec<Value>), RusdooError> {
-        self.count_sql_with(domain, opts, Ctx::model(self))
+        self.count_sql_with(domain, opts, Ctx::model(self).in_lang(opts.context.lang()))
     }
 
     /// `SELECT COUNT(*)` over the same WHERE a search would run.
@@ -184,10 +184,34 @@ impl Model {
         ids: &[i64],
         fields: &[&str],
     ) -> Result<(String, Vec<Value>), RusdooError> {
+        self.read_sql_in(ids, fields, crate::context::DEFAULT_LANG)
+    }
+
+    /// The same, answered in `lang`.
+    ///
+    /// Only translated columns care: for them the select becomes
+    /// `COALESCE(col->>'pt_BR', col->>'en_US')`, Odoo's own fallback
+    /// chain (`fields_textual.py::get_translation_fallback_langs`). A
+    /// value missing in the asked-for language falls back to the source
+    /// one rather than to nothing — a screen half in blank is worse than
+    /// a screen half in English.
+    pub fn read_sql_in(
+        &self,
+        ids: &[i64],
+        fields: &[&str],
+        lang: &str,
+    ) -> Result<(String, Vec<Value>), RusdooError> {
         let mut columns = vec![r#""id""#.to_string()];
         for name in fields {
             self.stored_field(name)?;
             let quoted = quote_ident(name)?;
+            if self.field(name).is_some_and(|f| f.translate) {
+                columns.push(format!(
+                    "{} AS {quoted}",
+                    crate::sql::translated_read(&quoted, lang)?
+                ));
+                continue;
+            }
             let cast = self
                 .field(name)
                 .map(|f| crate::sql::read_cast_for(&f.ty))
@@ -213,6 +237,17 @@ impl Model {
         uid: i64,
         values: Vec<(&str, Value)>,
     ) -> Result<(String, Vec<Value>), RusdooError> {
+        self.insert_sql_in(uid, values, crate::context::DEFAULT_LANG)
+    }
+
+    /// The same, with translated values landing under `lang` as well as
+    /// under the source language.
+    pub fn insert_sql_in(
+        &self,
+        uid: i64,
+        values: Vec<(&str, Value)>,
+        lang: &str,
+    ) -> Result<(String, Vec<Value>), RusdooError> {
         let values = self.with_defaults(values);
         if values.is_empty() {
             // delegation may create a parent row with no explicit values;
@@ -232,7 +267,12 @@ impl Model {
             self.writable_field(name)?;
             columns.push(quote_ident(name)?);
             let placeholder = bind_or_null(&mut params, self.typed_value(name, value)?);
-            placeholders.push(self.bound_expr(name, &placeholder));
+            placeholders.push(if self.field(name).is_some_and(|f| f.translate) {
+                // no column to merge into yet: this row is being born
+                Self::translated_value(&placeholder, lang)
+            } else {
+                self.bound_expr(name, &placeholder)
+            });
         }
         // audit columns Odoo stamps on every create (LOG_ACCESS)
         let uid_ph = bind(&mut params, Value::from(uid));
@@ -259,6 +299,17 @@ impl Model {
         ids: &[i64],
         values: Vec<(&str, Value)>,
     ) -> Result<(String, Vec<Value>), RusdooError> {
+        self.update_sql_in(uid, ids, values, crate::context::DEFAULT_LANG)
+    }
+
+    /// The same, writing translated values into `lang`.
+    pub fn update_sql_in(
+        &self,
+        uid: i64,
+        ids: &[i64],
+        values: Vec<(&str, Value)>,
+        lang: &str,
+    ) -> Result<(String, Vec<Value>), RusdooError> {
         if values.is_empty() {
             return Err(RusdooError::Validation(
                 "update requires at least one value".into(),
@@ -269,11 +320,13 @@ impl Model {
         for (name, value) in values {
             self.writable_field(name)?;
             let placeholder = bind_or_null(&mut params, self.typed_value(name, value)?);
-            assignments.push(format!(
-                "{} = {}",
-                quote_ident(name)?,
+            let column = quote_ident(name)?;
+            let expr = if self.field(name).is_some_and(|f| f.translate) {
+                Self::translated_merge(&placeholder, &column, lang)
+            } else {
                 self.bound_expr(name, &placeholder)
-            ));
+            };
+            assignments.push(format!("{column} = {expr}"));
         }
         // Odoo refreshes write_uid/write_date on every write
         let uid_ph = bind(&mut params, Value::from(uid));
@@ -461,6 +514,37 @@ impl Model {
         format!("{placeholder}{}", self.column_cast(name))
     }
 
+    /// How a value reaches a translated column, in `lang`.
+    ///
+    /// A merge, never a replacement: writing the Portuguese name of a
+    /// product must not delete its English one. `en_US` is written too
+    /// on the way in, because that is the source value — the same thing
+    /// Odoo's `convert_to_column_insert` does.
+    fn translated_value(placeholder: &str, lang: &str) -> String {
+        if lang == crate::context::DEFAULT_LANG {
+            return format!("jsonb_build_object('en_US', {placeholder})");
+        }
+        format!(
+            "jsonb_build_object('en_US', {placeholder}, {}, {placeholder})",
+            crate::sql::quote_literal(lang)
+        )
+    }
+
+    /// How a value reaches a translated column on an update: a merge of
+    /// the caller's language *only*.
+    ///
+    /// Not the same as the insert. On the way in, the text is the source
+    /// value and lands under both keys; on the way out, writing the
+    /// Portuguese name of a product must change Portuguese and nothing
+    /// else — writing both would make every translation overwrite the
+    /// original it was translated from.
+    fn translated_merge(placeholder: &str, column: &str, lang: &str) -> String {
+        format!(
+            "COALESCE({column}, '{{}}'::jsonb) || jsonb_build_object({}, {placeholder})",
+            crate::sql::quote_literal(lang)
+        )
+    }
+
     /// A stored, non-readonly field: the write path rejects readonly
     /// fields (e.g. the LOG_ACCESS audit columns) so a client can never
     /// forge them — they are set only by the ORM's own stamping.
@@ -517,7 +601,7 @@ impl Registry {
         let model = self
             .get(model_name)
             .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
-        model.search_sql_with(domain, opts, Ctx::full(model, self))
+        model.search_sql_with(domain, opts, Ctx::full(model, self).in_lang(opts.context.lang()))
     }
 }
 
@@ -547,6 +631,17 @@ impl Registry {
         ids: &[i64],
         fields: &[&str],
     ) -> Result<(String, Vec<Value>, Vec<ResolvedColumn>), RusdooError> {
+        self.read_query_in(model_name, ids, fields, crate::context::DEFAULT_LANG)
+    }
+
+    /// The same, answered in `lang`.
+    pub(crate) fn read_query_in(
+        &self,
+        model_name: &str,
+        ids: &[i64],
+        fields: &[&str],
+        lang: &str,
+    ) -> Result<(String, Vec<Value>, Vec<ResolvedColumn>), RusdooError> {
         let model = self
             .get(model_name)
             .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
@@ -572,6 +667,18 @@ impl Registry {
             };
             // a fixed-precision column is read as float8, under its own
             // name so the decoder still finds it
+            if field.translate {
+                columns.push(format!(
+                    "{} AS {}",
+                    crate::sql::translated_read(&col, lang)?,
+                    quote_ident(name)?
+                ));
+                resolved.push(ResolvedColumn {
+                    name: (*name).to_string(),
+                    field,
+                });
+                continue;
+            }
             let cast = crate::sql::read_cast_for(&field.ty);
             columns.push(if cast.is_empty() {
                 col

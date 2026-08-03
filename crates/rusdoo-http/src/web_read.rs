@@ -15,10 +15,14 @@ use std::pin::Pin;
 /// Who a name_search runs as, and whether archived records count. The
 /// dropdown is a search like any other: record rules scope it and
 /// `active_test` filters it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct NameSearchScope {
     pub(crate) uid: i64,
     pub(crate) active_test: bool,
+    /// the terms the lookup was made in — a `name_search` matches the
+    /// name *in the caller's language*, which for a translated field is
+    /// a different column expression
+    pub(crate) context: rusdoo_orm::context::Context,
 }
 
 /// The spec is client-controlled; nesting deeper than this is refused.
@@ -177,6 +181,7 @@ impl OrmService {
         let opts = SearchOptions {
             limit: Some(limit),
             active_test: scope.active_test,
+            context: scope.context.clone(),
             ..SearchOptions::default()
         };
         let scoped = self
@@ -197,7 +202,12 @@ impl OrmService {
         let Some(col) = rec_name else {
             return Ok(ids.iter().map(|id| (*id, id.to_string())).collect());
         };
-        let rows = self.registry.read(&self.pool, model, &ids, &[col]).await?;
+        // no idioma de quem perguntou: o rótulo que volta é o que a
+        // tela vai mostrar ao lado do id
+        let rows = self
+            .registry
+            .read_lang(&self.pool, model, &ids, &[col], scope.context.lang())
+            .await?;
         let by_id: HashMap<i64, String> = rows
             .iter()
             .filter_map(|r| {

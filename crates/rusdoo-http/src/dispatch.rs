@@ -296,16 +296,19 @@ impl OrmService {
     /// inside the insert's own transaction, so a record the rules refuse
     /// is rolled back before anyone else can see it. That is the only way
     /// to check a rule about a record that does not exist yet.
-    pub(crate) async fn create_checked(
+    /// Create with the record rules that scope it enforced, and with the
+    /// language the record's translated values are born under.
+    pub(crate) async fn create_checked_lang(
         &self,
         uid: i64,
         model: &str,
         values: Vec<(&str, Value)>,
+        lang: &str,
     ) -> Result<i64, RpcError> {
         let Some(rule) = self.rule_domain(uid, model, Operation::Create).await? else {
             return Ok(self
                 .registry
-                .create_as(&self.pool, uid, model, values)
+                .create_as_lang(&self.pool, uid, model, values, lang)
                 .await?);
         };
         let mut tx = self.pool.begin().await.map_err(sql_error)?;
@@ -955,6 +958,7 @@ impl OrmService {
                 // filter still applies
                 let opts = SearchOptions {
                     active_test: context_active_test(kwargs),
+                    context: rusdoo_orm::context::Context::from_value(kwargs.get("context")),
                     ..SearchOptions::default()
                 };
                 let domain = self
@@ -982,7 +986,11 @@ impl OrmService {
                     return Ok(json!([]));
                 }
                 let names: Vec<&str> = fields.iter().map(String::as_str).collect();
-                let rows = self.registry.read(&self.pool, model, &ids, &names).await?;
+                let lang = rusdoo_orm::context::Context::from_value(kwargs.get("context"));
+                let rows = self
+                    .registry
+                    .read_lang(&self.pool, model, &ids, &names, lang.lang())
+                    .await?;
                 Ok(json!(rows))
             }
             "read" => {
@@ -992,7 +1000,11 @@ impl OrmService {
                 let fields = parse_fields(args.get(1).or_else(|| kwargs.get("fields")))?;
                 self.ensure_exposed(model, &fields)?;
                 let names: Vec<&str> = fields.iter().map(String::as_str).collect();
-                let rows = self.registry.read(&self.pool, model, &ids, &names).await?;
+                let lang = rusdoo_orm::context::Context::from_value(kwargs.get("context"));
+                let rows = self
+                    .registry
+                    .read_lang(&self.pool, model, &ids, &names, lang.lang())
+                    .await?;
                 Ok(json!(rows))
             }
             "create" => {
@@ -1003,7 +1015,14 @@ impl OrmService {
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
-                let id = self.create_checked(uid, model, pairs).await?;
+                let id = self
+                    .create_checked_lang(
+                        uid,
+                        model,
+                        pairs,
+                        rusdoo_orm::context::Context::from_value(kwargs.get("context")).lang(),
+                    )
+                    .await?;
                 Ok(json!(id))
             }
             "write" => {
@@ -1018,7 +1037,14 @@ impl OrmService {
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
                 self.registry
-                    .write_as(&self.pool, uid, model, &ids, pairs)
+                    .write_as_lang(
+                        &self.pool,
+                        uid,
+                        model,
+                        &ids,
+                        pairs,
+                        rusdoo_orm::context::Context::from_value(kwargs.get("context")).lang(),
+                    )
                     .await?;
                 Ok(json!(true))
             }
@@ -1072,6 +1098,9 @@ impl OrmService {
                         crate::web_read::NameSearchScope {
                             uid,
                             active_test: context_active_test(kwargs),
+                            context: rusdoo_orm::context::Context::from_value(
+                                kwargs.get("context"),
+                            ),
                         },
                     )
                     .await?;
@@ -1100,6 +1129,9 @@ impl OrmService {
                         crate::web_read::NameSearchScope {
                             uid,
                             active_test: context_active_test(kwargs),
+                            context: rusdoo_orm::context::Context::from_value(
+                                kwargs.get("context"),
+                            ),
                         },
                     )
                     .await?;
@@ -1215,13 +1247,28 @@ impl OrmService {
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
                 let saved = if ids.is_empty() {
-                    vec![self.create_checked(uid, model, pairs).await?]
+                    vec![
+                        self.create_checked_lang(
+                            uid,
+                            model,
+                            pairs,
+                            rusdoo_orm::context::Context::from_value(kwargs.get("context")).lang(),
+                        )
+                        .await?,
+                    ]
                 } else {
                     // Odoo's write({}) is a no-op — an empty form save must
                     // not fail, and must not stamp write_date either
                     if !pairs.is_empty() {
                         self.registry
-                            .write_as(&self.pool, uid, model, &ids, pairs)
+                            .write_as_lang(
+                        &self.pool,
+                        uid,
+                        model,
+                        &ids,
+                        pairs,
+                        rusdoo_orm::context::Context::from_value(kwargs.get("context")).lang(),
+                    )
                             .await?;
                     }
                     ids
@@ -1479,6 +1526,7 @@ fn context_active_test(kwargs: &Map<String, Value>) -> bool {
 fn search_options(kwargs: &Map<String, Value>) -> Result<SearchOptions, RpcError> {
     let mut opts = SearchOptions {
         active_test: context_active_test(kwargs),
+                    context: rusdoo_orm::context::Context::from_value(kwargs.get("context")),
         ..SearchOptions::default()
     };
     if let Some(limit) = kwargs.get("limit") {

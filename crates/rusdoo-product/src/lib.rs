@@ -46,7 +46,10 @@ fn product() -> Model {
             inherits: vec![],
         },
         vec![
-            Field::new("name", FieldType::Char { size: None }).required(),
+            // `translate=True` no Odoo: o catálogo é o que o cliente lê
+            Field::new("name", FieldType::Char { size: None })
+                .required()
+                .translatable(),
             // the internal reference a warehouse actually says out loud
             Field::new("default_code", FieldType::Char { size: None }),
             Field::new("list_price", PRICE).default_value(json!(0.0)),
@@ -59,7 +62,7 @@ fn product() -> Model {
                 ]),
             )
             .default_value(json!("consu")),
-            Field::new("description", FieldType::Text),
+            Field::new("description", FieldType::Text).translatable(),
             Field::new("active", FieldType::Boolean).default_value(json!(true)),
             // `image.mixin` do Odoo dá uma imagem a todo produto; aqui só
             // a original, sem os tamanhos derivados que ele materializa

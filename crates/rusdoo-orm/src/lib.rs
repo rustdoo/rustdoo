@@ -3,6 +3,7 @@
 pub mod access;
 pub mod config;
 pub mod context;
+pub use context::DEFAULT_LANG;
 pub mod crud;
 pub mod defaults;
 pub mod db;

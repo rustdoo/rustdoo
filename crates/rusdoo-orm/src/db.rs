@@ -248,7 +248,74 @@ impl Model {
                 );
             }
         }
+        self.convert_translated_columns(pool).await?;
         self.init_sql_constraints(pool).await?;
+        Ok(())
+    }
+
+    /// Convert a column whose field became translatable — or stopped
+    /// being — port of `tools/sql.py::convert_column_translatable`.
+    ///
+    /// Without this, marking an existing field `translatable()` is a
+    /// server that boots and then fails every read of that column: the
+    /// model says `jsonb` and the table still says `varchar`. Nobody
+    /// upgrading would see it until the first screen that shows the
+    /// field.
+    ///
+    /// The existing text becomes the source value, which is what it was.
+    async fn convert_translated_columns(&self, pool: &PgPool) -> Result<(), RusdooError> {
+        for field in self.fields() {
+            let Some(wanted) = field.column_type() else {
+                continue;
+            };
+            // a `Json` field is jsonb and always was: only a field whose
+            // *translatability* changed has a column to convert
+            if matches!(field.ty, crate::fields::FieldType::Json) {
+                continue;
+            }
+            let current: Option<String> = sqlx::query_scalar(
+                "SELECT udt_name FROM information_schema.columns
+                 WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2",
+            )
+            .bind(&self.meta.table)
+            .bind(&field.name)
+            .fetch_optional(pool)
+            .await
+            .map_err(db_err)?;
+            let Some(current) = current else {
+                continue;
+            };
+            let column = crate::sql::quote_ident(&field.name)?;
+            let table = crate::sql::quote_ident(&self.meta.table)?;
+            let statement = match (field.translate, current.as_str()) {
+                // already the shape the model asks for
+                (true, "jsonb") => continue,
+                (false, other) if other != "jsonb" => continue,
+                (true, _) => format!(
+                    "ALTER TABLE {table} ALTER COLUMN {column} DROP DEFAULT, \
+                     ALTER COLUMN {column} TYPE jsonb \
+                     USING CASE WHEN {column} IS NOT NULL \
+                       THEN jsonb_build_object('en_US', {column}::varchar) END"
+                ),
+                (false, _) => format!(
+                    "ALTER TABLE {table} ALTER COLUMN {column} DROP DEFAULT, \
+                     ALTER COLUMN {column} TYPE {wanted} USING {column}->>'en_US'"
+                ),
+            };
+            if let Err(error) = sqlx::query(&statement).execute(pool).await {
+                tracing::warn!(
+                    "{}: a coluna {:?} não pôde ser convertida para {wanted} ({error})",
+                    self.meta.name,
+                    field.name
+                );
+            } else {
+                tracing::info!(
+                    "{}: coluna {:?} convertida de {current} para {wanted}",
+                    self.meta.name,
+                    field.name
+                );
+            }
+        }
         Ok(())
     }
 
@@ -313,7 +380,18 @@ impl Model {
         uid: i64,
         values: Vec<(&str, Value)>,
     ) -> Result<i64, RusdooError> {
-        let (sql, params) = self.insert_sql(uid, values)?;
+        self.create_conn_lang(conn, uid, values, crate::context::DEFAULT_LANG)
+            .await
+    }
+
+    pub(crate) async fn create_conn_lang(
+        &self,
+        conn: &mut PgConnection,
+        uid: i64,
+        values: Vec<(&str, Value)>,
+        lang: &str,
+    ) -> Result<i64, RusdooError> {
+        let (sql, params) = self.insert_sql_in(uid, values, lang)?;
         let row = build_query(&sql, &params)?
             .fetch_one(&mut *conn)
             .await
@@ -327,10 +405,23 @@ impl Model {
         ids: &[i64],
         fields: &[&str],
     ) -> Result<Vec<Map<String, Value>>, RusdooError> {
+        self.read_lang(pool, ids, fields, crate::context::DEFAULT_LANG)
+            .await
+    }
+
+    /// `read` answered in `lang`: translated fields come back in it,
+    /// falling back to the source language.
+    pub async fn read_lang(
+        &self,
+        pool: &PgPool,
+        ids: &[i64],
+        fields: &[&str],
+        lang: &str,
+    ) -> Result<Vec<Map<String, Value>>, RusdooError> {
         // `id` is always in the answer, and asking for it explicitly is
         // legal (Odoo's read does the same) — it is not a column to select
         let fields = &without_id(fields)[..];
-        let (sql, params) = self.read_sql(ids, fields)?;
+        let (sql, params) = self.read_sql_in(ids, fields, lang)?;
         let rows = build_query(&sql, &params)?
             .fetch_all(pool)
             .await
@@ -382,7 +473,19 @@ impl Model {
         ids: &[i64],
         values: Vec<(&str, Value)>,
     ) -> Result<u64, RusdooError> {
-        let (sql, params) = self.update_sql(uid, ids, values)?;
+        self.write_conn_lang(conn, uid, ids, values, crate::context::DEFAULT_LANG)
+            .await
+    }
+
+    pub(crate) async fn write_conn_lang(
+        &self,
+        conn: &mut PgConnection,
+        uid: i64,
+        ids: &[i64],
+        values: Vec<(&str, Value)>,
+        lang: &str,
+    ) -> Result<u64, RusdooError> {
+        let (sql, params) = self.update_sql_in(uid, ids, values, lang)?;
         let done = build_query(&sql, &params)?
             .execute(&mut *conn)
             .await
@@ -448,7 +551,11 @@ impl Registry {
             .get(model_name)
             .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
         let (sql, params) =
-            model.count_sql_with(domain, opts, crate::sql::Ctx::full(model, self))?;
+            model.count_sql_with(
+                domain,
+                opts,
+                crate::sql::Ctx::full(model, self).in_lang(opts.context.lang()),
+            )?;
         let row = build_query(&sql, &params)?
             .fetch_one(pool)
             .await
@@ -596,8 +703,25 @@ impl Registry {
         model_name: &str,
         values: Vec<(&str, Value)>,
     ) -> Result<i64, RusdooError> {
+        self.create_as_lang(pool, uid, model_name, values, crate::context::DEFAULT_LANG)
+            .await
+    }
+
+    /// [`Registry::create_as`] with the language its translated values
+    /// are written under — the record is born with its source value and
+    /// with the caller's language holding the same text.
+    pub async fn create_as_lang(
+        &self,
+        pool: &PgPool,
+        uid: i64,
+        model_name: &str,
+        values: Vec<(&str, Value)>,
+        lang: &str,
+    ) -> Result<i64, RusdooError> {
         let mut tx = pool.begin().await.map_err(db_err)?;
-        let id = self.create_in(&mut tx, uid, model_name, values).await?;
+        let id = self
+            .create_in_lang(&mut tx, uid, model_name, values, lang)
+            .await?;
         tx.commit().await.map_err(db_err)?;
         Ok(id)
     }
@@ -692,6 +816,24 @@ impl Registry {
         model_name: &'a str,
         values: Vec<(&'a str, Value)>,
     ) -> Pin<Box<dyn Future<Output = Result<i64, RusdooError>> + Send + 'a>> {
+        self.create_in_lang(tx, uid, model_name, values, crate::context::DEFAULT_LANG)
+    }
+
+    /// [`Registry::create_in`] with the language a translated value is
+    /// written under.
+    ///
+    /// The language travels as an argument because the ORM has no
+    /// environment object yet; when the Python bridge needs one (issue
+    /// #10), `(uid, context)` becomes that object and this parameter
+    /// goes with it.
+    fn create_in_lang<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'static, Postgres>,
+        uid: i64,
+        model_name: &'a str,
+        values: Vec<(&'a str, Value)>,
+        lang: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<i64, RusdooError>> + Send + 'a>> {
         Box::pin(async move {
             let model = self
                 .get(model_name)
@@ -702,7 +844,7 @@ impl Registry {
                 .await?;
             let values = self.draw_sequences(&mut *tx, model, values).await?;
             if model.meta.inherits.is_empty() {
-                let id = model.create_conn(&mut *tx, uid, values).await?;
+                let id = model.create_conn_lang(&mut *tx, uid, values, lang).await?;
                 self.apply_x2many_all(&mut *tx, uid, &x2many, id).await?;
                 self.recompute_stored(&mut *tx, model_name, &[id], None)
                     .await?;
@@ -825,8 +967,23 @@ impl Registry {
         ids: &[i64],
         fields: &[&str],
     ) -> Result<Vec<Map<String, Value>>, RusdooError> {
+        self.read_lang(pool, model_name, ids, fields, crate::context::DEFAULT_LANG)
+            .await
+    }
+
+    /// [`Registry::read`] answered in `lang` — what a client's context
+    /// asked for.
+    pub async fn read_lang(
+        &self,
+        pool: &PgPool,
+        model_name: &str,
+        ids: &[i64],
+        fields: &[&str],
+        lang: &str,
+    ) -> Result<Vec<Map<String, Value>>, RusdooError> {
         let mut conn = pool.acquire().await.map_err(db_err)?;
-        self.read_conn(&mut conn, model_name, ids, fields).await
+        self.read_conn_lang(&mut conn, model_name, ids, fields, lang)
+            .await
     }
 
     /// [`Registry::read`] on a caller's connection. A recompute inside a
@@ -838,6 +995,18 @@ impl Registry {
         model_name: &'a str,
         ids: &'a [i64],
         fields: &'a [&'a str],
+    ) -> ReadFuture<'a> {
+        self.read_conn_lang(conn, model_name, ids, fields, crate::context::DEFAULT_LANG)
+    }
+
+    /// [`Registry::read_conn`] in `lang`.
+    pub fn read_conn_lang<'a>(
+        &'a self,
+        conn: &'a mut PgConnection,
+        model_name: &'a str,
+        ids: &'a [i64],
+        fields: &'a [&'a str],
+        lang: &'a str,
     ) -> ReadFuture<'a> {
         Box::pin(async move {
             let model = self
@@ -872,7 +1041,7 @@ impl Registry {
                 }
             }
 
-            let (sql, params, resolved) = self.read_query(model_name, ids, &scalar)?;
+            let (sql, params, resolved) = self.read_query_in(model_name, ids, &scalar, lang)?;
             let rows = build_query(&sql, &params)?
                 .fetch_all(&mut *conn)
                 .await
@@ -1341,6 +1510,23 @@ impl Registry {
         comodel: &str,
         ids: &[i64],
     ) -> Result<HashMap<i64, String>, RusdooError> {
+        self.display_names_lang(conn, comodel, ids, crate::context::DEFAULT_LANG)
+            .await
+    }
+
+    /// The `[id, "name"]` pair a many2one is read as, in `lang`.
+    ///
+    /// The name of a record is exactly the kind of thing that gets
+    /// translated — a product, a category, a country — so this reads
+    /// through the same fallback the field itself does. Reading the raw
+    /// column would hand the client the whole language map.
+    async fn display_names_lang(
+        &self,
+        conn: &mut PgConnection,
+        comodel: &str,
+        ids: &[i64],
+        lang: &str,
+    ) -> Result<HashMap<i64, String>, RusdooError> {
         // an unregistered comodel (e.g. reading create_uid in a registry
         // without res.users) degrades to id-only display, like a missing
         // name field — never a hard failure of the whole read
@@ -1355,9 +1541,14 @@ impl Registry {
             return Ok(ids.iter().map(|id| (*id, id.to_string())).collect());
         };
         let placeholders: Vec<String> = (1..=ids.len()).map(|n| format!("${n}")).collect();
+        let column = quote_ident(rec_name)?;
+        let selected = if model.field(rec_name).is_some_and(|f| f.translate) {
+            crate::sql::translated_read(&column, lang)?
+        } else {
+            column
+        };
         let sql = format!(
-            r#"SELECT "id", {} FROM {} WHERE "id" IN ({})"#,
-            quote_ident(rec_name)?,
+            r#"SELECT "id", {selected} FROM {} WHERE "id" IN ({})"#,
             quote_ident(&model.meta.table)?,
             placeholders.join(", ")
         );
@@ -1458,8 +1649,27 @@ impl Registry {
         ids: &[i64],
         values: Vec<(&str, Value)>,
     ) -> Result<(), RusdooError> {
+        self.write_as_lang(pool, uid, model_name, ids, values, crate::context::DEFAULT_LANG)
+            .await
+    }
+
+    /// [`Registry::write_as`] writing translated values into `lang`.
+    ///
+    /// Editing a product's name while the client is in Portuguese sets
+    /// the Portuguese value and leaves every other language alone.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn write_as_lang(
+        &self,
+        pool: &PgPool,
+        uid: i64,
+        model_name: &str,
+        ids: &[i64],
+        values: Vec<(&str, Value)>,
+        lang: &str,
+    ) -> Result<(), RusdooError> {
         let mut tx = pool.begin().await.map_err(db_err)?;
-        self.write_in(&mut tx, uid, model_name, ids, values).await?;
+        self.write_in_lang(&mut tx, uid, model_name, ids, values, lang)
+            .await?;
         tx.commit().await.map_err(db_err)
     }
 
@@ -1470,6 +1680,20 @@ impl Registry {
         model_name: &str,
         ids: &[i64],
         values: Vec<(&str, Value)>,
+    ) -> Result<(), RusdooError> {
+        self.write_in_lang(tx, uid, model_name, ids, values, crate::context::DEFAULT_LANG)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn write_in_lang(
+        &self,
+        tx: &mut Transaction<'static, Postgres>,
+        uid: i64,
+        model_name: &str,
+        ids: &[i64],
+        values: Vec<(&str, Value)>,
+        lang: &str,
     ) -> Result<(), RusdooError> {
         let model = self
             .get(model_name)
@@ -1567,7 +1791,7 @@ impl Registry {
                 .map_err(db_err)?;
         }
         if !local.is_empty() {
-            model.write_conn(&mut *tx, uid, ids, local).await?;
+            model.write_conn_lang(&mut *tx, uid, ids, local, lang).await?;
         }
         for (field, commands) in &x2many_local {
             for id in ids {

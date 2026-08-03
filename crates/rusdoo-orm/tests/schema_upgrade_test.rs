@@ -219,3 +219,102 @@ async fn a_required_field_on_an_empty_table_keeps_its_constraint_live() {
         "unexpected error: {error}"
     );
 }
+
+/// Um campo que passa a ser traduzível converte a coluna que já existe,
+/// em vez de deixar o modelo dizendo `jsonb` e a tabela dizendo `varchar`
+/// — que é um servidor que sobe e falha em toda leitura daquele campo.
+#[tokio::test]
+async fn a_field_that_becomes_translatable_converts_its_column_live() {
+    let Some(pool) = pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let table = "rusdoo_test_translate_upgrade";
+    sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{table}""#))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // ontem: um char comum, com dados dentro
+    let mut old = Registry::new();
+    old.register(Model::new(
+        meta(table),
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    old.get("rusdoo.test.upgrade")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+    let id = old
+        .create(
+            &pool,
+            "rusdoo.test.upgrade",
+            vec![("name", json!("Mesa de escritório"))],
+        )
+        .await
+        .unwrap();
+
+    // hoje: traduzível
+    let mut new = Registry::new();
+    new.register(Model::new(
+        meta(table),
+        vec![Field::new("name", FieldType::Char { size: None }).translatable()],
+    ))
+    .unwrap();
+    new.get("rusdoo.test.upgrade")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .expect("a conversão acontece no boot");
+
+    let udt: String = sqlx::query_scalar(
+        "SELECT udt_name FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = $1 AND column_name = 'name'",
+    )
+    .bind(table)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(udt, "jsonb", "a coluna virou o mapa de idiomas");
+
+    // e o texto que já estava lá virou o valor de origem, não sumiu
+    let rows = new
+        .read(&pool, "rusdoo.test.upgrade", &[id], &["name"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["name"], json!("Mesa de escritório"));
+
+    // o caminho de volta também: um campo que deixa de ser traduzível
+    let mut back = Registry::new();
+    back.register(Model::new(
+        meta(table),
+        vec![Field::new("name", FieldType::Char { size: None })],
+    ))
+    .unwrap();
+    back.get("rusdoo.test.upgrade")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+    let udt: String = sqlx::query_scalar(
+        "SELECT udt_name FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = $1 AND column_name = 'name'",
+    )
+    .bind(table)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(udt, "varchar");
+    let rows = back
+        .read(&pool, "rusdoo.test.upgrade", &[id], &["name"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["name"], json!("Mesa de escritório"), "o texto voltou inteiro");
+
+    sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{table}""#))
+        .execute(&pool)
+        .await
+        .unwrap();
+}

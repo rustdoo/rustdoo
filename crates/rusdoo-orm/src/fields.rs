@@ -96,6 +96,8 @@ pub struct Field {
     /// what the database does to this reference when the record it
     /// points at is deleted (Odoo's `ondelete=` on a many2one)
     pub ondelete: Option<OnDelete>,
+    /// Odoo's `translate=True`: the column holds one value per language
+    pub translate: bool,
 }
 
 /// What happens to a reference when its target is deleted, port of
@@ -167,7 +169,21 @@ impl Field {
             sequence: None,
             default_fn: None,
             ondelete: None,
+            translate: false,
         }
+    }
+
+    /// One value per language, port of Odoo's `translate=True`.
+    ///
+    /// The column becomes `jsonb` holding `{"en_US": "...", "pt_BR":
+    /// "..."}` — which is what Odoo 19 does
+    /// (`fields.py`: `('jsonb', 'jsonb') if ... self.translate`). The
+    /// side table this used to live in, `ir.translation`, was removed in
+    /// 16: porting it would create a model that only this server has,
+    /// and an addon written for a modern Odoo could not use it.
+    pub fn translatable(mut self) -> Self {
+        self.translate = true;
+        self
     }
 
     /// Declare what the database does to this reference when its target
@@ -287,6 +303,11 @@ impl Field {
     /// column (one2many lives on the inverse, many2many in a relation table).
     pub fn column_type(&self) -> Option<String> {
         use FieldType::*;
+        // a translated column holds one value per language, so its type
+        // is the map, not the text (Odoo 19, `fields.py`)
+        if self.translate {
+            return Some("jsonb".into());
+        }
         Some(match &self.ty {
             Boolean => "bool".into(),
             Integer => "int4".into(),
