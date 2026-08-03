@@ -4,6 +4,7 @@
 use rusdoo_orm::access::Operation;
 use rusdoo_orm::methods::{MethodCtx, MethodRegistry};
 use rusdoo_orm::registry::Registry;
+use std::sync::Arc;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 
@@ -28,7 +29,7 @@ fn pool(url: &str, schema: &'static str) -> PgPool {
         .unwrap()
 }
 
-async fn fixture(schema: &'static str) -> Option<(Registry, PgPool, MethodRegistry)> {
+async fn fixture(schema: &'static str) -> Option<(Arc<Registry>, PgPool, MethodRegistry)> {
     let url = std::env::var("RUSDOO_TEST_DATABASE_URL").ok()?;
     let pool = pool(&url, schema);
     let mut registry = Registry::new();
@@ -49,13 +50,13 @@ async fn fixture(schema: &'static str) -> Option<(Registry, PgPool, MethodRegist
     }
     let mut methods = MethodRegistry::new();
     rusdoo_barcodes::extend_methods(&mut methods).unwrap();
-    Some((registry, pool, methods))
+    Some((Arc::new(registry), pool, methods))
 }
 
 /// Chama `parse_barcode` como o despacho chamaria: pela tabela de
 /// methods, with the nomenclature's id in `self`.
 async fn read_code(
-    registry: &Registry,
+    registry: &Arc<Registry>,
     pool: &PgPool,
     methods: &MethodRegistry,
     nomenclature: i64,
@@ -67,7 +68,7 @@ async fn read_code(
     assert_eq!(method.operation, Operation::Read, "bipar não muda nada");
     // the scanned code is the method's argument, and arguments live in
     // `rest`: `args[0]` is the recordset
-    let ctx = MethodCtx::new(registry, pool, 1, "barcode.nomenclature", vec![nomenclature])
+    let ctx = MethodCtx::new(Arc::clone(registry), pool, 1, "barcode.nomenclature", vec![nomenclature])
         .with_rest(vec![json!(barcode)]);
     method
         .call(ctx, &[json!(barcode)], &Map::new())
@@ -75,7 +76,7 @@ async fn read_code(
         .expect("the scan answered")
 }
 
-async fn a_nomenclature(registry: &Registry, pool: &PgPool, name: &str) -> i64 {
+async fn a_nomenclature(registry: &Arc<Registry>, pool: &PgPool, name: &str) -> i64 {
     registry
         .create(pool, "barcode.nomenclature", vec![("name", json!(name))])
         .await
@@ -83,7 +84,7 @@ async fn a_nomenclature(registry: &Registry, pool: &PgPool, name: &str) -> i64 {
 }
 
 async fn a_rule(
-    registry: &Registry,
+    registry: &Arc<Registry>,
     pool: &PgPool,
     nomenclature: i64,
     encoding: &str,

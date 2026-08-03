@@ -4,6 +4,7 @@
 
 use rusdoo_orm::methods::{MethodCtx, MethodRegistry};
 use rusdoo_orm::registry::Registry;
+use std::sync::Arc;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 
@@ -43,7 +44,7 @@ fn methods() -> MethodRegistry {
 }
 
 struct Fixture {
-    registry: Registry,
+    registry: Arc<Registry>,
     methods: MethodRegistry,
     pool: PgPool,
     partner: i64,
@@ -59,7 +60,7 @@ impl Fixture {
             .unwrap_or_else(|| panic!("{method} should be registered on {model}"));
         let args: Vec<Value> = Vec::new();
         let kwargs = Map::new();
-        let ctx = MethodCtx::new(&self.registry, &self.pool, 1, model, ids);
+        let ctx = MethodCtx::new(Arc::clone(&self.registry), &self.pool, 1, model, ids);
         entry.call(ctx, &args, &kwargs)
             .await
             .map_err(|error| error.to_string())
@@ -185,7 +186,7 @@ async fn fixture(schema: &'static str) -> Option<Fixture> {
         .await
         .unwrap();
     Some(Fixture {
-        registry,
+        registry: Arc::new(registry),
         methods: methods(),
         pool,
         partner,

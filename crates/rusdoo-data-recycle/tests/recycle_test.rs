@@ -8,6 +8,7 @@ use rusdoo_orm::fields::{Field, FieldType};
 use rusdoo_orm::methods::{MethodCtx, MethodRegistry};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
+use std::sync::Arc;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 
@@ -73,7 +74,7 @@ fn registry() -> Registry {
 }
 
 /// Um banco limpo com os quatro modelos que os testes usam.
-async fn fixture(schema: &'static str) -> Option<(Registry, PgPool, MethodRegistry)> {
+async fn fixture(schema: &'static str) -> Option<(Arc<Registry>, PgPool, MethodRegistry)> {
     let url = std::env::var("RUSDOO_TEST_DATABASE_URL").ok()?;
     let pool = pool(&url, schema);
     let reg = registry();
@@ -93,12 +94,12 @@ async fn fixture(schema: &'static str) -> Option<(Registry, PgPool, MethodRegist
     }
     let mut methods = MethodRegistry::new();
     rusdoo_data_recycle::extend_methods(&mut methods).unwrap();
-    Some((reg, pool, methods))
+    Some((Arc::new(reg), pool, methods))
 }
 
 /// Call a registered method over `ids`, as the dispatch would.
 async fn call(
-    reg: &Registry,
+    reg: &Arc<Registry>,
     pool: &PgPool,
     methods: &MethodRegistry,
     model: &str,
@@ -108,12 +109,12 @@ async fn call(
     let method = methods
         .get(model, name)
         .unwrap_or_else(|| panic!("{model}.{name} must be registered"));
-    let ctx = MethodCtx::new(reg, pool, 1, model, ids);
+    let ctx = MethodCtx::new(Arc::clone(reg), pool, 1, model, ids);
     method.call(ctx, &[], &Map::new()).await
 }
 
 /// A document closed `days_ago` days ago.
-async fn a_doc(reg: &Registry, pool: &PgPool, name: &str, state: &str, days_ago: i64) -> i64 {
+async fn a_doc(reg: &Arc<Registry>, pool: &PgPool, name: &str, state: &str, days_ago: i64) -> i64 {
     let closed = chrono::Utc::now().naive_utc() - chrono::Duration::days(days_ago);
     reg.create(
         pool,
@@ -132,7 +133,7 @@ async fn a_doc(reg: &Registry, pool: &PgPool, name: &str, state: &str, days_ago:
 }
 
 /// The rule the tests vary: cancelled, closed more than 6 months ago.
-async fn a_rule(reg: &Registry, pool: &PgPool, mode: &str, action: &str) -> i64 {
+async fn a_rule(reg: &Arc<Registry>, pool: &PgPool, mode: &str, action: &str) -> i64 {
     reg.create(
         pool,
         RULE,
@@ -152,7 +153,7 @@ async fn a_rule(reg: &Registry, pool: &PgPool, mode: &str, action: &str) -> i64 
 }
 
 /// A rule's open suggestions, newest first.
-async fn suggestions(reg: &Registry, pool: &PgPool, rule: i64) -> Vec<Map<String, Value>> {
+async fn suggestions(reg: &Arc<Registry>, pool: &PgPool, rule: i64) -> Vec<Map<String, Value>> {
     let ids = reg
         .search(
             pool,

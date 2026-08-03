@@ -5,6 +5,7 @@
 use rusdoo_orm::access::Operation;
 use rusdoo_orm::methods::{MethodCtx, MethodRegistry};
 use rusdoo_orm::registry::Registry;
+use std::sync::Arc;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 
@@ -28,7 +29,7 @@ fn pool(url: &str, schema: &'static str) -> PgPool {
 }
 
 /// Um registro com base e onboarding, e as tabelas vazias.
-async fn fixture(url: &str, schema: &'static str) -> (Registry, PgPool) {
+async fn fixture(url: &str, schema: &'static str) -> (Arc<Registry>, PgPool) {
     let pool = pool(url, schema);
     let mut registry = rusdoo_base::registry().unwrap();
     rusdoo_onboarding::extend(&mut registry).unwrap();
@@ -66,12 +67,12 @@ async fn fixture(url: &str, schema: &'static str) -> (Registry, PgPool) {
             .await
             .unwrap();
     }
-    (registry, pool)
+    (Arc::new(registry), pool)
 }
 
 /// Call a registered method the way `uid` would through `call_kw`.
 async fn call(
-    registry: &Registry,
+    registry: &Arc<Registry>,
     pool: &PgPool,
     uid: i64,
     model: &str,
@@ -86,7 +87,7 @@ async fn call(
         Operation::Write,
         "todo botão de onboarding grava alguma coisa"
     );
-    let ctx = MethodCtx::new(registry, pool, uid, model, ids);
+    let ctx = MethodCtx::new(Arc::clone(registry), pool, uid, model, ids);
     let args: Vec<Value> = Vec::new();
     let kwargs = Map::new();
     found.call(ctx, &args, &kwargs).await
@@ -94,7 +95,7 @@ async fn call(
 
 /// A user of a company, so the method has somewhere to take the company
 /// from.
-async fn a_user(registry: &Registry, pool: &PgPool, login: &str, company: i64) -> i64 {
+async fn a_user(registry: &Arc<Registry>, pool: &PgPool, login: &str, company: i64) -> i64 {
     registry
         .create(
             pool,
@@ -110,7 +111,7 @@ async fn a_user(registry: &Registry, pool: &PgPool, login: &str, company: i64) -
 }
 
 /// Um painel com dois passos, ambos por empresa.
-async fn a_panel_of_two_steps(registry: &Registry, pool: &PgPool) -> (i64, i64, i64) {
+async fn a_panel_of_two_steps(registry: &Arc<Registry>, pool: &PgPool) -> (i64, i64, i64) {
     let first = registry
         .create(
             pool,
@@ -148,7 +149,7 @@ async fn a_panel_of_two_steps(registry: &Registry, pool: &PgPool) -> (i64, i64, 
     (panel, first, second)
 }
 
-async fn panel_state(registry: &Registry, pool: &PgPool, progress: i64) -> String {
+async fn panel_state(registry: &Arc<Registry>, pool: &PgPool, progress: i64) -> String {
     registry
         .read(
             pool,

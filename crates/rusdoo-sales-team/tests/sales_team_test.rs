@@ -3,6 +3,7 @@
 
 use rusdoo_orm::methods::MethodCtx;
 use rusdoo_orm::registry::Registry;
+use std::sync::Arc;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 
@@ -25,7 +26,7 @@ fn pool(url: &str, schema: &'static str) -> PgPool {
         .unwrap()
 }
 
-async fn fixture(url: &str, schema: &'static str) -> (Registry, PgPool) {
+async fn fixture(url: &str, schema: &'static str) -> (Arc<Registry>, PgPool) {
     let pool = pool(url, schema);
     let mut registry = rusdoo_base::registry().unwrap();
     rusdoo_sales_team::extend(&mut registry).unwrap();
@@ -60,12 +61,12 @@ async fn fixture(url: &str, schema: &'static str) -> (Registry, PgPool) {
             .await
             .unwrap();
     }
-    (registry, pool)
+    (Arc::new(registry), pool)
 }
 
 /// Call a registered method the way the dispatch does.
 async fn call(
-    registry: &Registry,
+    registry: &Arc<Registry>,
     pool: &PgPool,
     uid: i64,
     model: &str,
@@ -80,11 +81,11 @@ async fn call(
         Value::Object(map) => map,
         _ => Map::new(),
     };
-    let ctx = MethodCtx::new(registry, pool, uid, model, ids.to_vec());
+    let ctx = MethodCtx::new(Arc::clone(registry), pool, uid, model, ids.to_vec());
     method.call(ctx, &[], &kwargs).await
 }
 
-async fn a_user(registry: &Registry, pool: &PgPool, login: &str, name: &str) -> i64 {
+async fn a_user(registry: &Arc<Registry>, pool: &PgPool, login: &str, name: &str) -> i64 {
     registry
         .create(
             pool,
@@ -99,14 +100,14 @@ async fn a_user(registry: &Registry, pool: &PgPool, login: &str, name: &str) -> 
         .unwrap()
 }
 
-async fn a_team(registry: &Registry, pool: &PgPool, name: &str) -> i64 {
+async fn a_team(registry: &Arc<Registry>, pool: &PgPool, name: &str) -> i64 {
     registry
         .create(pool, "crm.team", vec![("name", json!(name))])
         .await
         .unwrap()
 }
 
-async fn favourites_of(registry: &Registry, pool: &PgPool, team: i64) -> Vec<i64> {
+async fn favourites_of(registry: &Arc<Registry>, pool: &PgPool, team: i64) -> Vec<i64> {
     let rows = registry
         .read(pool, "crm.team", &[team], &["favorite_user_ids"])
         .await
@@ -117,7 +118,7 @@ async fn favourites_of(registry: &Registry, pool: &PgPool, team: i64) -> Vec<i64
         .unwrap_or_default()
 }
 
-async fn member_count(registry: &Registry, pool: &PgPool, team: i64) -> i64 {
+async fn member_count(registry: &Arc<Registry>, pool: &PgPool, team: i64) -> i64 {
     registry
         .read(pool, "crm.team", &[team], &["member_count"])
         .await

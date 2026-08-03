@@ -4,6 +4,7 @@
 
 use rusdoo_orm::methods::{MethodCtx, MethodRegistry};
 use rusdoo_orm::registry::Registry;
+use std::sync::Arc;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 
@@ -26,7 +27,7 @@ fn pool(url: &str, schema: &'static str) -> PgPool {
         .unwrap()
 }
 
-async fn fixture(schema: &'static str) -> Option<(Registry, MethodRegistry, PgPool)> {
+async fn fixture(schema: &'static str) -> Option<(Arc<Registry>, MethodRegistry, PgPool)> {
     let url = std::env::var("RUSDOO_TEST_DATABASE_URL").ok()?;
     let pool = pool(&url, schema);
     let mut registry = rusdoo_base::registry().unwrap();
@@ -43,12 +44,12 @@ async fn fixture(schema: &'static str) -> Option<(Registry, MethodRegistry, PgPo
         .unwrap();
     let mut methods = MethodRegistry::new();
     rusdoo_uom::extend_methods(&mut methods).unwrap();
-    Some((registry, methods, pool))
+    Some((Arc::new(registry), methods, pool))
 }
 
 /// Create a unit; `reference` is `None` for the root of a category.
 async fn unit(
-    registry: &Registry,
+    registry: &Arc<Registry>,
     pool: &PgPool,
     name: &str,
     relative_factor: f64,
@@ -65,7 +66,7 @@ async fn unit(
 }
 
 /// The weight chain Odoo ships: g → kg → t.
-async fn weights(registry: &Registry, pool: &PgPool) -> (i64, i64, i64) {
+async fn weights(registry: &Arc<Registry>, pool: &PgPool) -> (i64, i64, i64) {
     let gram = unit(registry, pool, "g", 1.0, None).await;
     let kilo = unit(registry, pool, "kg", 1000.0, Some(gram)).await;
     let ton = unit(registry, pool, "t", 1000.0, Some(kilo)).await;
@@ -73,7 +74,7 @@ async fn weights(registry: &Registry, pool: &PgPool) -> (i64, i64, i64) {
 }
 
 async fn call(
-    registry: &Registry,
+    registry: &Arc<Registry>,
     methods: &MethodRegistry,
     pool: &PgPool,
     from: i64,
@@ -84,7 +85,7 @@ async fn call(
     let method = methods.get("uom.uom", name).expect("method registered");
     // a method's positional arguments live in `rest`: `args[0]` is the
     // recordset call_kw sent
-    let ctx = MethodCtx::new(registry, pool, 1, "uom.uom", vec![from]).with_rest(args.clone());
+    let ctx = MethodCtx::new(Arc::clone(registry), pool, 1, "uom.uom", vec![from]).with_rest(args.clone());
     method.call(ctx, &args, &kwargs).await
 }
 

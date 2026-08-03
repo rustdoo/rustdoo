@@ -14,11 +14,21 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 /// What a method is called with: the records it was called on, and
 /// everything it needs to touch the database as the acting user.
 pub struct MethodCtx<'a> {
-    pub registry: &'a Registry,
+    /// the registry, shared rather than borrowed.
+    ///
+    /// A borrow would be enough for a Rust method, which uses it and
+    /// returns. It is not enough for a bridged one: the Python side has
+    /// to keep the registry reachable from inside the interpreter for
+    /// the length of the call, and there is no lifetime to give it
+    /// there. An `Arc` says that plainly; the alternative was a raw
+    /// pointer in a thread-local with a safety argument nobody should
+    /// have to re-derive.
+    pub registry: Arc<Registry>,
     pub pool: &'a PgPool,
     /// the user making the call — a method writes as them, never as root
     pub uid: i64,
@@ -47,7 +57,7 @@ impl<'a> MethodCtx<'a> {
     /// what a test that exercises a method directly wants, and what
     /// keeps a new field on this struct from breaking every one of them.
     pub fn new(
-        registry: &'a Registry,
+        registry: Arc<Registry>,
         pool: &'a PgPool,
         uid: i64,
         model: &'a str,

@@ -4,6 +4,7 @@
 
 use rusdoo_orm::methods::{MethodCtx, MethodRegistry};
 use rusdoo_orm::registry::Registry;
+use std::sync::Arc;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 
@@ -28,7 +29,7 @@ fn pool(url: &str, schema: &'static str) -> PgPool {
 }
 
 struct Fixture {
-    registry: Registry,
+    registry: Arc<Registry>,
     methods: MethodRegistry,
     pool: PgPool,
     /// who makes the calls, as a logged-in user would
@@ -44,7 +45,7 @@ impl Fixture {
             .unwrap_or_else(|| panic!("{model}.{method} registrado"));
         // a method with no records still gets its arguments, and they
         // vivem em `rest`
-        let ctx = MethodCtx::new(&self.registry, &self.pool, self.uid, model, vec![])
+        let ctx = MethodCtx::new(Arc::clone(&self.registry), &self.pool, self.uid, model, vec![])
             .with_rest(args.clone());
         let kwargs = Map::new();
         entry.call(ctx, &args, &kwargs)
@@ -130,7 +131,7 @@ async fn fixture(schema: &'static str) -> Option<Fixture> {
     let mut methods = MethodRegistry::new();
     rusdoo_utm::extend_methods(&mut methods).expect("métodos");
     Some(Fixture {
-        registry,
+        registry: Arc::new(registry),
         methods,
         pool,
         uid,

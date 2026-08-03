@@ -934,7 +934,7 @@ impl OrmService {
         // method itself declared
         if let Some(entry) = self.methods.get(model, method) {
             let ctx = rusdoo_orm::methods::MethodCtx {
-                registry: &self.registry,
+                registry: std::sync::Arc::clone(&self.registry),
                 pool: &self.pool,
                 uid,
                 model,
