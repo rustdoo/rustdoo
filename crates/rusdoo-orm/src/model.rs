@@ -82,6 +82,42 @@ impl std::fmt::Debug for Constraint {
     }
 }
 
+/// What an `@api.onchange` body does: values in, the values it changed
+/// out.
+///
+/// It works on what the form holds, not on what the database holds —
+/// the record being edited may never have been saved, and the whole
+/// point of an onchange is to answer before it is.
+pub trait DynOnchange: Send + Sync {
+    fn call(
+        &self,
+        values: &serde_json::Map<String, serde_json::Value>,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, rusdoo_core::RusdooError>;
+}
+
+/// A form's reaction to an edit, port of `@api.onchange`.
+///
+/// Unlike a constraint, this refuses nothing and writes nothing: it
+/// answers what *else* changes when the user touches a field, so the
+/// form can show it before anything is saved.
+#[derive(Clone)]
+pub struct Onchange {
+    /// what it is called, for the log
+    pub name: String,
+    /// the fields whose edit triggers it
+    pub fields: Vec<String>,
+    pub apply: std::sync::Arc<dyn DynOnchange>,
+}
+
+impl std::fmt::Debug for Onchange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Onchange")
+            .field("name", &self.name)
+            .field("fields", &self.fields)
+            .finish_non_exhaustive()
+    }
+}
+
 /// A rule the database enforces, port of Odoo's `_sql_constraints`.
 ///
 /// The difference from a `Constraint` is not style: a Rust check runs
@@ -111,6 +147,8 @@ pub struct Model {
     sql_constraints: Vec<SqlConstraint>,
     /// `@api.ondelete`: what must be true before a record may be deleted
     unlink_hooks: Vec<crate::unlink::UnlinkHook>,
+    /// `@api.onchange`: what else changes when the user edits a field
+    onchanges: Vec<Onchange>,
 }
 
 impl Model {
@@ -123,7 +161,35 @@ impl Model {
             order: None,
             sql_constraints: Vec::new(),
             unlink_hooks: Vec::new(),
+            onchanges: Vec::new(),
         }
+    }
+
+    /// React to an edit of `fields`, port of `@api.onchange`.
+    pub fn on_change(
+        mut self,
+        name: &str,
+        fields: Vec<String>,
+        apply: std::sync::Arc<dyn DynOnchange>,
+    ) -> Self {
+        self.onchanges.push(Onchange {
+            name: name.to_string(),
+            fields,
+            apply,
+        });
+        self
+    }
+
+    pub fn onchanges(&self) -> &[Onchange] {
+        &self.onchanges
+    }
+
+    /// The onchanges of this model's `_inherit` parents, ahead of its own
+    /// — a module that extends a model keeps the reactions it inherited.
+    pub(crate) fn with_onchanges(mut self, mut inherited: Vec<Onchange>) -> Self {
+        inherited.extend(self.onchanges.iter().cloned());
+        self.onchanges = inherited;
+        self
     }
 
     /// Refuse a delete when `check` says so, port of `@api.ondelete`.
@@ -131,8 +197,17 @@ impl Model {
     /// A foreign key answers "what happens to what points at this"; this
     /// answers "may this go at all", which only the business knows — a
     /// confirmed order is not deletable even when nothing references it.
-    pub fn on_unlink(mut self, name: &'static str, check: crate::unlink::OnDeleteFn) -> Self {
-        self.unlink_hooks.push(crate::unlink::UnlinkHook { name, check });
+    pub fn on_unlink(self, name: &str, check: crate::unlink::OnDeleteFn) -> Self {
+        self.on_unlink_with(name, crate::unlink::UnlinkCheck::Native(check))
+    }
+
+    /// [`Model::on_unlink`] for a check the compiler cannot see — the one
+    /// an addon wrote in Python.
+    pub fn on_unlink_with(mut self, name: &str, check: crate::unlink::UnlinkCheck) -> Self {
+        self.unlink_hooks.push(crate::unlink::UnlinkHook {
+            name: name.to_string(),
+            check,
+        });
         self
     }
 
@@ -145,7 +220,7 @@ impl Model {
         mut self,
         mut inherited: Vec<crate::unlink::UnlinkHook>,
     ) -> Self {
-        inherited.extend(self.unlink_hooks.iter().copied());
+        inherited.extend(self.unlink_hooks.iter().cloned());
         self.unlink_hooks = inherited;
         self
     }

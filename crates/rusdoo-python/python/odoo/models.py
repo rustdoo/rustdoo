@@ -77,11 +77,25 @@ class MetaModel(type):
             for attr, value in sorted(namespace.items())
             if callable(value) and getattr(value, "_constrains", None)
         ]
+        # and how the form reacts to an edit, found the same way
+        onchanges = [
+            {"method": attr, "fields": list(value._onchange)}
+            for attr, value in sorted(namespace.items())
+            if callable(value) and getattr(value, "_onchange", None)
+        ]
+        # and what must be true before a record may be deleted
+        ondeletes = [
+            attr
+            for attr, value in sorted(namespace.items())
+            if callable(value) and getattr(value, "_ondelete", False)
+        ]
         _rusdoo.declare_model(
             {
                 "name": model_name,
                 "methods": methods,
                 "constraints": constraints,
+                "onchanges": onchanges,
+                "ondeletes": ondeletes,
                 # Odoo's own rule: the table is the model with its dots
                 # turned into underscores, unless the model says otherwise
                 "table": getattr(cls, "_table", None) or model_name.replace(".", "_"),
@@ -382,14 +396,21 @@ class RowRecord:
     stored one the ORM writes it itself once the compute answers.
     """
 
-    __slots__ = ("_model", "_row", "_pending", "_hint")
+    __slots__ = ("_model", "_row", "_pending", "_hint", "_known")
 
-    def __init__(self, model_name, row, hint):
+    def __init__(self, model_name, row, hint, known=None):
         object.__setattr__(self, "_model", model_name)
         object.__setattr__(self, "_row", row)
         object.__setattr__(self, "_pending", {})
         #: the decorator an undeclared read should have been added to
         object.__setattr__(self, "_hint", hint)
+        #: fields that read as `False` when the row does not hold them,
+        #: rather than being an error. A form is partial by nature: an
+        #: onchange asking about a field nobody filled in should get
+        #: "empty", the way an unsaved record answers in Odoo. A compute
+        #: passes nothing here, because for it a missing field is a
+        #: missing `@api.depends` and not an empty one.
+        object.__setattr__(self, "_known", set(known or ()))
 
     # both are written `for record in self:`, and here `self` is the one
     # record the ORM is asking about
@@ -425,6 +446,8 @@ class RowRecord:
         prefix = name + "."
         if any(key.startswith(prefix) for key in self._row):
             return DependHop(self._model, name, self._row, self._hint)
+        if name in self._known:
+            return False
         raise AttributeError(
             "%s.%s is not readable here: add %r to its %s"
             % (self._model, name, name, self._hint)
@@ -511,6 +534,48 @@ def dispatch_compute(model_name, method_name, field_name, row):
             "%s.%s left %s unassigned" % (model_name, method_name, field_name)
         )
     return pending[field_name]
+
+
+def dispatch_ondelete(model_name, method_name, row):
+    """Run an `@api.ondelete` method over one record about to be deleted.
+
+    Like a constraint, it answers nothing and refuses by raising — and
+    like a constraint, it is handed the record's own columns rather than
+    a way back into the ORM: it runs inside the delete's transaction,
+    and re-entering the ORM underneath that is a knot nobody should have
+    to untie to read a rule.
+    """
+    cls = MODEL_CLASSES.get(model_name)
+    if cls is None:
+        raise AttributeError("no Python model named %r" % model_name)
+    method = getattr(cls, method_name, None)
+    if not callable(method):
+        raise AttributeError("%s has no ondelete %r" % (model_name, method_name))
+    method(RowRecord(model_name, row, "@api.ondelete"))
+
+
+def dispatch_onchange(model_name, method_name, known, values):
+    """Run an `@api.onchange` method over what the form holds.
+
+    The record here was very likely never saved, so there is nothing to
+    read: `values` is the form, and a field the form has not filled in
+    reads as `False` — the same thing an unsaved record answers in Odoo.
+    That is why this one does not refuse an undeclared read the way a
+    compute does: a form is partial by nature, and a method that asked
+    about an empty field should get "empty", not an error.
+
+    What comes back is only what the method assigned, which is what the
+    client applies.
+    """
+    cls = MODEL_CLASSES.get(model_name)
+    if cls is None:
+        raise AttributeError("no Python model named %r" % model_name)
+    method = getattr(cls, method_name, None)
+    if not callable(method):
+        raise AttributeError("%s has no onchange %r" % (model_name, method_name))
+    record = RowRecord(model_name, values, "@api.onchange", known=known)
+    method(record)
+    return object.__getattribute__(record, "_pending")
 
 
 def dispatch_constraint(model_name, method_name, row):

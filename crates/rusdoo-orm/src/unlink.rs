@@ -62,11 +62,36 @@ impl UnlinkCtx<'_> {
 pub type OnDeleteFn =
     for<'a> fn(UnlinkCtx<'a>) -> Pin<Box<dyn Future<Output = Result<(), RusdooError>> + Send + 'a>>;
 
+/// A check whose behaviour needs state of its own — the one an addon
+/// wrote in Python, which has to know which method it is.
+///
+/// It is handed the records' own columns rather than a connection: a
+/// hook runs inside the delete's transaction, and letting an addon
+/// re-enter the ORM underneath it is a re-entrancy nobody should have to
+/// reason about. What a rule like "not while it is confirmed" needs is
+/// the record, and that is what it gets.
+pub trait DynUnlinkHook: Send + Sync {
+    fn check(
+        &self,
+        row: &serde_json::Map<String, serde_json::Value>,
+    ) -> Result<(), RusdooError>;
+}
+
+/// How a pre-delete check runs.
+#[derive(Clone)]
+pub enum UnlinkCheck {
+    /// compiled into the server, with the transaction to ask its own
+    /// questions of
+    Native(OnDeleteFn),
+    /// written somewhere the compiler cannot see, and given the records
+    Dynamic(std::sync::Arc<dyn DynUnlinkHook>),
+}
+
 /// One registered pre-delete check.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct UnlinkHook {
-    pub name: &'static str,
-    pub check: OnDeleteFn,
+    pub name: String,
+    pub check: UnlinkCheck,
 }
 
 impl std::fmt::Debug for UnlinkHook {
@@ -99,14 +124,42 @@ impl Registry {
             .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
         let mut tx = pool.begin().await.map_err(db_err)?;
         for hook in model.unlink_hooks() {
-            let ctx = UnlinkCtx {
-                registry: self,
-                conn: &mut tx,
-                uid,
-                model: model_name,
-                ids,
-            };
-            (hook.check)(ctx).await?;
+            match &hook.check {
+                UnlinkCheck::Native(check) => {
+                    let ctx = UnlinkCtx {
+                        registry: self,
+                        conn: &mut tx,
+                        uid,
+                        model: model_name,
+                        ids,
+                    };
+                    check(ctx).await?;
+                }
+                UnlinkCheck::Dynamic(check) => {
+                    // the records' own columns, read once for the batch:
+                    // a bridged hook decides from the record, and asking
+                    // the database per record would make a delete of a
+                    // hundred rows a hundred round-trips
+                    let columns: Vec<&str> = model
+                        .fields()
+                        .iter()
+                        .filter(|field| {
+                            field.stored
+                                && field.related.is_none()
+                                && !matches!(
+                                    field.ty,
+                                    crate::fields::FieldType::One2many { .. }
+                                        | crate::fields::FieldType::Many2many { .. }
+                                        | crate::fields::FieldType::Many2one { .. }
+                                )
+                        })
+                        .map(|field| field.name.as_str())
+                        .collect();
+                    for row in model.read_in(&mut tx, ids, &columns).await? {
+                        check.check(&row)?;
+                    }
+                }
+            }
         }
         let (sql, params) = model.delete_sql(ids)?;
         let done = crate::db::execute_in(&mut tx, &sql, &params, model).await?;

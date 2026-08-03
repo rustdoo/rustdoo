@@ -1006,3 +1006,94 @@ class Book(models.Model):
             .unwrap();
     }
 }
+
+/// `@api.ondelete`: a record the business will not let go.
+///
+/// The other half of what a delete has to survive. A foreign key answers
+/// "what happens to what points at this"; this answers "may this go at
+/// all", which only the addon knows — a posted invoice is not deletable
+/// even when nothing references it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_python_ondelete_refuses_the_delete_live() {
+    let Some(pool) = rusdoo_testing::pool_in("rusdoo_py_ondelete") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut registry = Registry::new();
+    load_python_models(
+        &mut registry,
+        "ledger",
+        r#"
+from odoo import models, fields, api
+from odoo.exceptions import UserError
+
+
+class Entry(models.Model):
+    _name = "ledger.entry"
+    _order = "id"
+
+    name = fields.Char(required=True)
+    state = fields.Selection(
+        [("draft", "Draft"), ("posted", "Posted")], default="draft"
+    )
+
+    @api.ondelete(at_uninstall=False)
+    def _unlink_if_draft(self):
+        for entry in self:
+            if entry.state == "posted":
+                raise UserError("%s is posted: it cannot be deleted" % entry.name)
+"#,
+    )
+    .expect("the addon loads");
+    registry.init_tables(&pool).await.expect("the table is made");
+
+    let draft = registry
+        .create_as(&pool, 1, "ledger.entry", vec![("name", json!("D1"))])
+        .await
+        .unwrap();
+    let posted = registry
+        .create_as(
+            &pool,
+            1,
+            "ledger.entry",
+            vec![("name", json!("P1")), ("state", json!("posted"))],
+        )
+        .await
+        .unwrap();
+
+    // a draft goes
+    assert_eq!(
+        registry
+            .unlink_as(&pool, 1, "ledger.entry", &[draft])
+            .await
+            .expect("a draft entry is deletable"),
+        1
+    );
+    // a posted one does not, and says why in the addon's own words
+    let error = registry
+        .unlink_as(&pool, 1, "ledger.entry", &[posted])
+        .await
+        .expect_err("a posted entry is refused");
+    assert!(
+        matches!(error, rusdoo_core::RusdooError::User(_)),
+        "the UserError keeps its kind: {error:?}"
+    );
+    assert!(error.to_string().contains("P1 is posted"), "{error}");
+    // and the refusal rolled the whole delete back, rather than leaving
+    // the batch half gone
+    let left = registry
+        .search(
+            &pool,
+            "ledger.entry",
+            &parse_domain(&json!([])).unwrap(),
+            &SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(left, vec![posted]);
+
+    sqlx::query("DROP TABLE IF EXISTS ledger_entry")
+        .execute(&pool)
+        .await
+        .unwrap();
+}

@@ -1452,6 +1452,7 @@ dependencies = [
  "rusdoo-orm",
  "rusdoo-product",
  "rusdoo-purchase",
+ "rusdoo-python",
  "rusdoo-qweb",
  "rusdoo-sale",
  "rusdoo-stock",

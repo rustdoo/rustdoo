@@ -693,6 +693,51 @@ fn model_from_spec(spec: &Value) -> Result<Model, RusdooError> {
             rusdoo_orm::model::ConstraintFn::Dynamic(std::sync::Arc::new(check)),
         );
     }
+    for declared in spec
+        .get("onchanges")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+    {
+        let method = spec_str(declared, "method")?;
+        let watched: Vec<String> = declared
+            .get("fields")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if watched.is_empty() {
+            return Err(RusdooError::Validation(format!(
+                "{}.{method}: @api.onchange names no field — nothing would \
+                 ever trigger it",
+                model.meta.name
+            )));
+        }
+        let known: Vec<String> = model.fields().iter().map(|f| f.name.clone()).collect();
+        let name = format!("{}.{method}", model.meta.name);
+        let apply = crate::compute::PyOnchange::new(&model.meta.name, &method, known);
+        model = model.on_change(&name, watched, std::sync::Arc::new(apply));
+    }
+    for method in spec
+        .get("ondeletes")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(Value::as_str)
+    {
+        let name = format!("{}.{method}", model.meta.name);
+        let hook = crate::compute::PyUnlinkHook::new(&model.meta.name, method);
+        model = model.on_unlink_with(
+            &name,
+            rusdoo_orm::unlink::UnlinkCheck::Dynamic(std::sync::Arc::new(hook)),
+        );
+    }
     Ok(model)
 }
 

@@ -8,12 +8,10 @@ The decorators record what they are told and hand it back unchanged: the
 metaclass reads the mark off the method afterwards, which is the only
 moment both the field declaration and the method it names exist.
 
-`@api.depends` and `@api.constrains` are acted on — a computed field is
-computed by the method it points at, and a rule refuses the write that
-breaks it. `@api.onchange` and `@api.ondelete` are still only recorded;
-they are kept rather than dropped because a decorator that vanished
-would turn a rule into silence, and that is the kind of wrong that looks
-right for months.
+All four are acted on: a computed field is computed by the method
+`@api.depends` marks, `@api.constrains` refuses the write that breaks
+its rule, `@api.onchange` answers what else changes when the user edits
+a field, and `@api.ondelete` says whether a record may go at all.
 """
 
 import _rusdoo

@@ -89,6 +89,75 @@ impl DynConstraint for PyConstraint {
     }
 }
 
+/// One pre-delete check an addon declared with `@api.ondelete`.
+pub struct PyUnlinkHook {
+    model: String,
+    method: String,
+}
+
+impl PyUnlinkHook {
+    pub fn new(model: &str, method: &str) -> PyUnlinkHook {
+        PyUnlinkHook {
+            model: model.to_string(),
+            method: method.to_string(),
+        }
+    }
+}
+
+impl rusdoo_orm::unlink::DynUnlinkHook for PyUnlinkHook {
+    fn check(&self, row: &Map<String, Value>) -> Result<(), RusdooError> {
+        call_shim("dispatch_ondelete", &[&self.model, &self.method], row).map(|_| ())
+    }
+}
+
+/// One reaction an addon declared with `@api.onchange`.
+pub struct PyOnchange {
+    model: String,
+    method: String,
+    /// every field of the model, so a form that did not fill one in
+    /// reads it as empty instead of as an error. See `dispatch_onchange`.
+    known: Vec<String>,
+}
+
+impl PyOnchange {
+    pub fn new(model: &str, method: &str, known: Vec<String>) -> PyOnchange {
+        PyOnchange {
+            model: model.to_string(),
+            method: method.to_string(),
+            known,
+        }
+    }
+}
+
+impl rusdoo_orm::model::DynOnchange for PyOnchange {
+    fn call(&self, values: &Map<String, Value>) -> Result<Map<String, Value>, RusdooError> {
+        let known = Value::Array(self.known.iter().cloned().map(Value::String).collect());
+        let answer = without_stalling(|| {
+            Python::attach(|py| {
+                crate::install_shim(py)?;
+                let models = py
+                    .import("odoo.models")
+                    .map_err(|error| crate::python_error(py, error))?;
+                let known = crate::depythonize(py, &known)
+                    .map_err(|error| crate::python_error(py, error))?;
+                let form = crate::depythonize(py, &Value::Object(values.clone()))
+                    .map_err(|error| crate::python_error(py, error))?;
+                let answer = models
+                    .getattr("dispatch_onchange")
+                    .and_then(|entry| entry.call1((&self.model, &self.method, known, form)))
+                    .map_err(|error| crate::python_error(py, error))?;
+                crate::pythonize(&answer).map_err(|error| crate::python_error(py, error))
+            })
+        })?;
+        answer.as_object().cloned().ok_or_else(|| {
+            RusdooError::Validation(format!(
+                "{}.{} answered something that is not a set of values",
+                self.model, self.method
+            ))
+        })
+    }
+}
+
 /// One computed field an addon declared, reachable by name.
 pub struct PyCompute {
     model: String,

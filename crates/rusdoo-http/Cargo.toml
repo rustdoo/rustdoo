@@ -23,6 +23,7 @@ base64.workspace = true
 
 [dev-dependencies]
 rusdoo-testing = { path = "../rusdoo-testing" }
+rusdoo-python = { path = "../rusdoo-python" }
 chrono.workspace = true
 base64.workspace = true
 rusdoo-base = { path = "../rusdoo-base" }

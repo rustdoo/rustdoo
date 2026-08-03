@@ -1427,16 +1427,72 @@ impl OrmService {
                     .await?;
                 Ok(json!({"groups": groups, "length": length}))
             }
-            // the form view calls this on every edit. A model with no
-            // onchange logic answers "nothing changes" — which is every
-            // model here, since Odoo's onchange bodies are Python and have
-            // no Rust counterpart yet. The endpoint has to exist all the
-            // same: a form whose onchange errors is a form that is stuck.
+            // the form view calls this on every edit: `[ids, values,
+            // field_names, spec]`, the values being what the form holds
+            // and not what the database does — the record may never have
+            // been saved, and answering before it is is the whole point.
+            //
+            // A model with no reaction to the edited field answers
+            // "nothing changes", and so does one with no onchange at all.
+            // The endpoint has to answer either way: a form whose
+            // onchange errors is a form that is stuck.
             "onchange" => {
-                self.registry.get(model).ok_or_else(|| {
+                let declared = self.registry.get(model).ok_or_else(|| {
                     RpcError::from(RusdooError::Validation(format!("unknown model: {model}")))
                 })?;
-                Ok(json!({"value": {}}))
+                let values = args
+                    .get(1)
+                    .or_else(|| kwargs.get("values"))
+                    .and_then(Value::as_object)
+                    .cloned()
+                    .unwrap_or_default();
+                let edited: Vec<&str> = args
+                    .get(2)
+                    .or_else(|| kwargs.get("field_names"))
+                    .and_then(Value::as_array)
+                    .map(|names| names.iter().filter_map(Value::as_str).collect())
+                    .unwrap_or_default();
+                // an onchange that changes a field another one watches
+                // triggers it in turn: a quantity sets a total, and the
+                // total is what the rule about approvals reads. So the
+                // trigger set grows with what each one produced, until
+                // nothing new fires.
+                //
+                // Each runs at most once, which is the loop guard: two
+                // onchanges that write each other's field would otherwise
+                // bounce forever, and a form that never answers is worse
+                // than one that answers once.
+                let mut changed = Map::new();
+                let mut touched: Vec<String> = edited.iter().map(|s| (*s).to_string()).collect();
+                let mut ran = vec![false; declared.onchanges().len()];
+                loop {
+                    let mut fired = false;
+                    for (index, onchange) in declared.onchanges().iter().enumerate() {
+                        // an empty `field_names` is the form asking on
+                        // open, where Odoo runs every onchange
+                        let triggered = edited.is_empty()
+                            || onchange.fields.iter().any(|watched| touched.contains(watched));
+                        if ran[index] || !triggered {
+                            continue;
+                        }
+                        ran[index] = true;
+                        fired = true;
+                        // it sees what the earlier ones already changed,
+                        // not the stale value the form sent
+                        let mut seen = values.clone();
+                        seen.extend(changed.clone());
+                        for (field, value) in onchange.apply.call(&seen)? {
+                            if !touched.contains(&field) {
+                                touched.push(field.clone());
+                            }
+                            changed.insert(field, value);
+                        }
+                    }
+                    if !fired {
+                        break;
+                    }
+                }
+                Ok(json!({ "value": changed }))
             }
             // what a fresh form starts from: the declared default of every
             // field asked for, overridden by the `default_<field>` entries
