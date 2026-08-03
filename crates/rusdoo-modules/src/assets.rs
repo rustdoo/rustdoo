@@ -137,6 +137,19 @@ pub fn resolve_bundles(manifests: &[&Manifest]) -> Result<Bundles, RusdooError> 
     Ok(Bundles { bundles })
 }
 
+/// Whether an asset entry is an address somewhere else rather than a
+/// file in an addon.
+///
+/// Odoo keeps these in the bundle untouched and lets the browser fetch
+/// them. This port serves bundles by concatenating files, so an external
+/// asset contributes nothing to the body — which is the honest outcome:
+/// there is no file here to concatenate.
+fn is_external(definition: &str) -> bool {
+    definition.starts_with("http://")
+        || definition.starts_with("https://")
+        || definition.starts_with("//")
+}
+
 /// Build one bundle, expanding `include` directives inline (as Odoo does)
 /// so the result is flat. `building` is the include stack, which is what
 /// makes a cycle an error instead of a hang.
@@ -172,13 +185,24 @@ fn build_bundle(
             AssetDirective::Prepend => paths.prepend(files),
             AssetDirective::Remove => {
                 let target = entry.path.clone();
-                let removed = paths.remove(&files);
-                if removed == 0 {
-                    return Err(RusdooError::Validation(format!(
+                if paths.remove(&files) == 0 {
+                    // a no-op with a warning, not a refusal. Odoo builds
+                    // a bundle when a page asks for it, so a `remove`
+                    // that names a file the bundle does not hold *yet*
+                    // simply does nothing there; this resolves every
+                    // bundle at boot, which reaches declarations Odoo
+                    // never evaluates in a given install.
+                    //
+                    // `im_livechat.assets_embed_core` is the real case:
+                    // it removes `web/…/title_service.js` on the line
+                    // *before* the `include` that brings the file in.
+                    // Refusing it meant refusing to serve the other six
+                    // hundred addons on disk with it.
+                    tracing::warn!(
                         "module {}: 'remove' of {target:?} in bundle {bundle:?} \
-                         matched nothing already in the bundle",
+                         matched nothing, ignored",
                         declaration.module
-                    )));
+                    );
                 }
             }
             AssetDirective::Before | AssetDirective::After | AssetDirective::Replace => {
@@ -294,6 +318,13 @@ impl<'a> Walker<'a> {
                 "module {declaring}: asset path {definition:?} {what}"
             ))
         };
+        // an address, not a path: an addon may put a CDN's script in a
+        // bundle, and Odoo carries those through as-is (`EXTERNAL_ASSET`).
+        // Nothing on this disk answers for it, so there is nothing to
+        // expand and nothing to serve — the client fetches it itself.
+        if is_external(definition) {
+            return Ok(Vec::new());
+        }
         let definition = definition.trim_start_matches('/');
         // a path is `module/inside/the/module`, and never leaves it
         if definition.split('/').any(|segment| segment == "..") {

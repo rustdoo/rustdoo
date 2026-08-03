@@ -319,3 +319,29 @@ fn resolved_files_point_at_real_files_on_disk() {
     let content = std::fs::read_to_string(&file.disk).expect("readable");
     assert!(content.contains("static/src/deep/nested.js"));
 }
+
+/// A `remove` naming a file the bundle does not hold is ignored, not
+/// refused.
+///
+/// Odoo builds a bundle when a page asks for it, so such a line simply
+/// does nothing there. This resolves every bundle at boot, which reaches
+/// declarations Odoo never evaluates — and `im_livechat` really does
+/// remove a file on the line before the `include` that brings it in.
+/// Refusing that meant refusing to serve every other addon on disk.
+#[test]
+fn a_remove_matching_nothing_is_ignored() {
+    let fixture = Fixture::new("remove-nothing");
+    let web = fixture.addon(
+        "web",
+        r#"{'name': 'Web', 'assets': {'web.assets_backend': [
+            ('remove', 'web/static/src/absent.js'),
+            'web/static/src/present.js']}}"#,
+        &["static/src/present.js"],
+    );
+    let bundles = resolve_bundles(&[&web]).expect("the bundle still resolves");
+    assert_eq!(
+        paths(bundles.files("web.assets_backend")),
+        vec!["web/static/src/present.js"],
+        "what was declared is there, and the impossible removal did nothing"
+    );
+}

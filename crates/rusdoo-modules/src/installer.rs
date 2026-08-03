@@ -490,11 +490,36 @@ pub fn register_python_models(
     let by_name: HashMap<&str, &Manifest> =
         manifests.iter().map(|m| (m.name.as_str(), m)).collect();
     let mut loaded = 0;
+    let mut refused: Vec<String> = Vec::new();
     for name in &order {
         let manifest = by_name[name.as_str()];
-        if manifest.installable {
-            loaded += load_python(manifest, registry, methods)?;
+        if !manifest.installable {
+            continue;
         }
+        match load_python(manifest, registry, methods) {
+            Ok(count) => loaded += count,
+            // one module's Python failing is that module's problem, not
+            // the server's. An addon may import a library this machine
+            // does not have — Odoo's own `base` imports `rjsmin` for the
+            // asset pipeline this port reimplemented in Rust and does not
+            // need — and taking the whole boot down over it would mean
+            // every other addon on disk is unreachable too.
+            //
+            // Named in the log, and never in silence: a model that is not
+            // registered is a screen that is not there, and whoever
+            // installed the addon has to be able to find out why.
+            Err(error) => {
+                tracing::warn!("module {name}: its Python did not load, skipped ({error})");
+                refused.push(name.clone());
+            }
+        }
+    }
+    if !refused.is_empty() {
+        tracing::warn!(
+            "{} module(s) contributed no Python: {}",
+            refused.len(),
+            refused.join(", ")
+        );
     }
     Ok(loaded)
 }
