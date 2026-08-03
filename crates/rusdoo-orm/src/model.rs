@@ -37,6 +37,21 @@ impl std::fmt::Debug for Constraint {
     }
 }
 
+/// A rule the database enforces, port of Odoo's `_sql_constraints`.
+///
+/// The difference from a `Constraint` is not style: a Rust check runs
+/// before the `INSERT` and two concurrent requests can both pass it and
+/// both write. A `UNIQUE` in PostgreSQL cannot be raced past.
+#[derive(Debug, Clone)]
+pub struct SqlConstraint {
+    /// the constraint's name in the database
+    pub name: String,
+    /// what follows `ADD CONSTRAINT <name>`, e.g. `UNIQUE ("key")`
+    pub definition: String,
+    /// what the user is told when the database refuses the write
+    pub message: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct Model {
     pub meta: ModelMeta,
@@ -47,6 +62,8 @@ pub struct Model {
     transient: bool,
     /// `_order`: how a search with no order of its own comes back
     order: Option<String>,
+    /// `_sql_constraints`: the rules the database itself enforces
+    sql_constraints: Vec<SqlConstraint>,
 }
 
 impl Model {
@@ -57,7 +74,28 @@ impl Model {
             constraints: Vec::new(),
             transient: false,
             order: None,
+            sql_constraints: Vec::new(),
         }
+    }
+
+    /// Attach a rule the database enforces, port of `_sql_constraints`.
+    ///
+    /// `definition` is the SQL that follows `ADD CONSTRAINT <name>`, and
+    /// `message` is what the user reads when the write is refused — a
+    /// raw `duplicate key value violates unique constraint
+    /// "ir_config_parameter_key_uniq"` is not a sentence anyone can act
+    /// on.
+    pub fn sql_constrained(mut self, name: &str, definition: &str, message: &str) -> Self {
+        self.sql_constraints.push(SqlConstraint {
+            name: name.to_string(),
+            definition: definition.to_string(),
+            message: message.to_string(),
+        });
+        self
+    }
+
+    pub fn sql_constraints(&self) -> &[SqlConstraint] {
+        &self.sql_constraints
     }
 
     /// Mark the model transient (Odoo's `TransientModel`): the rows are

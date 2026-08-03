@@ -15,3 +15,5 @@ rusdoo-core = { path = "../rusdoo-core" }
 
 [dev-dependencies]
 tokio.workspace = true
+# ciclo só de dev: os testes do ORM querem os modelos reais de `base`
+rusdoo-base = { path = "../rusdoo-base" }

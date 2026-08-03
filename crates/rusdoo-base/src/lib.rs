@@ -104,6 +104,7 @@ fn power_on<'a>(
 
 fn models() -> Vec<Model> {
     vec![
+        config_parameter(),
         sequence(),
         country(),
         company(),
@@ -118,6 +119,29 @@ fn models() -> Vec<Model> {
         autovacuum(),
         ui_menu(),
     ]
+}
+
+/// `ir.config_parameter` — the switches a database is set with.
+///
+/// Port of `odoo/addons/base/models/ir_config_parameter.py`. A module
+/// that can be configured stops having to pick one behaviour and be
+/// wrong for half its users.
+fn config_parameter() -> Model {
+    Model::new(
+        meta("ir.config_parameter", "ir_config_parameter"),
+        vec![
+            char("key").required(),
+            Field::new("value", FieldType::Text).required(),
+        ],
+    )
+    // the uniqueness is the database's, not a check before the insert:
+    // `set_param` is an upsert, and an upsert needs a key to conflict on
+    .sql_constrained(
+        "ir_config_parameter_key_uniq",
+        r#"UNIQUE ("key")"#,
+        "já existe um parâmetro com essa chave",
+    )
+    .ordered("key, id")
 }
 
 /// `ir.sequence` — the numbers documents carry.
@@ -136,6 +160,15 @@ fn sequence() -> Model {
             Field::new("active", FieldType::Boolean).default_value(json!(true)),
         ],
     )
+    // duas sequências com o mesmo código são duas numerações para o
+    // mesmo documento: o `next_by_code` pegaria uma delas, e qual
+    // depende do dia
+    .sql_constrained(
+        "ir_sequence_code_uniq",
+        r#"UNIQUE ("code")"#,
+        "já existe uma sequência com esse código",
+    )
+    .ordered("name, id")
 }
 
 /// `res.country` — the country of an address.
@@ -245,6 +278,12 @@ fn users() -> Model {
             ),
         ],
     )
+    .sql_constrained(
+        "res_users_login_uniq",
+        r#"UNIQUE ("login")"#,
+        "já existe um usuário com esse login",
+    )
+    .ordered("login, id")
 }
 
 /// `ir.ui.view` — the arch a client renders.

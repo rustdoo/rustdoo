@@ -7,9 +7,10 @@
 //! many2many, exactly as in Odoo — a membership carries data (when it
 //! started, who it is) that a link row cannot hold.
 //!
-//! What is deliberately *not* here: the multi-team switch
-//! (`ir.config_parameter` has no model yet), so membership is exclusive
-//! like an out-of-the-box Odoo; the fields `sales_team` adds to
+//! Membership is exclusive unless `sales_team.membership_multi` says
+//! otherwise, which is Odoo's own switch and its own default.
+//!
+//! What is deliberately *not* here: the fields `sales_team` adds to
 //! `res.users`, which would need `_inherit` across modules; and
 //! `crm.team.member_ids`, whose relation table in Odoo *is* the
 //! membership table — declaring it here would have the boot create a
@@ -302,12 +303,18 @@ async fn memberships_of(ctx: &MethodCtx<'_>, user: i64) -> Result<Vec<(i64, i64)
         .collect())
 }
 
+/// The switch that says whether a salesperson may be in two teams at
+/// once (`sales_team.membership_multi`, `res_config_settings.py`).
+/// Off out of the box, in Odoo and here.
+const MEMBERSHIP_MULTI: &str = "sales_team.membership_multi";
+
 /// `action_add_member` — put a salesperson in this team.
 ///
 /// This is Odoo's `_inverse_member_ids` plus `_synchronize_memberships`,
 /// which the port cannot hang off a field write: joining a team means
-/// leaving the previous one, because a salesperson whose documents could
-/// land in two pipelines is a salesperson nobody can report on.
+/// leaving the previous one, unless the database was told otherwise —
+/// because a salesperson whose documents could land in two pipelines is,
+/// by default, a salesperson nobody can report on.
 fn action_add_member<'a>(
     ctx: MethodCtx<'a>,
     _args: &'a [Value],
@@ -328,8 +335,16 @@ fn action_add_member<'a>(
                 "{user_name} já está na equipe {team_name}"
             )));
         }
-        for (membership, current) in memberships {
-            leave_team(&ctx, current, membership).await?;
+        // leaving the previous team is what the switch turns off: with
+        // it on, a salesperson serves two pipelines on purpose
+        if !ctx
+            .registry
+            .param_flag(ctx.pool, MEMBERSHIP_MULTI, false)
+            .await
+        {
+            for (membership, current) in memberships {
+                leave_team(&ctx, current, membership).await?;
+            }
         }
 
         let membership = ctx

@@ -64,6 +64,32 @@ fn db_err(e: sqlx::Error) -> RusdooError {
     RusdooError::Database(e.to_string())
 }
 
+impl Model {
+    /// A database error turned into something the user can act on.
+    ///
+    /// PostgreSQL says `duplicate key value violates unique constraint
+    /// "ir_config_parameter_key_uniq"`. The model already knows what that
+    /// constraint is for and said so when it declared it; showing the
+    /// declared message instead of the driver's is the whole point of
+    /// having declared it.
+    pub(crate) fn explain(&self, error: sqlx::Error) -> RusdooError {
+        let sqlx::Error::Database(ref db) = error else {
+            return db_err(error);
+        };
+        let Some(name) = db.constraint() else {
+            return db_err(error);
+        };
+        match self
+            .sql_constraints()
+            .iter()
+            .find(|constraint| constraint.name == name)
+        {
+            Some(constraint) => RusdooError::Validation(constraint.message.clone()),
+            None => db_err(error),
+        }
+    }
+}
+
 fn bind_value<'q>(query: PgQuery<'q>, value: &'q Value) -> Result<PgQuery<'q>, RusdooError> {
     Ok(match value {
         Value::Null => query.bind(None::<String>),
@@ -153,6 +179,43 @@ impl Model {
                 );
             }
         }
+        self.init_sql_constraints(pool).await?;
+        Ok(())
+    }
+
+    /// The `_sql_constraints` of this model, added to the table if they
+    /// are not there yet.
+    ///
+    /// Same shape as the NOT NULL pass above and for the same reason:
+    /// outside the transaction, one at a time, and a constraint the
+    /// existing rows already violate is reported rather than allowed to
+    /// refuse the whole upgrade. What is refused is the *rule*, not the
+    /// boot — and the log says which, because a uniqueness rule that is
+    /// silently absent is worse than one that never existed.
+    async fn init_sql_constraints(&self, pool: &PgPool) -> Result<(), RusdooError> {
+        for constraint in self.sql_constraints() {
+            let existing: Option<i32> = sqlx::query_scalar(
+                "SELECT 1 FROM pg_constraint WHERE conname = $1
+                 AND conrelid = to_regclass($2)",
+            )
+            .bind(&constraint.name)
+            .bind(&self.meta.table)
+            .fetch_optional(pool)
+            .await
+            .map_err(db_err)?;
+            if existing.is_some() {
+                continue;
+            }
+            let sql = crate::ddl::add_constraint_sql(self, constraint)?;
+            if let Err(error) = sqlx::query(&sql).execute(pool).await {
+                tracing::warn!(
+                    "{}: a restrição {:?} não pôde ser aplicada ({error}) — \
+                     os dados que já existem a violam",
+                    self.meta.name,
+                    constraint.name
+                );
+            }
+        }
         Ok(())
     }
 
@@ -185,7 +248,7 @@ impl Model {
         let row = build_query(&sql, &params)?
             .fetch_one(&mut *conn)
             .await
-            .map_err(db_err)?;
+            .map_err(|error| self.explain(error))?;
         row_id(&row)
     }
 
@@ -232,7 +295,7 @@ impl Model {
         let done = build_query(&sql, &params)?
             .execute(&mut *conn)
             .await
-            .map_err(db_err)?;
+            .map_err(|error| self.explain(error))?;
         Ok(done.rows_affected())
     }
 
@@ -241,7 +304,7 @@ impl Model {
         let done = build_query(&sql, &params)?
             .execute(pool)
             .await
-            .map_err(db_err)?;
+            .map_err(|error| self.explain(error))?;
         Ok(done.rows_affected())
     }
 

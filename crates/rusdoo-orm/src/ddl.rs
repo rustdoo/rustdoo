@@ -86,6 +86,23 @@ pub fn set_not_null_sql(model: &Model, field: &str) -> Result<String, RusdooErro
     ))
 }
 
+/// `ALTER TABLE ... ADD CONSTRAINT`, for the rules the database keeps.
+///
+/// PostgreSQL has no `ADD CONSTRAINT IF NOT EXISTS`, so the caller looks
+/// in `pg_constraint` first — a boot that re-adds a constraint it already
+/// has must be a no-op, not an error.
+pub fn add_constraint_sql(
+    model: &Model,
+    constraint: &crate::model::SqlConstraint,
+) -> Result<String, RusdooError> {
+    Ok(format!(
+        "ALTER TABLE {} ADD CONSTRAINT {} {}",
+        quote_ident(&model.meta.table)?,
+        quote_ident(&constraint.name)?,
+        constraint.definition,
+    ))
+}
+
 /// Relation table backing a many2many field (`fields_relational.py`).
 /// `IF NOT EXISTS` because both sides of the relation may try to create it.
 pub fn create_relation_table_sql(field: &Field) -> Result<Option<String>, RusdooError> {

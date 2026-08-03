@@ -179,6 +179,61 @@ async fn a_salesperson_belongs_to_one_team_at_a_time_live() {
     assert_eq!(leftovers.len(), 1, "one person, one membership");
 }
 
+/// A exclusividade é o padrão, não uma regra: quem ligou o parâmetro do
+/// Odoo pediu por uma pessoa em duas equipes.
+#[tokio::test]
+async fn the_membership_multi_parameter_lets_a_salesperson_serve_two_teams_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let (registry, pool) = fixture(&url, "rusdoo_sales_team_multi").await;
+    registry
+        .get("ir.config_parameter")
+        .unwrap()
+        .init_table(&pool)
+        .await
+        .unwrap();
+    registry
+        .set_param(&pool, "sales_team.membership_multi", "True")
+        .await
+        .unwrap();
+
+    let north = a_team(&registry, &pool, "Norte").await;
+    let south = a_team(&registry, &pool, "Sul").await;
+    let ana = a_user(&registry, &pool, "ana", "Ana").await;
+
+    for team in [north, south] {
+        call(
+            &registry,
+            &pool,
+            1,
+            "crm.team",
+            "action_add_member",
+            &[team],
+            json!({"user_id": ana}),
+        )
+        .await
+        .expect("com o parâmetro ligado, entrar numa equipe não é sair da outra");
+    }
+    assert_eq!(member_count(&registry, &pool, north).await, 1);
+    assert_eq!(member_count(&registry, &pool, south).await, 1);
+
+    // e entrar duas vezes na mesma equipe continua sendo recusado
+    let error = call(
+        &registry,
+        &pool,
+        1,
+        "crm.team",
+        "action_add_member",
+        &[north],
+        json!({"user_id": ana}),
+    )
+    .await
+    .expect_err("duas vezes na mesma equipe não");
+    assert!(error.to_string().contains("já está na equipe"), "{error}");
+}
+
 #[tokio::test]
 async fn adding_the_same_salesperson_twice_is_refused_live() {
     let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
