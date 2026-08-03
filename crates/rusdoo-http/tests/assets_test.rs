@@ -75,6 +75,39 @@ fn app(fixture: &Fixture) -> axum::Router {
     router(service)
 }
 
+/// The `web` addon as Odoo ships it: a contribution bundle and the
+/// `web.assets_web` bundle that includes it and adds the entry points.
+fn web_addon_app(fixture: &Fixture) -> axum::Router {
+    let manifest_source = r#"{
+        'name': 'Web',
+        'assets': {
+            'web.assets_backend': ['web/static/src/module_loader.js'],
+            'web.assets_web': [
+                ('include', 'web.assets_backend'),
+                'web/static/src/start.js',
+            ],
+        },
+    }"#;
+    let addon = fixture.root.join("web");
+    fixture.write("web/__manifest__.py", manifest_source);
+    fixture.write("web/static/src/module_loader.js", "// @odoo-module ignore");
+    fixture.write("web/static/src/start.js", "// @odoo-module ignore");
+
+    let mut manifest = parse_manifest(manifest_source, "web").expect("manifest");
+    manifest.path = addon.clone();
+    let bundles = resolve_bundles(&[&manifest]).expect("bundles resolve");
+    let roots: HashMap<String, PathBuf> = [("web".to_string(), addon)].into_iter().collect();
+
+    let url = std::env::var("RUSDOO_TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:rusdoo@localhost:55432/postgres".into());
+    let service = OrmService::insecure(
+        Arc::new(Registry::new()),
+        rusdoo_orm::db::lazy_pool(&url).unwrap(),
+    )
+    .with_assets(AssetHub::new(bundles, roots));
+    router(service)
+}
+
 async fn get(app: axum::Router, uri: &str) -> (StatusCode, HashMap<String, String>, String) {
     fetch(app, uri, &[]).await
 }
@@ -235,6 +268,53 @@ async fn web_serves_the_client_when_an_addon_ships_one() {
     assert!(body.contains("id=\"rusdoo-app\""), "{body}");
     // the shell carries no record data: it is safe before authentication
     assert!(!body.contains("secret"), "{body}");
+}
+
+#[tokio::test]
+async fn the_shell_declares_the_odoo_global_before_the_bundle() {
+    // Odoo's `web.layout` opens the head with an inline script creating
+    // `var odoo`, then pours the bundles into it. Every transpiled module
+    // calls `odoo.define`, so a bundle reached first is a ReferenceError.
+    let fixture = Fixture::new("global");
+    let (_, _, body) = get(app(&fixture), "/web").await;
+    let global = body
+        .find("var odoo")
+        .unwrap_or_else(|| panic!("no odoo global: {body}"));
+    let bundle = body
+        .find("/web/assets/web.assets_backend.js")
+        .expect("no bundle tag");
+    assert!(global < bundle, "the bundle runs before `odoo` exists: {body}");
+    assert!(body.contains("csrf_token"), "{body}");
+}
+
+#[tokio::test]
+async fn the_shell_carries_the_session_the_client_boots_from() {
+    // `session.js` reads `odoo.__session_info__` at module level and
+    // `menu_service` awaits `odoo.loadMenusPromise`: both are set by the
+    // layout, not fetched by the client.
+    let fixture = Fixture::new("boot");
+    let (_, _, body) = get(app(&fixture), "/web").await;
+    assert!(body.contains("odoo.__session_info__ ="), "{body}");
+    assert!(body.contains("\"uid\":null"), "anonymous session: {body}");
+    assert!(body.contains("odoo.loadMenusPromise"), "{body}");
+    assert!(
+        body.contains("/web/webclient/load_menus"),
+        "the menus are never fetched: {body}"
+    );
+}
+
+#[tokio::test]
+async fn the_client_bundle_is_assets_web_when_an_addon_ships_it() {
+    // `web.webclient_bootstrap` calls `web.assets_web`, which includes
+    // `web.assets_backend` plus the client's entry points. Serving the
+    // contribution bundle leaves out `main.js`/`start.js`.
+    let fixture = Fixture::new("assets-web");
+    let (_, _, body) = get(web_addon_app(&fixture), "/web").await;
+    assert!(body.contains("/web/assets/web.assets_web.js"), "{body}");
+    assert!(
+        !body.contains("/web/assets/web.assets_backend.js"),
+        "both bundles served, so every module loads twice: {body}"
+    );
 }
 
 #[tokio::test]

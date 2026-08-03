@@ -15,8 +15,9 @@ pub mod jsonrpc;
 pub mod pdf;
 pub mod report;
 pub mod routes;
-pub mod view_inherit;
 pub mod session;
+mod shell;
+pub mod view_inherit;
 mod web_read;
 mod webclient;
 

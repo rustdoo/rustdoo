@@ -14,9 +14,6 @@ use std::sync::Arc;
 /// Odoo's JSON-RPC error code for a missing/expired session.
 const SESSION_EXPIRED: i64 = 100;
 
-/// The bundle the backend client is loaded from, as Odoo names it.
-const CLIENT_BUNDLE: &str = "web.assets_backend";
-
 use crate::dispatch::{OrmService, RpcError};
 use crate::jsonrpc::{
     JsonRpcRequest, JsonRpcResponse, INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND,
@@ -652,40 +649,6 @@ fn is_xml_id(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
-/// The page that loads the web client: nothing but the bundle tags and
-/// the element the client mounts on. `None` when no installed addon
-/// contributes `web.assets_backend`, which is what keeps a server booted
-/// without the `web` addon serving its plain index instead.
-fn client_shell(service: &OrmService) -> Option<String> {
-    let bundles = service.assets.bundles();
-    let has_js = bundles
-        .files_with_extension(CLIENT_BUNDLE, &["js", "mjs"])
-        .next()
-        .is_some();
-    if !has_js {
-        return None;
-    }
-    let styles = bundles
-        .files_with_extension(CLIENT_BUNDLE, &["css", "scss", "less"])
-        .next()
-        .is_some();
-    let mut shell = String::from(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
-         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
-         <title>rusdoo</title>",
-    );
-    if styles {
-        shell.push_str(&format!(
-            "<link rel=\"stylesheet\" href=\"/web/assets/{CLIENT_BUNDLE}.css\">"
-        ));
-    }
-    shell.push_str(&format!(
-        "<script defer src=\"/web/assets/{CLIENT_BUNDLE}.js\"></script>\
-         </head><body><div id=\"rusdoo-app\"></div></body></html>"
-    ));
-    Some(shell)
-}
-
 /// Minimal HTML escaping for text interpolated into pages.
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -697,14 +660,14 @@ fn html_escape(s: &str) -> String {
 /// `GET /web` — the client, when an addon ships one; otherwise a
 /// server-rendered index of the stored views.
 async fn web_index(State(service): State<OrmService>, headers: HeaderMap) -> Response {
-    // The shell holds no data — it is the script tag that loads the
-    // client, which then authenticates for itself. Serving it to an
-    // anonymous visitor is what lets the client draw its own login
-    // screen, exactly like Odoo's /web/login.
-    if let Some(shell) = client_shell(&service) {
+    let session = current_session(&service, &headers);
+    // The shell carries no record data — only the session the client
+    // reads to decide what to draw. Serving it to an anonymous visitor
+    // (uid null, like `/web/session/get_session_info` answers) is what
+    // lets the client draw its own login screen, as Odoo's /web/login does.
+    if let Some(shell) = crate::shell::client_shell(&service, session.as_ref()).await {
         return Html(shell).into_response();
     }
-    let session = current_session(&service, &headers);
     if service.require_auth && session.is_none() {
         return (
             axum::http::StatusCode::UNAUTHORIZED,

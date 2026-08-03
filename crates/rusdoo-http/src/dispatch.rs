@@ -866,6 +866,9 @@ impl OrmService {
             login: uid.to_string(),
             is_superuser: uid == crate::session::SUPERUSER_ID,
             groups: self.resolve_groups(uid).await,
+            // a per-call identity is never printed into a page, so it
+            // carries no token to echo back
+            csrf_token: String::new(),
         }
     }
 

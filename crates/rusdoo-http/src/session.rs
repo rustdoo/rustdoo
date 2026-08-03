@@ -23,6 +23,12 @@ pub struct Session {
     /// res.groups ids the user belongs to (empty until group m2m read
     /// lands; superuser bypass keeps admin usable meanwhile)
     pub groups: Vec<i64>,
+    /// What the client echoes back on a form POST, as `odoo.csrf_token`.
+    /// Its own secret, never the session id: the shell prints it into the
+    /// page, and printing the id there would undo the HttpOnly cookie.
+    /// Nothing verifies it yet — no endpoint accepts a form post — so it
+    /// is shaped for the client, not yet a defence.
+    pub csrf_token: String,
 }
 
 /// In-memory session store (server restarts log everyone out).
@@ -48,6 +54,7 @@ impl SessionStore {
                     login: to_owned_login(login),
                     is_superuser: uid == SUPERUSER_ID,
                     groups,
+                    csrf_token: uuid::Uuid::new_v4().to_string(),
                 },
             );
         token
