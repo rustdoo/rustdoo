@@ -12,6 +12,7 @@ pub mod dispatch;
 mod group;
 pub mod image;
 pub mod jsonrpc;
+pub mod pdf;
 pub mod report;
 pub mod routes;
 pub mod view_inherit;
