@@ -1514,6 +1514,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-base-vat"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "regex",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "rusdoo-testing",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-core"
 version = "0.1.0"
 dependencies = [
@@ -1737,6 +1752,7 @@ dependencies = [
  "rusdoo-analytic",
  "rusdoo-barcodes",
  "rusdoo-base",
+ "rusdoo-base-vat",
  "rusdoo-core",
  "rusdoo-data-recycle",
  "rusdoo-http",
@@ -1779,6 +1795,7 @@ version = "0.1.0"
 dependencies = [
  "rusdoo-account",
  "rusdoo-base",
+ "rusdoo-base-vat",
  "rusdoo-core",
  "rusdoo-mail",
  "rusdoo-orm",

@@ -170,6 +170,8 @@ type ModelProvider = fn(&mut Registry) -> Result<(), rusdoo_core::RusdooError>;
 fn code_modules() -> Vec<(&'static str, ModelProvider)> {
     vec![
         ("base", rusdoo_base::extend as ModelProvider),
+        // depois do `base`: estende `res.partner`, que ele declara
+        ("base_vat", rusdoo_base_vat::extend as ModelProvider),
         ("mail", rusdoo_mail::extend as ModelProvider),
         ("rating", rusdoo_rating::extend as ModelProvider),
         ("product", rusdoo_product::extend as ModelProvider),

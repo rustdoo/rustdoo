@@ -4,6 +4,7 @@ members = [
     "crates/rusdoo-core",
     "crates/rusdoo-orm",
     "crates/rusdoo-base",
+    "crates/rusdoo-base-vat",
     "crates/rusdoo-account",
     "crates/rusdoo-mail",
     "crates/rusdoo-product",

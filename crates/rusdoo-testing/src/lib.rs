@@ -147,6 +147,12 @@ fn modules() -> Vec<Module> {
             sequences: &[],
         },
         Module {
+            name: "base_vat",
+            extend: rusdoo_base_vat::extend,
+            methods: None,
+            sequences: &[],
+        },
+        Module {
             name: "mail",
             extend: rusdoo_mail::extend,
             methods: None,
