@@ -274,3 +274,95 @@ async fn a_meeting_that_ends_before_it_starts_is_refused_live() {
 
     case.close().await;
 }
+
+/// What Odoo's own client does: it writes `partner_ids` onto the form
+/// and expects the guest list to be there afterwards. It calls no method
+/// — it does not know there is one.
+#[tokio::test]
+async fn writing_the_guest_list_seats_the_guests_live() {
+    let Some(case) = TransactionCase::open("calendar_hook", &MODULES).await else {
+        return;
+    };
+    let ana = a_partner(&case, "Ana").await;
+    let bruno = a_partner(&case, "Bruno").await;
+
+    // the create: the field is written with the record, as a form does
+    let meeting = case
+        .models()
+        .create(
+            &case.pool(),
+            "calendar.event",
+            vec![
+                ("name", json!("Planejamento")),
+                ("start", json!("2026-08-12 10:00:00")),
+                ("stop", json!("2026-08-12 11:00:00")),
+                ("partner_ids", json!([[6, 0, [ana, bruno]]])),
+            ],
+        )
+        .await
+        .expect("the meeting saves");
+
+    let attendees = case
+        .models()
+        .search(
+            &case.pool(),
+            "calendar.attendee",
+            &rusdoo_orm::domain::parse_domain(&json!([["event_id", "=", meeting]])).unwrap(),
+            &rusdoo_orm::crud::SearchOptions::default(),
+        )
+        .await
+        .expect("the attendees are searchable");
+    assert_eq!(
+        attendees.len(),
+        2,
+        "escrever a lista não deu lugar a ninguém: {attendees:?}"
+    );
+
+    // the write: a third guest added later gets a place too
+    let carla = a_partner(&case, "Carla").await;
+    case.models()
+        .write(
+            &case.pool(),
+            "calendar.event",
+            &[meeting],
+            vec![("partner_ids", json!([[4, carla, 0]]))],
+        )
+        .await
+        .expect("the third guest saves");
+
+    let attendees = case
+        .models()
+        .search(
+            &case.pool(),
+            "calendar.attendee",
+            &rusdoo_orm::domain::parse_domain(&json!([["event_id", "=", meeting]])).unwrap(),
+            &rusdoo_orm::crud::SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(attendees.len(), 3, "{attendees:?}");
+
+    // and a write that touches nothing else does not seat anybody twice
+    case.models()
+        .write(
+            &case.pool(),
+            "calendar.event",
+            &[meeting],
+            vec![("name", json!("Planejamento anual"))],
+        )
+        .await
+        .expect("the rename saves");
+    let attendees = case
+        .models()
+        .search(
+            &case.pool(),
+            "calendar.attendee",
+            &rusdoo_orm::domain::parse_domain(&json!([["event_id", "=", meeting]])).unwrap(),
+            &rusdoo_orm::crud::SearchOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(attendees.len(), 3, "convidou de novo: {attendees:?}");
+
+    case.close().await;
+}

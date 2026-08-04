@@ -11,6 +11,7 @@ pub mod ddl;
 pub mod domain;
 pub mod fields;
 pub mod group;
+pub mod hooks;
 pub mod methods;
 pub mod model;
 pub mod registry;

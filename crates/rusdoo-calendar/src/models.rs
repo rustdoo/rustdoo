@@ -522,6 +522,71 @@ fn ends_after_it_starts(record: &Map<String, Value>) -> Result<(), String> {
     Ok(())
 }
 
+/// Writing `partner_ids` is what makes the guest list, as in Odoo:
+/// `create` and `write` there put a `calendar.attendee` behind every
+/// partner, because a guest with nowhere to answer from is on a list and
+/// not invited.
+///
+/// This is the port of that override. Until the ORM had hooks it lived
+/// in `action_join_meeting`, which everything inside this port called and
+/// nothing outside it did — and Odoo's own client is outside it, writing
+/// the field straight onto the form.
+fn seat_the_guests<'a>(
+    mut ctx: rusdoo_orm::hooks::HookCtx<'a>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), RusdooError>> + Send + 'a>> {
+    Box::pin(async move {
+        if !ctx.wrote("partner_ids") {
+            return Ok(());
+        }
+        // who is on the list now, after the write the hook is reacting to
+        let events = ctx.records(&["partner_ids"]).await?;
+        for event in events {
+            let Some(id) = event.get("id").and_then(Value::as_i64) else {
+                continue;
+            };
+            let wanted: Vec<i64> = event
+                .get("partner_ids")
+                .and_then(Value::as_array)
+                .map(|ids| ids.iter().filter_map(Value::as_i64).collect())
+                .unwrap_or_default();
+            // and who already has a place to answer from
+            let seated_ids = ctx
+                .registry
+                .search_tx(
+                    ctx.tx,
+                    "calendar.attendee",
+                    &rusdoo_orm::domain::parse_domain(&json!([["event_id", "=", id]]))?,
+                    &rusdoo_orm::crud::SearchOptions::default(),
+                )
+                .await?;
+            let seated: Vec<i64> = if seated_ids.is_empty() {
+                Vec::new()
+            } else {
+                let conn: &mut sqlx::PgConnection = &mut *ctx.tx;
+                ctx.registry
+                    .read_conn(conn, "calendar.attendee", &seated_ids, &["partner_id"])
+                    .await?
+                    .iter()
+                    .filter_map(|row| match row.get("partner_id") {
+                        Some(Value::Array(pair)) => pair.first().and_then(Value::as_i64),
+                        other => other.and_then(Value::as_i64),
+                    })
+                    .collect()
+            };
+            for partner in wanted.iter().filter(|p| !seated.contains(p)) {
+                ctx.registry
+                    .create_tx(
+                        ctx.tx,
+                        "calendar.attendee",
+                        vec![("event_id", json!(id)), ("partner_id", json!(partner))],
+                    )
+                    .await?;
+            }
+        }
+        Ok(())
+    })
+}
+
 /// `calendar.event` — a meeting.
 fn event() -> Model {
     Model::new(
@@ -633,6 +698,8 @@ fn event() -> Model {
     // Odoo's `_order`: the calendar opens on what is coming, and the list
     // reads newest first
     .ordered("start desc, id desc")
+    .on_create("os convidados ganham lugar", seat_the_guests)
+    .on_write("os convidados ganham lugar", seat_the_guests)
 }
 
 // ---------------------------------------------------------------------

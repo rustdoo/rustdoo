@@ -147,6 +147,7 @@ pub struct Model {
     sql_constraints: Vec<SqlConstraint>,
     /// `@api.ondelete`: what must be true before a record may be deleted
     unlink_hooks: Vec<crate::unlink::UnlinkHook>,
+    hooks: Vec<crate::hooks::Hook>,
     /// `@api.onchange`: what else changes when the user edits a field
     onchanges: Vec<Onchange>,
 }
@@ -161,6 +162,7 @@ impl Model {
             order: None,
             sql_constraints: Vec::new(),
             unlink_hooks: Vec::new(),
+            hooks: Vec::new(),
             onchanges: Vec::new(),
         }
     }
@@ -213,6 +215,47 @@ impl Model {
 
     pub fn unlink_hooks(&self) -> &[crate::unlink::UnlinkHook] {
         &self.unlink_hooks
+    }
+
+    /// React to this model's own create, port of Odoo's `create`
+    /// override. The record already exists and its values are written:
+    /// a hook reacts, it does not intercept.
+    pub fn on_create(self, name: &str, run: crate::hooks::HookFn) -> Self {
+        self.with_hook(name, crate::hooks::HookOn::Create, crate::hooks::HookBody::Native(run))
+    }
+
+    /// The same for a write. It runs for *every* write, so a hook that
+    /// cares about one field asks `ctx.wrote(field)` first.
+    pub fn on_write(self, name: &str, run: crate::hooks::HookFn) -> Self {
+        self.with_hook(name, crate::hooks::HookOn::Write, crate::hooks::HookBody::Native(run))
+    }
+
+    /// [`Model::on_create`] / [`Model::on_write`] for a body the compiler
+    /// cannot see — the one an addon wrote in Python.
+    pub fn with_hook(
+        mut self,
+        name: &str,
+        on: crate::hooks::HookOn,
+        body: crate::hooks::HookBody,
+    ) -> Self {
+        self.hooks.push(crate::hooks::Hook {
+            name: name.to_string(),
+            on,
+            body,
+        });
+        self
+    }
+
+    pub fn hooks(&self) -> &[crate::hooks::Hook] {
+        &self.hooks
+    }
+
+    /// The inherited hooks, ahead of this model's own: an `_inherit`
+    /// adds behaviour, it does not silence the parent's.
+    pub(crate) fn with_hooks(mut self, mut inherited: Vec<crate::hooks::Hook>) -> Self {
+        inherited.extend(std::mem::take(&mut self.hooks));
+        self.hooks = inherited;
+        self
     }
 
     /// The inherited hooks, ahead of this model's own.

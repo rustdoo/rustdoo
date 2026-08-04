@@ -262,6 +262,12 @@ async fn invite(
     if missing.is_empty() {
         return Ok(0);
     }
+    // Writing the guest list is all this does now: the model's own
+    // `on_write` hook puts a `calendar.attendee` behind every partner,
+    // the way Odoo's `write` override does. Before the ORM had hooks this
+    // method created them itself, which worked for callers inside the
+    // port and for nobody else — a client writing `partner_ids` onto the
+    // form got a guest with nowhere to answer from.
     let links: Vec<Value> = missing.iter().map(|id| json!([4, id, 0])).collect();
     ctx.registry
         .write_as(
@@ -272,16 +278,6 @@ async fn invite(
             vec![("partner_ids", Value::Array(links))],
         )
         .await?;
-    for partner in &missing {
-        ctx.registry
-            .create_as(
-                ctx.pool,
-                ctx.uid,
-                "calendar.attendee",
-                vec![("event_id", json!(event)), ("partner_id", json!(partner))],
-            )
-            .await?;
-    }
     Ok(missing.len())
 }
 

@@ -838,6 +838,10 @@ impl Registry {
             let model = self
                 .get(model_name)
                 .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
+            // captured before anything is split off: a hook asks "was
+            // this field written", and an x2many written at create time
+            // is exactly the case that question exists for
+            let asked = crate::hooks::as_map(&values);
             let (values, x2many) = self.split_x2many(model, values)?;
             let values = self
                 .run_dynamic_defaults(&mut *tx, uid, model, values)
@@ -847,6 +851,18 @@ impl Registry {
                 let given: Vec<&str> = values.iter().map(|(name, _)| *name).collect();
                 let id = model.create_conn_lang(&mut *tx, uid, values, lang).await?;
                 self.apply_x2many_all(&mut *tx, uid, &x2many, id).await?;
+                // the record exists and its relations are in place: a hook
+                // reacts here, before the constraints it may be creating
+                // rows for
+                self.run_hooks(
+                    &mut *tx,
+                    uid,
+                    model_name,
+                    &[id],
+                    &asked,
+                    crate::hooks::HookOn::Create,
+                )
+                .await?;
                 self.recompute_stored(&mut *tx, model_name, &[id], None, &given)
                     .await?;
                 self.check_constraints(&mut *tx, model_name, &[id], None)
@@ -912,6 +928,15 @@ impl Registry {
             let given: Vec<&str> = local.iter().map(|(name, _)| *name).collect();
             let id = model.create_conn(&mut *tx, uid, local).await?;
             self.apply_x2many_all(&mut *tx, uid, &x2many, id).await?;
+            self.run_hooks(
+                &mut *tx,
+                uid,
+                model_name,
+                &[id],
+                &asked,
+                crate::hooks::HookOn::Create,
+            )
+            .await?;
             self.recompute_stored(&mut *tx, model_name, &[id], None, &given)
                 .await?;
             self.check_constraints(&mut *tx, model_name, &[id], None)
@@ -1813,6 +1838,9 @@ impl Registry {
         let mut delegated: HashMap<DelegationChain, Vec<(&str, Value)>> = HashMap::new();
         // what the write touches, for the stored computes that watch it
         let changed: Vec<&str> = values.iter().map(|(name, _)| *name).collect();
+        // and the same, as the hooks read it: a hook asks "was this field
+        // written", which a re-read of the record cannot answer
+        let asked = crate::hooks::as_map(&values);
         for (name, value) in values {
             match model.field(name).map(|f| &f.ty) {
                 Some(FieldType::Many2many { .. } | FieldType::One2many { .. }) => {
@@ -1916,6 +1944,10 @@ impl Registry {
                     .await?;
             }
         }
+        // everything the caller asked for is written: a hook reacts to it
+        // now, and its own writes live or die with this transaction
+        self.run_hooks(&mut *tx, uid, model_name, ids, &asked, crate::hooks::HookOn::Write)
+            .await?;
         self.check_constraints(&mut *tx, model_name, ids, Some(&changed))
             .await?;
         self.recompute_stored(&mut *tx, model_name, ids, Some(&changed), &changed)

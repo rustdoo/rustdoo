@@ -10,6 +10,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 sqlx.workspace = true
+tokio.workspace = true
 chrono.workspace = true
 base64.workspace = true
 rusdoo-core = { path = "../rusdoo-core" }
