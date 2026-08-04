@@ -331,6 +331,27 @@ impl Field {
         }
     }
 
+    /// Odoo's `readonly=False` on a stored computed field: the compute
+    /// fills the column in, and a caller who writes the field wins over
+    /// it until a dependency moves again.
+    ///
+    /// It is what a document line means by "sold by the dozen": the unit
+    /// follows the product until somebody says otherwise, and saying
+    /// otherwise has to survive the save. A computed field is readonly by
+    /// default precisely because computing a value and writing one are
+    /// opposite directions; this says the model wants both, in that
+    /// order.
+    pub fn overridable(self) -> Self {
+        debug_assert!(
+            self.compute.is_some() && self.stored,
+            "overridable() is for a computed field with a column of its own"
+        );
+        Field {
+            readonly: false,
+            ..self
+        }
+    }
+
     /// Mark the field as never returned over RPC (secrets).
     pub fn private(self) -> Self {
         Field {

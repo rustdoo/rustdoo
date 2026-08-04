@@ -313,7 +313,7 @@ fn action_create_delivery<'a>(
                     ctx.pool,
                     "sale.order.line",
                     &line_ids,
-                    &["product_id", "name", "product_uom_qty"],
+                    &["product_id", "name", "product_uom_qty", "product_uom_id"],
                 )
                 .await?
         };
@@ -348,6 +348,10 @@ fn action_create_delivery<'a>(
                         .get("product_uom_qty")
                         .cloned()
                         .unwrap_or(json!(0)),
+                    // the quantity travels with the unit it was written
+                    // in: three dozen ordered is three dozen shipped, not
+                    // three of whatever the warehouse assumes
+                    "product_uom_id": line.get("product_uom_id").and_then(first_id),
                 }]))
             })
             .collect();
@@ -462,7 +466,13 @@ fn action_create_invoice<'a>(
                 ctx.pool,
                 "sale.order.line",
                 &line_ids,
-                &["product_id", "name", "product_uom_qty", "price_unit"],
+                &[
+                    "product_id",
+                    "name",
+                    "product_uom_qty",
+                    "product_uom_id",
+                    "price_unit",
+                ],
             )
             .await?;
         let invoice_lines: Vec<Value> = sold
@@ -470,6 +480,7 @@ fn action_create_invoice<'a>(
             .map(|line| {
                 json!([0, 0, {
                     "product_id": line.get("product_id").and_then(first_id),
+                    "product_uom_id": line.get("product_uom_id").and_then(first_id),
                     "name": line.get("name").cloned().unwrap_or(Value::Null),
                     "quantity": line.get("product_uom_qty").cloned().unwrap_or(json!(0)),
                     "price_unit": line.get("price_unit").cloned().unwrap_or(json!(0)),
@@ -682,6 +693,28 @@ fn line_is_sellable(record: &Map<String, Value>) -> Result<(), String> {
     Ok(())
 }
 
+/// The unit a line is written in: the product's own, unless whoever
+/// wrote the line said otherwise.
+///
+/// Odoo's `product_uom_id` is a stored computed field with
+/// `readonly=False` — it follows the product until someone overrides it,
+/// and then the override stands until the product changes again. Selling
+/// a product measured in units by the dozen is the whole reason it is
+/// not simply the product's field read through a link.
+fn unit_of_the_product(record: &Map<String, Value>) -> Value {
+    // a dependency through a link arrives as a one-element list, like
+    // every other dotted dependency in this ORM
+    match record
+        .get("product_id.uom_id")
+        .and_then(Value::as_array)
+        .and_then(|found| found.first())
+        .and_then(first_id)
+    {
+        Some(id) => json!(id),
+        None => Value::Null,
+    }
+}
+
 /// `sale.order.line` — one thing sold, at one price.
 fn order_line() -> Model {
     Model::new(
@@ -693,6 +726,10 @@ fn order_line() -> Model {
             m2o("product_id", "product.product"),
             char("name"),
             Field::new("product_uom_qty", PRICE).default_value(json!(1.0)),
+            m2o("product_uom_id", "uom.uom")
+                .computed(&["product_id.uom_id"], unit_of_the_product)
+                .store()
+                .overridable(),
             Field::new("price_unit", PRICE).default_value(json!(0.0)),
             Field::new("sequence", FieldType::Integer).default_value(json!(10)),
             Field::new("price_subtotal", PRICE)

@@ -844,9 +844,10 @@ impl Registry {
                 .await?;
             let values = self.draw_sequences(&mut *tx, model, values).await?;
             if model.meta.inherits.is_empty() {
+                let given: Vec<&str> = values.iter().map(|(name, _)| *name).collect();
                 let id = model.create_conn_lang(&mut *tx, uid, values, lang).await?;
                 self.apply_x2many_all(&mut *tx, uid, &x2many, id).await?;
-                self.recompute_stored(&mut *tx, model_name, &[id], None)
+                self.recompute_stored(&mut *tx, model_name, &[id], None, &given)
                     .await?;
                 self.check_constraints(&mut *tx, model_name, &[id], None)
                     .await?;
@@ -908,9 +909,10 @@ impl Registry {
                     .await?;
                 local.push((link.as_str(), Value::from(parent_id)));
             }
+            let given: Vec<&str> = local.iter().map(|(name, _)| *name).collect();
             let id = model.create_conn(&mut *tx, uid, local).await?;
             self.apply_x2many_all(&mut *tx, uid, &x2many, id).await?;
-            self.recompute_stored(&mut *tx, model_name, &[id], None)
+            self.recompute_stored(&mut *tx, model_name, &[id], None, &given)
                 .await?;
             self.check_constraints(&mut *tx, model_name, &[id], None)
                 .await?;
@@ -1241,6 +1243,7 @@ impl Registry {
         model_name: &str,
         ids: &[i64],
         changed: Option<&[&str]>,
+        given: &[&str],
     ) -> Result<(), RusdooError> {
         if ids.is_empty() {
             return Ok(());
@@ -1252,6 +1255,13 @@ impl Registry {
             .fields()
             .iter()
             .filter(|f| f.stored && f.compute.is_some())
+            // a value the caller wrote for the field itself wins over the
+            // compute, for this call: Odoo's stored computed field with
+            // `readonly=False`, which is how a line says it is sold in
+            // dozens when its product is measured in units. The next
+            // write that moves a dependency computes again, as it does
+            // there.
+            .filter(|f| !given.contains(&f.name.as_str()))
             .filter(|f| match changed {
                 None => true,
                 Some(changed) => f
@@ -1519,9 +1529,11 @@ impl Registry {
             for name in &compute.depends {
                 match name.split_once('.') {
                     // `order_line.price_subtotal`: the values of a field
-                    // on the records the x2many points at
+                    // on the records the x2many points at — and a
+                    // many2one is the same question with one answer, so
+                    // it arrives as a one-element list
                     Some((head, _)) => {
-                        if model.field(head).is_none() {
+                        if self.field_of(model, head).is_none() {
                             return Err(RusdooError::Validation(format!(
                                 "computed field {:?} depends on unknown field {head:?}",
                                 field.name
@@ -1896,7 +1908,7 @@ impl Registry {
         }
         self.check_constraints(&mut *tx, model_name, ids, Some(&changed))
             .await?;
-        self.recompute_stored(&mut *tx, model_name, ids, Some(&changed))
+        self.recompute_stored(&mut *tx, model_name, ids, Some(&changed), &changed)
             .await?;
         Ok(())
     }

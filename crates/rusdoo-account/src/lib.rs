@@ -202,6 +202,33 @@ fn mv() -> Model {
     .on_unlink("no posted invoice", refuse_posted)
 }
 
+/// The first id of a many2one's `[id, name]` pair, or a plain id.
+fn first_id(value: &Value) -> Option<i64> {
+    match value {
+        Value::Array(items) => items.first().and_then(Value::as_i64),
+        Value::Number(number) => number.as_i64(),
+        _ => None,
+    }
+}
+
+/// The unit a line is written in: the product's own, unless whoever
+/// wrote the line said otherwise. Odoo's `product_uom_id` is a stored
+/// computed field with `readonly=False`, so the override stands until
+/// the product changes again.
+fn unit_of_the_product(record: &Map<String, Value>) -> Value {
+    // a dependency through a link arrives as a one-element list, like
+    // every other dotted dependency in this ORM
+    match record
+        .get("product_id.uom_id")
+        .and_then(Value::as_array)
+        .and_then(|found| found.first())
+        .and_then(first_id)
+    {
+        Some(id) => json!(id),
+        None => Value::Null,
+    }
+}
+
 /// `account.move.line` — one billed thing, at one price.
 fn move_line() -> Model {
     Model::new(
@@ -213,6 +240,10 @@ fn move_line() -> Model {
             m2o("product_id", "product.product"),
             char("name"),
             Field::new("quantity", PRICE).default_value(json!(1.0)),
+            m2o("product_uom_id", "uom.uom")
+                .computed(&["product_id.uom_id"], unit_of_the_product)
+                .store()
+                .overridable(),
             Field::new("price_unit", PRICE).default_value(json!(0.0)),
             Field::new("sequence", FieldType::Integer).default_value(json!(10)),
             Field::new("price_subtotal", PRICE)
