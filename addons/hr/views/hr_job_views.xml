@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_job_list" model="ir.ui.view">
+        <field name="name">hr.job.list</field>
+        <field name="model">hr.job</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Vaga"/><field name="department_id" string="Departamento"/><field name="no_of_employee" string="Ocupadas"/><field name="no_of_recruitment" string="Em recrutamento"/><field name="expected_employees" string="Previstas"/></list></field>
+    </record>
+
+    <record id="view_job_form" model="ir.ui.view">
+        <field name="name">hr.job.form</field>
+        <field name="model">hr.job</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Vaga"/><field name="department_id" string="Departamento"/><field name="no_of_recruitment" string="Em recrutamento"/><field name="active" string="Ativa"/></group><group><field name="no_of_employee" string="Ocupadas"/><field name="expected_employees" string="Previstas"/></group><field name="description" string="Descrição"/><field name="requirements" string="Requisitos"/></form></field>
+    </record>
+
+    <record id="action_jobs" model="ir.actions.act_window">
+        <field name="name">Vagas</field>
+        <field name="res_model">hr.job</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

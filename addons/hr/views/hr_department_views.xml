@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_department_list" model="ir.ui.view">
+        <field name="name">hr.department.list</field>
+        <field name="model">hr.department</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="complete_name" string="Departamento"/><field name="manager_id" string="Gestor"/><field name="total_employee" string="Pessoas"/></list></field>
+    </record>
+
+    <record id="view_department_form" model="ir.ui.view">
+        <field name="name">hr.department.form</field>
+        <field name="model">hr.department</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Departamento"/><field name="parent_id" string="Responde a"/><field name="manager_id" string="Gestor"/><field name="active" string="Ativo"/></group><group><field name="complete_name" string="Nome completo"/><field name="total_employee" string="Pessoas"/></group><field name="member_ids"><list><field name="name" string="Funcionário"/><field name="job_title" string="Cargo"/></list></field><field name="note" string="Observações"/></form></field>
+    </record>
+
+    <record id="action_departments" model="ir.actions.act_window">
+        <field name="name">Departamentos</field>
+        <field name="res_model">hr.department</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

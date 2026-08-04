@@ -1,0 +1,9 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_hr_employee_user,funcionário usuário,hr.employee,base.group_user,1,0,0,0
+access_hr_employee_system,funcionário admin,hr.employee,base.group_system,1,1,1,1
+access_hr_department_user,departamento usuário,hr.department,base.group_user,1,0,0,0
+access_hr_department_system,departamento admin,hr.department,base.group_system,1,1,1,1
+access_hr_job_user,vaga usuário,hr.job,base.group_user,1,0,0,0
+access_hr_job_system,vaga admin,hr.job,base.group_system,1,1,1,1
+access_hr_category_user,marcador usuário,hr.employee.category,base.group_user,1,0,0,0
+access_hr_category_system,marcador admin,hr.employee.category,base.group_system,1,1,1,1

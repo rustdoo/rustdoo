@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_employee_list" model="ir.ui.view">
+        <field name="name">hr.employee.list</field>
+        <field name="model">hr.employee</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Funcionário"/><field name="job_title" string="Cargo"/><field name="department_id" string="Departamento"/><field name="work_email" string="E-mail"/><field name="work_phone" string="Telefone"/><field name="parent_id" string="Gestor"/></list></field>
+    </record>
+
+    <record id="view_employee_form" model="ir.ui.view">
+        <field name="name">hr.employee.form</field>
+        <field name="model">hr.employee</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="image_1920" string="Foto"/><field name="name" string="Funcionário"/><field name="job_title" string="Cargo"/><field name="job_id" string="Vaga"/><field name="department_id" string="Departamento"/><field name="parent_id" string="Gestor"/><field name="coach_id" string="Mentor"/></group><group><field name="work_email" string="E-mail"/><field name="work_phone" string="Telefone"/><field name="mobile_phone" string="Celular"/><field name="work_location" string="Local"/><field name="employee_type" string="Vínculo"/><field name="barcode" string="Crachá"/></group><group string="Agenda"><field name="calendar_id" string="Horário de trabalho"/><field name="tz" string="Fuso"/><field name="active" string="Ativo"/></group><field name="note" string="Observações"/></form></field>
+    </record>
+
+    <record id="view_employee_search" model="ir.ui.view">
+        <field name="name">hr.employee.search</field>
+        <field name="model">hr.employee</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="work_email"/><field name="job_title"/><groupby name="department_id" string="Departamento"/><groupby name="job_id" string="Vaga"/></search></field>
+    </record>
+
+    <record id="action_employees" model="ir.actions.act_window">
+        <field name="name">Funcionários</field>
+        <field name="res_model">hr.employee</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

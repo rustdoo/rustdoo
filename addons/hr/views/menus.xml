@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_hr_root" model="ir.ui.menu">
+        <field name="name">Funcionários</field>
+        <field name="sequence">50</field>
+    </record>
+    <record id="menu_employees" model="ir.ui.menu">
+        <field name="name">Funcionários</field>
+        <field name="parent_id" ref="menu_hr_root"/>
+        <field name="sequence">10</field>
+        <field name="action">hr.action_employees</field>
+    </record>
+    <record id="menu_departments" model="ir.ui.menu">
+        <field name="name">Departamentos</field>
+        <field name="parent_id" ref="menu_hr_root"/>
+        <field name="sequence">20</field>
+        <field name="action">hr.action_departments</field>
+    </record>
+    <record id="menu_jobs" model="ir.ui.menu">
+        <field name="name">Vagas</field>
+        <field name="parent_id" ref="menu_hr_root"/>
+        <field name="sequence">30</field>
+        <field name="action">hr.action_jobs</field>
+    </record>
+</odoo>

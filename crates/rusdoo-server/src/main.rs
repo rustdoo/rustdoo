@@ -177,6 +177,8 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
         ("fleet", rusdoo_fleet::extend as ModelProvider),
         ("lunch", rusdoo_lunch::extend as ModelProvider),
         ("resource", rusdoo_resource::extend as ModelProvider),
+        // depois de `resource`: um funcionário delega para um recurso
+        ("hr", rusdoo_hr::extend as ModelProvider),
         ("mail", rusdoo_mail::extend as ModelProvider),
         ("rating", rusdoo_rating::extend as ModelProvider),
         ("product", rusdoo_product::extend as ModelProvider),

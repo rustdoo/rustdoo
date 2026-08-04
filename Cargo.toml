@@ -6,6 +6,7 @@ members = [
     "crates/rusdoo-base",
     "crates/rusdoo-base-vat",
     "crates/rusdoo-resource",
+    "crates/rusdoo-hr",
     "crates/rusdoo-phone-validation",
     "crates/rusdoo-lunch",
     "crates/rusdoo-fleet",
