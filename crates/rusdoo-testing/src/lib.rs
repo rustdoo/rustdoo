@@ -189,6 +189,12 @@ fn modules() -> Vec<Module> {
             sequences: &[("stock.picking.out", "WH/OUT/"), ("stock.picking.in", "WH/IN/")],
         },
         Module {
+            name: "stock_account",
+            extend: rusdoo_stock_account::extend,
+            methods: Some(rusdoo_stock_account::extend_methods),
+            sequences: &[],
+        },
+        Module {
             name: "purchase",
             extend: rusdoo_purchase::extend,
             methods: Some(rusdoo_purchase::extend_methods),

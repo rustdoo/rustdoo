@@ -179,6 +179,8 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
         ("account", rusdoo_account::extend as ModelProvider),
         ("analytic", rusdoo_analytic::extend as ModelProvider),
         ("stock", rusdoo_stock::extend as ModelProvider),
+        // depois de `stock` e `account`, que ele estende
+        ("stock_account", rusdoo_stock_account::extend as ModelProvider),
         ("purchase", rusdoo_purchase::extend as ModelProvider),
         ("uom", rusdoo_uom::extend as ModelProvider),
         ("barcodes", rusdoo_barcodes::extend as ModelProvider),
@@ -284,6 +286,9 @@ fn code_methods(manifests: &[Manifest]) -> anyhow::Result<rusdoo_orm::methods::M
     }
     if installed.contains(&"purchase") {
         rusdoo_purchase::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"stock_account") {
+        rusdoo_stock_account::extend_methods(&mut methods)?;
     }
     if installed.contains(&"resource") {
         rusdoo_resource::extend_methods(&mut methods)?;

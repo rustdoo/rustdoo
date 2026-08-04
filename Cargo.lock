@@ -1782,6 +1782,7 @@ dependencies = [
  "rusdoo-sale",
  "rusdoo-sales-team",
  "rusdoo-stock",
+ "rusdoo-stock-account",
  "rusdoo-testing",
  "rusdoo-uom",
  "rusdoo-utm",
@@ -1805,6 +1806,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-stock-account"
+version = "0.1.0"
+dependencies = [
+ "rusdoo-account",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "rusdoo-product",
+ "rusdoo-stock",
+ "rusdoo-testing",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-testing"
 version = "0.1.0"
 dependencies = [
@@ -1819,6 +1836,7 @@ dependencies = [
  "rusdoo-resource",
  "rusdoo-sale",
  "rusdoo-stock",
+ "rusdoo-stock-account",
  "rusdoo-uom",
  "serde_json",
  "sqlx",
