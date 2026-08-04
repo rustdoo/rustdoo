@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_attendance_list" model="ir.ui.view">
+        <field name="name">hr.attendance.list</field>
+        <field name="model">hr.attendance</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="employee_id" string="Funcionário"/><field name="date" string="Dia"/><field name="check_in" string="Entrada"/><field name="check_out" string="Saída"/><field name="worked_hours" string="Horas"/></list></field>
+    </record>
+
+    <record id="view_attendance_form" model="ir.ui.view">
+        <field name="name">hr.attendance.form</field>
+        <field name="model">hr.attendance</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="employee_id" string="Funcionário"/><field name="date" string="Dia"/></group><group><field name="check_in" string="Entrada"/><field name="check_out" string="Saída"/><field name="worked_hours" string="Horas trabalhadas"/></group></form></field>
+    </record>
+
+    <record id="view_attendance_search" model="ir.ui.view">
+        <field name="name">hr.attendance.search</field>
+        <field name="model">hr.attendance</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="employee_id"/><filter name="open" string="No trabalho agora" domain="[[&quot;check_out&quot;, &quot;=&quot;, false]]"/><groupby name="employee_id" string="Funcionário"/></search></field>
+    </record>
+
+    <record id="action_attendances" model="ir.actions.act_window">
+        <field name="name">Ponto</field>
+        <field name="res_model">hr.attendance</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="menu_attendances" model="ir.ui.menu">
+        <field name="name">Ponto</field>
+        <field name="parent_id" ref="hr.menu_hr_root"/>
+        <field name="sequence">40</field>
+        <field name="action">hr_attendance.action_attendances</field>
+    </record>
+</odoo>
