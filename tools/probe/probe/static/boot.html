@@ -98,6 +98,22 @@ setInterval(render, 500);
       save.click();
       await new Promise(r => setTimeout(r, 3000));
       log.push("salvou; form agora: " + (document.querySelector(".o_form_view") || {innerText: ""}).innerText.replace(/\s+/g, " ").slice(0, 160));
+
+      // e agora uma tela dos addons DESTE port: o produto é template +
+      // variante, então a lista pede nome e preço que a variante não tem
+      // — ela os alcança pela delegação
+      const env = window.odoo.__WOWL_DEBUG__ && odoo.__WOWL_DEBUG__.root && odoo.__WOWL_DEBUG__.root.env;
+      if (!env) { log.push("sem env para abrir outra action"); return; }
+      for (const xmlid of ["product.action_products", "hr.action_employees"]) {
+        try {
+          await env.services.action.doAction(xmlid);
+          await new Promise(r => setTimeout(r, 2500));
+          const view = document.querySelector(".o_list_view, .o_form_view");
+          log.push(xmlid + ": " + (view ? view.innerText.replace(/\s+/g, " ").slice(0, 260) : "NADA renderizou"));
+        } catch (error) {
+          log.push(xmlid + " FALHOU: " + (error.message || String(error)));
+        }
+      }
     };
 
     const script = document.createElement("script");
