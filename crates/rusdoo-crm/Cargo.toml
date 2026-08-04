@@ -1,0 +1,19 @@
+[package]
+name = "rusdoo-crm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+chrono.workspace = true
+rusdoo-core = { path = "../rusdoo-core" }
+rusdoo-orm = { path = "../rusdoo-orm" }
+
+[dev-dependencies]
+tokio.workspace = true
+sqlx.workspace = true
+rusdoo-base = { path = "../rusdoo-base" }
+rusdoo-utm = { path = "../rusdoo-utm" }
+rusdoo-sales-team = { path = "../rusdoo-sales-team" }
+rusdoo-testing = { path = "../rusdoo-testing" }

@@ -1,0 +1,7 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_crm_lead_user,oportunidade usuário,crm.lead,base.group_user,1,1,1,0
+access_crm_lead_system,oportunidade admin,crm.lead,base.group_system,1,1,1,1
+access_crm_stage_user,etapa usuário,crm.stage,base.group_user,1,0,0,0
+access_crm_stage_system,etapa admin,crm.stage,base.group_system,1,1,1,1
+access_crm_lost_reason_user,motivo de perda usuário,crm.lost.reason,base.group_user,1,0,0,0
+access_crm_lost_reason_system,motivo de perda admin,crm.lost.reason,base.group_system,1,1,1,1

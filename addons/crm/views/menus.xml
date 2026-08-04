@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_crm_root" model="ir.ui.menu">
+        <field name="name">CRM</field>
+        <field name="sequence">18</field>
+    </record>
+    <record id="menu_pipeline" model="ir.ui.menu">
+        <field name="name">Funil</field>
+        <field name="parent_id" ref="menu_crm_root"/>
+        <field name="sequence">10</field>
+        <field name="action">crm.action_opportunities</field>
+    </record>
+    <record id="menu_stages" model="ir.ui.menu">
+        <field name="name">Etapas</field>
+        <field name="parent_id" ref="menu_crm_root"/>
+        <field name="sequence">20</field>
+        <field name="action">crm.action_stages</field>
+    </record>
+    <record id="menu_lost_reasons" model="ir.ui.menu">
+        <field name="name">Motivos de perda</field>
+        <field name="parent_id" ref="menu_crm_root"/>
+        <field name="sequence">30</field>
+        <field name="action">crm.action_lost_reasons</field>
+    </record>
+</odoo>

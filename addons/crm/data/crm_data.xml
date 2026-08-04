@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- O funil que o Odoo instala de fábrica, com os mesmos identificadores
+     externos, e os motivos de perda que ele traz. Sem etapas não há funil:
+     a primeira tela do módulo seria uma lista vazia sem colunas.
+
+     noupdate: etapas e motivos são a primeira coisa que uma equipe de
+     vendas ajusta ao seu jeito de trabalhar. -->
+<odoo noupdate="1">
+    <record id="stage_lead1" model="crm.stage">
+        <field name="name">Novo</field>
+        <field name="sequence">1</field>
+    </record>
+    <record id="stage_lead2" model="crm.stage">
+        <field name="name">Qualificado</field>
+        <field name="sequence">2</field>
+    </record>
+    <record id="stage_lead3" model="crm.stage">
+        <field name="name">Proposta</field>
+        <field name="sequence">3</field>
+    </record>
+    <record id="stage_lead4" model="crm.stage">
+        <field name="name">Ganho</field>
+        <field name="sequence">4</field>
+        <field name="is_won" eval="True"/>
+    </record>
+
+    <record id="lost_reason_1" model="crm.lost.reason">
+        <field name="name">Preço alto demais</field>
+    </record>
+    <record id="lost_reason_2" model="crm.lost.reason">
+        <field name="name">Não é o momento</field>
+    </record>
+    <record id="lost_reason_3" model="crm.lost.reason">
+        <field name="name">Escolheu um concorrente</field>
+    </record>
+    <record id="lost_reason_4" model="crm.lost.reason">
+        <field name="name">Sem resposta</field>
+    </record>
+</odoo>

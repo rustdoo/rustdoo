@@ -1570,6 +1570,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-crm"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "rusdoo-sales-team",
+ "rusdoo-testing",
+ "rusdoo-utm",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-data-recycle"
 version = "0.1.0"
 dependencies = [
@@ -1897,6 +1913,7 @@ dependencies = [
  "rusdoo-base-vat",
  "rusdoo-calendar",
  "rusdoo-core",
+ "rusdoo-crm",
  "rusdoo-data-recycle",
  "rusdoo-fleet",
  "rusdoo-hr",
@@ -1983,6 +2000,7 @@ dependencies = [
  "rusdoo-base-vat",
  "rusdoo-calendar",
  "rusdoo-core",
+ "rusdoo-crm",
  "rusdoo-fleet",
  "rusdoo-hr",
  "rusdoo-lunch",
@@ -1995,10 +2013,12 @@ dependencies = [
  "rusdoo-resource",
  "rusdoo-sale",
  "rusdoo-sale-purchase",
+ "rusdoo-sales-team",
  "rusdoo-stock",
  "rusdoo-stock-account",
  "rusdoo-stock-picking-batch",
  "rusdoo-uom",
+ "rusdoo-utm",
  "serde_json",
  "sqlx",
  "tokio",

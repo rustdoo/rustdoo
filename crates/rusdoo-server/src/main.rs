@@ -184,6 +184,8 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
         ("resource", rusdoo_resource::extend as ModelProvider),
         // depois de `resource`: um funcionário delega para um recurso
         ("hr", rusdoo_hr::extend as ModelProvider),
+        // depois de `sales_team` e `utm`, que ele aponta
+        ("crm", rusdoo_crm::extend as ModelProvider),
         ("mail", rusdoo_mail::extend as ModelProvider),
         ("rating", rusdoo_rating::extend as ModelProvider),
         ("product", rusdoo_product::extend as ModelProvider),
@@ -318,6 +320,9 @@ fn code_methods(manifests: &[Manifest]) -> anyhow::Result<rusdoo_orm::methods::M
     }
     if installed.contains(&"sale_purchase") {
         rusdoo_sale_purchase::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"crm") {
+        rusdoo_crm::extend_methods(&mut methods)?;
     }
     if installed.contains(&"phone_validation") {
         rusdoo_phone_validation::extend_methods(&mut methods)?;
