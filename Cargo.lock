@@ -1716,6 +1716,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-resource"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "rusdoo-testing",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-sale"
 version = "0.1.0"
 dependencies = [
@@ -1764,6 +1778,7 @@ dependencies = [
  "rusdoo-purchase",
  "rusdoo-qweb",
  "rusdoo-rating",
+ "rusdoo-resource",
  "rusdoo-sale",
  "rusdoo-sales-team",
  "rusdoo-stock",
@@ -1801,6 +1816,7 @@ dependencies = [
  "rusdoo-orm",
  "rusdoo-product",
  "rusdoo-purchase",
+ "rusdoo-resource",
  "rusdoo-sale",
  "rusdoo-stock",
  "rusdoo-uom",

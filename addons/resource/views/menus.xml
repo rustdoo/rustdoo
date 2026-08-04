@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_resource_root" model="ir.ui.menu">
+        <field name="name">Recursos</field>
+        <field name="sequence">60</field>
+    </record>
+    <record id="menu_resources" model="ir.ui.menu">
+        <field name="name">Recursos</field>
+        <field name="parent_id" ref="menu_resource_root"/>
+        <field name="sequence">10</field>
+        <field name="action">resource.action_resources</field>
+    </record>
+    <record id="menu_calendars" model="ir.ui.menu">
+        <field name="name">Agendas de trabalho</field>
+        <field name="parent_id" ref="menu_resource_root"/>
+        <field name="sequence">20</field>
+        <field name="action">resource.action_calendars</field>
+    </record>
+    <record id="menu_leaves" model="ir.ui.menu">
+        <field name="name">Ausências</field>
+        <field name="parent_id" ref="menu_resource_root"/>
+        <field name="sequence">30</field>
+        <field name="action">resource.action_leaves</field>
+    </record>
+</odoo>

@@ -13,6 +13,7 @@ rusdoo-orm = { path = "../rusdoo-orm" }
 rusdoo-base = { path = "../rusdoo-base" }
 rusdoo-mail = { path = "../rusdoo-mail" }
 rusdoo-base-vat = { path = "../rusdoo-base-vat" }
+rusdoo-resource = { path = "../rusdoo-resource" }
 rusdoo-uom = { path = "../rusdoo-uom" }
 rusdoo-product = { path = "../rusdoo-product" }
 rusdoo-account = { path = "../rusdoo-account" }

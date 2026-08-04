@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A semana que o Odoo instala de fábrica, com o mesmo identificador
+     externo: quem portar `hr` ou `mrp` depois vai referenciar
+     `resource.resource_calendar_std`.
+
+     Os períodos vêm escritos aqui porque no Odoo eles nascem de um
+     `_init_data_resource_calendar` em Python; o resultado é o mesmo — de
+     segunda a sexta, 8h às 12h e 13h às 17h.
+
+     noupdate: a agenda é editada pelo usuário (é a primeira coisa que uma
+     empresa ajusta) e uma atualização de módulo não deve desfazer isso. -->
+<odoo noupdate="1">
+    <record id="resource_calendar_std" model="resource.calendar">
+        <field name="name">Padrão 40 horas/semana</field>
+        <field name="full_time_required_hours">40</field>
+        <field name="tz">UTC</field>
+    </record>
+
+    <record id="attendance_mon_morning" model="resource.calendar.attendance">
+        <field name="name">Segunda de manhã</field>
+        <field name="calendar_id" ref="resource_calendar_std"/>
+        <field name="dayofweek">0</field>
+        <field name="hour_from">8</field>
+        <field name="hour_to">12</field>
+    </record>
+    <record id="attendance_mon_afternoon" model="resource.calendar.attendance">
+        <field name="name">Segunda à tarde</field>
+        <field name="calendar_id" ref="resource_calendar_std"/>
+        <field name="dayofweek">0</field>
+        <field name="hour_from">13</field>
+        <field name="hour_to">17</field>
+    </record>
+    <record id="attendance_tue_morning" model="resource.calendar.attendance">
+        <field name="name">Terça de manhã</field>
+        <field name="calendar_id" ref="resource_calendar_std"/>
+        <field name="dayofweek">1</field>
+        <field name="hour_from">8</field>
+        <field name="hour_to">12</field>
+    </record>
+    <record id="attendance_tue_afternoon" model="resource.calendar.attendance">
+        <field name="name">Terça à tarde</field>
+        <field name="calendar_id" ref="resource_calendar_std"/>
+        <field name="dayofweek">1</field>
+        <field name="hour_from">13</field>
+        <field name="hour_to">17</field>
+    </record>
+    <record id="attendance_wed_morning" model="resource.calendar.attendance">
+        <field name="name">Quarta de manhã</field>
+        <field name="calendar_id" ref="resource_calendar_std"/>
+        <field name="dayofweek">2</field>
+        <field name="hour_from">8</field>
+        <field name="hour_to">12</field>
+    </record>
+    <record id="attendance_wed_afternoon" model="resource.calendar.attendance">
+        <field name="name">Quarta à tarde</field>
+        <field name="calendar_id" ref="resource_calendar_std"/>
+        <field name="dayofweek">2</field>
+        <field name="hour_from">13</field>
+        <field name="hour_to">17</field>
+    </record>
+    <record id="attendance_thu_morning" model="resource.calendar.attendance">
+        <field name="name">Quinta de manhã</field>
+        <field name="calendar_id" ref="resource_calendar_std"/>
+        <field name="dayofweek">3</field>
+        <field name="hour_from">8</field>
+        <field name="hour_to">12</field>
+    </record>
+    <record id="attendance_thu_afternoon" model="resource.calendar.attendance">
+        <field name="name">Quinta à tarde</field>
+        <field name="calendar_id" ref="resource_calendar_std"/>
+        <field name="dayofweek">3</field>
+        <field name="hour_from">13</field>
+        <field name="hour_to">17</field>
+    </record>
+    <record id="attendance_fri_morning" model="resource.calendar.attendance">
+        <field name="name">Sexta de manhã</field>
+        <field name="calendar_id" ref="resource_calendar_std"/>
+        <field name="dayofweek">4</field>
+        <field name="hour_from">8</field>
+        <field name="hour_to">12</field>
+    </record>
+    <record id="attendance_fri_afternoon" model="resource.calendar.attendance">
+        <field name="name">Sexta à tarde</field>
+        <field name="calendar_id" ref="resource_calendar_std"/>
+        <field name="dayofweek">4</field>
+        <field name="hour_from">13</field>
+        <field name="hour_to">17</field>
+    </record>
+</odoo>

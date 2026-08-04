@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_calendar_list" model="ir.ui.view">
+        <field name="name">resource.calendar.list</field>
+        <field name="model">resource.calendar</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Agenda"/><field name="hours_per_week" string="Horas por semana"/><field name="tz" string="Fuso"/><field name="active" string="Ativa"/></list></field>
+    </record>
+
+    <record id="view_calendar_form" model="ir.ui.view">
+        <field name="name">resource.calendar.form</field>
+        <field name="model">resource.calendar</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Agenda"/><field name="tz" string="Fuso"/><field name="schedule_type" string="Tipo"/><field name="full_time_required_hours" string="Horas de um período integral"/><field name="active" string="Ativa"/></group><group><field name="hours_per_day" string="Horas por dia"/><field name="hours_per_week" string="Horas por semana"/><field name="work_time_rate" string="Percentual do integral"/></group><field name="attendance_ids"><list><field name="name" string="Período"/><field name="dayofweek" string="Dia"/><field name="hour_from" string="De"/><field name="hour_to" string="Até"/></list></field><field name="leave_ids"><list><field name="name" string="Ausência"/><field name="date_from" string="De"/><field name="date_to" string="Até"/></list></field></form></field>
+    </record>
+
+    <record id="action_calendars" model="ir.actions.act_window">
+        <field name="name">Agendas de trabalho</field>
+        <field name="res_model">resource.calendar</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_resource_list" model="ir.ui.view">
+        <field name="name">resource.resource.list</field>
+        <field name="model">resource.resource</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Recurso"/><field name="resource_type" string="Tipo"/><field name="calendar_id" string="Agenda"/><field name="time_efficiency" string="Eficiência"/></list></field>
+    </record>
+
+    <record id="view_resource_form" model="ir.ui.view">
+        <field name="name">resource.resource.form</field>
+        <field name="model">resource.resource</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Recurso"/><field name="resource_type" string="Tipo"/><field name="user_id" string="Usuário"/><field name="active" string="Ativo"/></group><group><field name="calendar_id" string="Agenda de trabalho"/><field name="tz" string="Fuso"/><field name="time_efficiency" string="Eficiência (%)"/></group></form></field>
+    </record>
+
+    <record id="action_resources" model="ir.actions.act_window">
+        <field name="name">Recursos</field>
+        <field name="res_model">resource.resource</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_leaves_list" model="ir.ui.view">
+        <field name="name">resource.calendar.leaves.list</field>
+        <field name="model">resource.calendar.leaves</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Ausência"/><field name="calendar_id" string="Agenda"/><field name="resource_id" string="Recurso"/><field name="date_from" string="De"/><field name="date_to" string="Até"/></list></field>
+    </record>
+
+    <record id="action_leaves" model="ir.actions.act_window">
+        <field name="name">Ausências</field>
+        <field name="res_model">resource.calendar.leaves</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

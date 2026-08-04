@@ -153,6 +153,12 @@ fn modules() -> Vec<Module> {
             sequences: &[],
         },
         Module {
+            name: "resource",
+            extend: rusdoo_resource::extend,
+            methods: Some(rusdoo_resource::extend_methods),
+            sequences: &[],
+        },
+        Module {
             name: "mail",
             extend: rusdoo_mail::extend,
             methods: None,
