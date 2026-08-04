@@ -1633,16 +1633,26 @@ impl Registry {
         let Some(model) = self.get(comodel) else {
             return Ok(ids.iter().map(|id| (*id, id.to_string())).collect());
         };
-        let rec_name = if model.field("name").is_some() {
+        // through the delegation as well: a product's name belongs to
+        // its template, and a many2one pointing at the variant would
+        // otherwise show the id — on the sale line, on the invoice line,
+        // on every screen that names a product
+        let rec_name = if self.field_of(model, "name").is_some() {
             "name"
-        } else if model.field("display_name").is_some() {
+        } else if self.field_of(model, "display_name").is_some() {
             "display_name"
         } else {
             return Ok(ids.iter().map(|id| (*id, id.to_string())).collect());
         };
         let placeholders: Vec<String> = (1..=ids.len()).map(|n| format!("${n}")).collect();
-        let column = quote_ident(rec_name)?;
-        let selected = if model.field(rec_name).is_some_and(|f| f.translate) {
+        let column = match crate::sql::delegated_expr(self, model, rec_name)? {
+            Some(expr) => expr,
+            None => quote_ident(rec_name)?,
+        };
+        let selected = if self
+            .field_of(model, rec_name)
+            .is_some_and(|f| f.translate)
+        {
             crate::sql::translated_read(&column, lang)?
         } else {
             column

@@ -70,6 +70,8 @@ fn registry() -> Registry {
     rusdoo_data_recycle::extend(&mut registry).expect("data_recycle models");
     rusdoo_onboarding::extend(&mut registry).expect("onboarding models");
     rusdoo_sale::extend(&mut registry).expect("sale models");
+    // depois de `sale` e `purchase`: ele estende as linhas dos dois
+    rusdoo_sale_purchase::extend(&mut registry).expect("sale_purchase models");
     registry
 }
 
@@ -94,7 +96,8 @@ async fn the_addons_tree_installs_and_adds_up_live() {
         .collect();
     for module in [
         "base", "base_vat", "web", "mail", "product", "account", "stock", "purchase",
-        "sale", "calendar", "resource", "stock_account", "uom", "barcodes", "utm", "sales_team",
+        "sale", "sale_purchase", "calendar", "resource", "stock_account", "uom",
+        "barcodes", "utm", "sales_team",
         "account_debit_note", "data_recycle", "onboarding",
     ] {
         assert!(installed.contains(&module), "installed: {installed:?}");

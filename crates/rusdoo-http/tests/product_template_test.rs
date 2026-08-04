@@ -340,3 +340,62 @@ async fn the_templates_own_access_is_checked_through_the_delegation_live() {
 
     case.close().await;
 }
+
+/// A many2one pointing at a variant shows the product's name — which
+/// lives on the template. Everything that names a product on a screen
+/// goes through this: the sales line, the invoice line, the picking.
+#[tokio::test]
+async fn a_link_to_a_product_shows_its_name_not_its_id_live() {
+    let Some(case) = TransactionCase::open("product_display_name", &MODULES).await else {
+        return;
+    };
+    let service = OrmService::insecure(case.registry(), case.pool());
+
+    let id = call(
+        &service,
+        "product.product",
+        "create",
+        json!([{"name": "Guarda-roupa", "default_code": "MOB-9"}]),
+    )
+    .await
+    .as_i64()
+    .unwrap();
+
+    // asked the way a dropdown asks
+    let found = call(
+        &service,
+        "product.product",
+        "name_search",
+        json!(["Guarda"]),
+    )
+    .await;
+    assert_eq!(found[0][1], json!("Guarda-roupa"), "{found}");
+
+    // and the way a form asks, through a link on another record
+    let category = call(
+        &service,
+        "product.category",
+        "create",
+        json!([{"name": "Móveis"}]),
+    )
+    .await
+    .as_i64()
+    .unwrap();
+    call(
+        &service,
+        "product.product",
+        "write",
+        json!([[id], {"categ_id": category}]),
+    )
+    .await;
+    let read = call(
+        &service,
+        "product.product",
+        "read",
+        json!([[id], ["categ_id"]]),
+    )
+    .await;
+    assert_eq!(read[0]["categ_id"][1], json!("Móveis"), "{}", read[0]);
+
+    case.close().await;
+}

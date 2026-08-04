@@ -12,6 +12,7 @@ members = [
     "crates/rusdoo-product",
     "crates/rusdoo-purchase",
     "crates/rusdoo-sale",
+    "crates/rusdoo-sale-purchase",
     "crates/rusdoo-uom",
     "crates/rusdoo-barcodes",
     "crates/rusdoo-utm",

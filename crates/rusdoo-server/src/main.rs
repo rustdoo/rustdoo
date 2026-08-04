@@ -191,6 +191,8 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
         ("data_recycle", rusdoo_data_recycle::extend as ModelProvider),
         ("onboarding", rusdoo_onboarding::extend as ModelProvider),
         ("sale", rusdoo_sale::extend as ModelProvider),
+        // depois de `sale` e `purchase`, que ele amarra um ao outro
+        ("sale_purchase", rusdoo_sale_purchase::extend as ModelProvider),
     ]
 }
 
@@ -290,6 +292,9 @@ fn code_methods(manifests: &[Manifest]) -> anyhow::Result<rusdoo_orm::methods::M
     }
     if installed.contains(&"stock_account") {
         rusdoo_stock_account::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"sale_purchase") {
+        rusdoo_sale_purchase::extend_methods(&mut methods)?;
     }
     if installed.contains(&"calendar") {
         rusdoo_calendar::extend_methods(&mut methods)?;

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- De quem, por quanto, em quantos dias: sem isso não há resposta
+         para o fornecedor de um serviço subcontratado. -->
+    <record id="view_supplierinfo_list" model="ir.ui.view">
+        <field name="name">product.supplierinfo.list</field>
+        <field name="model">product.supplierinfo</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="sequence" string="Ordem"/><field name="partner_id" string="Fornecedor"/><field name="product_id" string="Produto"/><field name="price" string="Preço"/><field name="min_qty" string="Quantidade mínima"/><field name="delay" string="Prazo (dias)"/></list></field>
+    </record>
+
+    <record id="view_supplierinfo_form" model="ir.ui.view">
+        <field name="name">product.supplierinfo.form</field>
+        <field name="model">product.supplierinfo</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="partner_id" string="Fornecedor"/><field name="product_id" string="Produto"/><field name="company_id" string="Empresa"/></group><group><field name="price" string="Preço"/><field name="min_qty" string="Quantidade mínima"/><field name="delay" string="Prazo (dias)"/><field name="sequence" string="Ordem"/></group></form></field>
+    </record>
+
+    <record id="action_supplierinfo" model="ir.actions.act_window">
+        <field name="name">Fornecedores dos produtos</field>
+        <field name="res_model">product.supplierinfo</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

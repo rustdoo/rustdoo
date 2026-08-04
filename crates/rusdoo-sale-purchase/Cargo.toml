@@ -1,0 +1,22 @@
+[package]
+name = "rusdoo-sale-purchase"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+rusdoo-core = { path = "../rusdoo-core" }
+rusdoo-orm = { path = "../rusdoo-orm" }
+rusdoo-product = { path = "../rusdoo-product" }
+
+[dev-dependencies]
+rusdoo-testing = { path = "../rusdoo-testing" }
+sqlx.workspace = true
+tokio.workspace = true
+rusdoo-base = { path = "../rusdoo-base" }
+rusdoo-mail = { path = "../rusdoo-mail" }
+rusdoo-sale = { path = "../rusdoo-sale" }
+rusdoo-purchase = { path = "../rusdoo-purchase" }
