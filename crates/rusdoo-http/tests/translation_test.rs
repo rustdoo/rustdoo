@@ -90,12 +90,18 @@ async fn a_value_per_language_lives_in_the_record_live() {
     // and a third language with no translation still falls back
     assert_eq!(name_of(&service, id, "es_ES").await, "Oak table");
 
-    // the value is in the row itself, not in a side table
-    let stored: Value = sqlx::query_scalar(r#"SELECT "name" FROM "product_product" WHERE "id" = $1"#)
-        .bind(id as i32)
-        .fetch_one(&case.pool())
-        .await
-        .unwrap();
+    // the value is in the row itself, not in a side table — and the row
+    // is the template's, since the name of a product belongs to what the
+    // catalogue describes, not to the variant that delegates to it
+    let stored: Value = sqlx::query_scalar(
+        r#"SELECT t."name" FROM "product_template" t
+           JOIN "product_product" p ON p."product_tmpl_id" = t."id"
+           WHERE p."id" = $1"#,
+    )
+    .bind(id as i32)
+    .fetch_one(&case.pool())
+    .await
+    .unwrap();
     assert_eq!(stored["en_US"], json!("Oak table"));
     assert_eq!(stored["pt_BR"], json!("Mesa de carvalho"));
 

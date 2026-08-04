@@ -124,6 +124,8 @@ async fn fixture(schema: &'static str) -> Option<Fixture> {
         "account_move_line",
         "account_move",
         "product_product",
+        "product_template",
+        "product_category",
         "res_partner",
         "res_company",
         "res_country",
@@ -144,6 +146,8 @@ async fn fixture(schema: &'static str) -> Option<Fixture> {
         // `account.move`'s company default reads the creating user
         "res.groups",
         "res.users",
+        "product.category",
+        "product.template",
         "product.product",
         "account.move",
         "account.move.line",

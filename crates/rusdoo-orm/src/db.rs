@@ -887,13 +887,24 @@ impl Registry {
                                 "link field {link:?} must hold an integer id"
                             ))
                         })?;
-                        self.write_in(&mut *tx, uid, parent_name, &[parent_id], parent_values)
-                            .await?;
+                        // in the caller's language, like the local values:
+                        // a record born in Portuguese has its delegated
+                        // name in Portuguese too, or half of it is stored
+                        // under a language nobody asked for
+                        self.write_in_lang(
+                            &mut *tx,
+                            uid,
+                            parent_name,
+                            &[parent_id],
+                            parent_values,
+                            lang,
+                        )
+                        .await?;
                     }
                     continue;
                 }
                 let parent_id = self
-                    .create_in(&mut *tx, uid, parent_name, parent_values)
+                    .create_in_lang(&mut *tx, uid, parent_name, parent_values, lang)
                     .await?;
                 local.push((link.as_str(), Value::from(parent_id)));
             }

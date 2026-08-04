@@ -44,6 +44,8 @@ async fn fixture(url: &str, schema: &'static str) -> (OrmService, i64) {
         "sale_order_line",
         "sale_order",
         "product_product",
+        "product_template",
+        "product_category",
         "res_partner",
         "res_company",
         "res_users",
@@ -69,6 +71,8 @@ async fn fixture(url: &str, schema: &'static str) -> (OrmService, i64) {
         // the company default reads the creating user
         "res.groups",
         "res.users",
+        "product.category",
+        "product.template",
         "product.product",
         "sale.order",
         "sale.order.line",

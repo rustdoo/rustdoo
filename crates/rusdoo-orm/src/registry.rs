@@ -29,6 +29,57 @@ impl Registry {
         self.models.values()
     }
 
+    /// The definition of `name` as a *caller* of `model` sees it: the
+    /// model's own field, or the one it reaches through `_inherits`
+    /// delegation.
+    ///
+    /// Everything above the ORM asks this question — `fields_get`, the
+    /// web client's read, the image route, grouping. Asking
+    /// [`Model::field`] instead answers "no such field" for a field the
+    /// same caller can read and write through delegation, which is how a
+    /// product's name disappears from a list view while `read` returns
+    /// it.
+    pub fn field_of<'a>(&'a self, model: &'a Model, name: &str) -> Option<&'a Field> {
+        if let Some(field) = model.field(name) {
+            return Some(field);
+        }
+        let chain = self.delegation_chain(model, name, 0)?;
+        let (_, owner) = chain.last()?;
+        self.get(owner)?.field(name)
+    }
+
+    /// Every field a caller of `model` sees: its own first, then each
+    /// delegated one it does not shadow. The order is stable — own
+    /// fields, then parents in declaration order — so a client that
+    /// renders them keeps rendering them the same way.
+    pub fn fields_of<'a>(&'a self, model: &'a Model) -> Vec<&'a Field> {
+        let mut fields: Vec<&Field> = model.fields().iter().collect();
+        self.push_delegated_fields(model, &mut fields, 0);
+        fields
+    }
+
+    fn push_delegated_fields<'a>(
+        &'a self,
+        model: &'a Model,
+        fields: &mut Vec<&'a Field>,
+        depth: usize,
+    ) {
+        if depth > MAX_DELEGATION_DEPTH {
+            return;
+        }
+        for (parent_name, _) in &model.meta.inherits {
+            let Some(parent) = self.get(parent_name) else {
+                continue;
+            };
+            for field in parent.fields() {
+                if !fields.iter().any(|f| f.name == field.name) {
+                    fields.push(field);
+                }
+            }
+            self.push_delegated_fields(parent, fields, depth + 1);
+        }
+    }
+
     /// Register a model definition, applying Odoo's `_inherit` rules:
     /// no `_inherit` creates a new model; `_inherit` naming the model
     /// itself extends it in place; `_inherit` with a different `_name`

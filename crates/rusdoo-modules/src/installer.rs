@@ -145,9 +145,13 @@ pub async fn load_records(
             // value keeps the record — a language without its flag is
             // still a language — where refusing it would mean no boot
             // against the real tree until every field exists.
+            // `field_of`, not `Model::field`: a field this record
+            // reaches through `_inherits` (a product's name lives on its
+            // template) is ported, and dropping it here would create the
+            // record without it
             if registry
                 .get(&record.model)
-                .and_then(|model| model.field(name))
+                .and_then(|model| registry.field_of(model, name))
                 .is_none()
             {
                 unmodelled_fields.insert(format!("{}.{name}", record.model));
@@ -295,7 +299,11 @@ fn coerce_text(
     field: &str,
     text: &str,
 ) -> Result<Value, RusdooError> {
-    let Some(ty) = registry.get(model).and_then(|m| m.field(field)).map(|f| &f.ty) else {
+    let Some(ty) = registry
+        .get(model)
+        .and_then(|m| registry.field_of(m, field))
+        .map(|f| &f.ty)
+    else {
         // an unknown field is not this function's error to report: the
         // create below names it with the context it has
         return Ok(Value::String(text.to_string()));
@@ -432,7 +440,10 @@ async fn apply_record_translations(
             // a column that holds one value is not a place to put a
             // second one: `translate=True` is what says a field has room
             // for a language
-            if !model.field(&field).is_some_and(|declared| declared.translate) {
+            if !registry
+                .field_of(model, &field)
+                .is_some_and(|declared| declared.translate)
+            {
                 continue;
             }
             let Some((found_model, id)) = xml_ids.get(&qualify(module, &xml_id)) else {

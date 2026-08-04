@@ -65,7 +65,9 @@ async fn image(
     let Some(meta) = service.registry_ref().get(&model) else {
         return (StatusCode::NOT_FOUND, "modelo desconhecido").into_response();
     };
-    match meta.field(&field) {
+    // through `_inherits` too: a product's picture belongs to its
+    // template, and the variant is what an `<img src>` names
+    match service.registry_ref().field_of(meta, &field) {
         Some(f) if matches!(f.ty, FieldType::Binary) && f.exposed => {}
         _ => return (StatusCode::NOT_FOUND, "field is not an image").into_response(),
     }
@@ -77,7 +79,13 @@ async fn image(
         return (StatusCode::NOT_FOUND, "record not found").into_response();
     }
 
-    let rows = match meta.read(service.pool_ref(), &[id], &[field.as_str()]).await {
+    // read through the registry, not the model: only the registry
+    // follows the delegation to the row the bytes are actually in
+    let rows = match service
+        .registry_ref()
+        .read(service.pool_ref(), &model, &[id], &[field.as_str()])
+        .await
+    {
         Ok(rows) => rows,
         Err(error) => {
             tracing::warn!("imagem {model}/{id}/{field}: {error}");

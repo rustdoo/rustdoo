@@ -275,7 +275,12 @@ impl OrmService {
             RpcError::from(RusdooError::Validation(format!("unknown model: {model}")))
         })?;
         let mut out = Map::new();
-        for field in m.fields() {
+        // delegated fields are described too: a caller of
+        // `product.product` reads and writes `name` through the
+        // delegation, so a client that draws from `fields_get` has to be
+        // told it exists — Odoo lists inherited fields for the same
+        // reason
+        for field in self.registry.fields_of(m) {
             if !field.exposed {
                 continue;
             }
@@ -942,7 +947,9 @@ impl OrmService {
             return Ok(());
         };
         for name in fields {
-            if let Some(field) = m.field(name) {
+            // through the delegation as well: a private field of a
+            // parent stays private when it is read through the child
+            if let Some(field) = self.registry.field_of(m, name) {
                 if !field.exposed {
                     return Err(RpcError::invalid_params(format!(
                         "field {name:?} is not readable"

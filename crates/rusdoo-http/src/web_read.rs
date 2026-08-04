@@ -156,9 +156,11 @@ impl OrmService {
             .registry
             .get(model)
             .ok_or_else(|| RpcError::invalid_params(format!("unknown model: {model}")))?;
-        let rec_name = if m.field("name").is_some() {
+        // through the delegation as well: a product is looked up by the
+        // name its template holds, which is the only name it has
+        let rec_name = if self.registry.field_of(m, "name").is_some() {
             Some("name")
-        } else if m.field("display_name").is_some() {
+        } else if self.registry.field_of(m, "display_name").is_some() {
             Some("display_name")
         } else {
             None
@@ -264,8 +266,8 @@ impl OrmService {
             // display_name is computed on every Odoo model; when it is not
             // a real column here, synthesize it from the record's `name`
             // (name_get semantics — the id when there is no name either)
-            let synth_display =
-                spec.contains_key("display_name") && m.field("display_name").is_none();
+            let synth_display = spec.contains_key("display_name")
+                && self.registry.field_of(m, "display_name").is_none();
             let mut borrowed_name = false;
             if synth_display {
                 names.retain(|n| n != "display_name");
@@ -276,7 +278,10 @@ impl OrmService {
             // sudo), but that borrow must never make an explicit request
             // for a private `name` fail — or pass
             self.ensure_exposed(model, &names)?;
-            if synth_display && m.field("name").is_some() && !names.iter().any(|n| n == "name") {
+            if synth_display
+                && self.registry.field_of(m, "name").is_some()
+                && !names.iter().any(|n| n == "name")
+            {
                 names.push("name".into());
                 borrowed_name = true;
             }
@@ -312,7 +317,12 @@ impl OrmService {
                 }
             }
             for (name, sub) in spec {
-                let Some(field) = m.field(name) else { continue };
+                // a relation reached through the delegation is shaped
+                // like a local one: the client asked for `{id,
+                // display_name}` and does not know which row holds it
+                let Some(field) = self.registry.field_of(m, name) else {
+                    continue;
+                };
                 match &field.ty {
                     FieldType::Many2one { comodel } => {
                         self.shape_many2one(ident, comodel, name, sub, &mut records, lang)
