@@ -2335,3 +2335,79 @@ async fn archived_records_stay_out_of_searches_live() {
         .unwrap();
     assert!(!sql.contains("active"), "{sql}");
 }
+
+/// A translatable column is jsonb, and a delegated write used to bind it
+/// as text — Postgres refused, so writing a product's name through its
+/// variant was impossible. The owner writes its own rows now, which is
+/// the only code that knows what its columns are.
+#[tokio::test]
+async fn delegated_write_of_a_translatable_field_live() {
+    let Some(pool) = test_pool().await else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let mut reg = rusdoo_orm::registry::Registry::new();
+    reg.register(rusdoo_orm::model::Model::new(
+        rusdoo_orm::model::ModelMeta {
+            name: "rusdoo.test.tperson".into(),
+            table: "rusdoo_test_tperson".into(),
+            inherit: vec![],
+            inherits: vec![],
+        },
+        vec![rusdoo_orm::fields::Field::new("name", rusdoo_orm::fields::FieldType::Char { size: None }).translatable()],
+    ))
+    .unwrap();
+    reg.register(rusdoo_orm::model::Model::new(
+        rusdoo_orm::model::ModelMeta {
+            name: "rusdoo.test.taccount".into(),
+            table: "rusdoo_test_taccount".into(),
+            inherit: vec![],
+            inherits: vec![("rusdoo.test.tperson".into(), "person_id".into())],
+        },
+        vec![
+            rusdoo_orm::fields::Field::new("login", rusdoo_orm::fields::FieldType::Char { size: None }),
+            rusdoo_orm::fields::Field::new(
+                "person_id",
+                rusdoo_orm::fields::FieldType::Many2one {
+                    comodel: "rusdoo.test.tperson".into(),
+                },
+            ),
+        ],
+    ))
+    .unwrap();
+    for t in ["rusdoo_test_taccount", "rusdoo_test_tperson"] {
+        sqlx::query(&format!(r#"DROP TABLE IF EXISTS "{t}""#))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    for model in ["rusdoo.test.tperson", "rusdoo.test.taccount"] {
+        reg.get(model).unwrap().init_table(&pool).await.unwrap();
+    }
+
+    let acc = reg
+        .create(
+            &pool,
+            "rusdoo.test.taccount",
+            vec![("login", serde_json::json!("bob")), ("name", serde_json::json!("Bob"))],
+        )
+        .await
+        .unwrap();
+
+    // the write that used to be refused
+    reg.write(
+        &pool,
+        "rusdoo.test.taccount",
+        &[acc],
+        vec![("name", serde_json::json!("Roberto"))],
+    )
+    .await
+    .unwrap();
+
+    let rows = reg
+        .read(&pool, "rusdoo.test.taccount", &[acc], &["name", "login"])
+        .await
+        .unwrap();
+    assert_eq!(rows[0]["name"], serde_json::json!("Roberto"));
+    assert_eq!(rows[0]["login"], serde_json::json!("bob"));
+}

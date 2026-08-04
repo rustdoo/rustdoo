@@ -1803,8 +1803,7 @@ impl Registry {
             let owner = self.get(owner_name).ok_or_else(|| {
                 RusdooError::Validation(format!("_inherits parent not registered: {owner_name}"))
             })?;
-            let mut params: Vec<Value> = Vec::new();
-            let mut assignments = Vec::new();
+            let mut values: Vec<(&str, Value)> = Vec::new();
             for (name, value) in chain_values {
                 // a readonly field is client-write-protected on the
                 // delegated path too, not only the local one
@@ -1831,15 +1830,13 @@ impl Registry {
                         )))
                     }
                 }
-                let placeholder = bind(&mut params, value);
-                assignments.push(format!("{} = {placeholder}", quote_ident(name)?));
+                values.push((name, value));
             }
-            // stamp LOG_ACCESS on the delegated parent too, like a direct write
-            let uid_ph = bind(&mut params, Value::from(uid));
-            assignments.push(format!(r#""write_uid" = {uid_ph}"#));
-            assignments.push(r#""write_date" = CURRENT_TIMESTAMP"#.to_string());
+            // Which rows of the owner these ids delegate to. Resolved
+            // before writing, because the links must be read as they were
+            // when the call was made.
+            let mut params: Vec<Value> = Vec::new();
             let id_list = bind_ids(ids, &mut params)?;
-            // walk the link columns: child ids -> ... -> owner ids
             let mut target = format!(r#""id" IN ({id_list})"#);
             let mut from_table = model.meta.table.clone();
             for (link, parent_name) in &chain {
@@ -1856,14 +1853,24 @@ impl Registry {
                     .clone();
             }
             let sql = format!(
-                r#"UPDATE {} SET {} WHERE {target}"#,
-                quote_ident(&owner.meta.table)?,
-                assignments.join(", ")
+                r#"SELECT "id" FROM {} WHERE {target}"#,
+                quote_ident(&owner.meta.table)?
             );
-            build_query(&sql, &params)?
-                .execute(&mut **tx)
+            let rows = build_query(&sql, &params)?
+                .fetch_all(&mut **tx)
                 .await
                 .map_err(db_err)?;
+            let owner_ids: Vec<i64> = rows.iter().map(row_id).collect::<Result<_, _>>()?;
+            // and then the owner writes them itself. Building the UPDATE
+            // here instead is how a translatable column (jsonb) came to be
+            // bound as text, and a delegated write of a name was refused
+            // by Postgres: the owner's own write path is the only one that
+            // knows what its columns are.
+            if !owner_ids.is_empty() {
+                owner
+                    .write_conn_lang(&mut *tx, uid, &owner_ids, values, lang)
+                    .await?;
+            }
         }
         if !local.is_empty() {
             model.write_conn_lang(&mut *tx, uid, ids, local, lang).await?;
