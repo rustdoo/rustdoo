@@ -834,6 +834,41 @@ impl OrmService {
     /// Resolve a user's `res.groups` ids from the `groups_id` m2m field,
     /// when the res.users model defines it. Empty otherwise (superuser
     /// bypass keeps admin usable until groups are modelled).
+    /// Whether a user belongs to the group an external id names.
+    ///
+    /// The superuser belongs to every group, as in Odoo — it is the
+    /// identity access control is built to wave through. A group whose
+    /// external id is not in the database is not a member: `false`,
+    /// never an error, because an addon may ask about a group only
+    /// another addon defines.
+    pub(crate) async fn user_has_group(
+        &self,
+        uid: i64,
+        xml_id: &str,
+    ) -> Result<bool, RpcError> {
+        if uid == crate::session::SUPERUSER_ID {
+            return Ok(true);
+        }
+        let Some((module, name)) = xml_id.split_once('.') else {
+            return Err(RpcError::invalid_params(
+                "a group external id reads module.name",
+            ));
+        };
+        let found: Option<(i32,)> = sqlx::query_as(
+            r#"SELECT "res_id" FROM "ir_model_data"
+               WHERE "module" = $1 AND "name" = $2 AND "model" = 'res.groups'"#,
+        )
+        .bind(module)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(crate::webclient::db_error)?;
+        let Some((group,)) = found else {
+            return Ok(false);
+        };
+        Ok(self.resolve_groups(uid).await.contains(&i64::from(group)))
+    }
+
     pub(crate) async fn resolve_groups(&self, uid: i64) -> Vec<i64> {
         let has_groups = self
             .registry
@@ -1092,6 +1127,25 @@ impl OrmService {
                 // checks run — and run in the delete's own transaction
                 self.registry.unlink_as(&self.pool, uid, model, &ids).await?;
                 Ok(json!(true))
+            }
+            // `res.users.has_group("base.group_user")`, port of
+            // `res.users.has_group`. The client asks it while building its
+            // first view and an unknown method there is not a missing
+            // feature: OWL treats it as a lifecycle failure and unmounts
+            // the whole application.
+            "has_group" if model == "res.users" => {
+                // the client sends the external id positionally, after
+                // the ids `call_kw` always puts first for a model method
+                let xml_id = args
+                    .iter()
+                    .find_map(Value::as_str)
+                    .or_else(|| kwargs.get("group_ext_id").and_then(Value::as_str));
+                let Some(xml_id) = xml_id else {
+                    return Err(RpcError::invalid_params(
+                        "has_group takes the external id of a group",
+                    ));
+                };
+                Ok(json!(self.user_has_group(uid, xml_id).await?))
             }
             // field metadata for the web client's form/list builder. An
             // optional first arg (allfields) filters which fields to return.

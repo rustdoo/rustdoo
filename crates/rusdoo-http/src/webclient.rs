@@ -484,7 +484,7 @@ pub(crate) fn parse_view_specs(
 /// every text column nullable because the table is data, not a schema.
 type ViewRow = (i32, Option<String>, Option<String>, Option<String>);
 
-fn db_error(e: sqlx::Error) -> RpcError {
+pub(crate) fn db_error(e: sqlx::Error) -> RpcError {
     RpcError {
         code: crate::jsonrpc::SERVER_ERROR,
         message: e.to_string(),
