@@ -17,7 +17,7 @@ use rusdoo_orm::registry::Registry;
 use rusdoo_orm::rules::{RecordRules, Rule};
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 /// External id -> (model, database id). The Rust side of `ir.model.data`.
@@ -83,6 +83,16 @@ pub struct LoadStats {
     pub created: usize,
     pub updated: usize,
     pub skipped: usize,
+    /// records naming a model this build has no code for. Odoo never
+    /// meets one — it declares every model its data speaks about — so
+    /// this counts what is missing from the port, not from the addon.
+    pub unmodelled: usize,
+    /// values dropped because the model has no such field here, counted
+    /// for the same reason
+    pub unmodelled_fields: usize,
+    /// records held back because an external id they point at is not
+    /// there yet — a later install creates them
+    pub unresolved: usize,
 }
 
 /// Apply records in file order, atomically: the whole call runs in one
@@ -110,9 +120,40 @@ pub async fn load_records(
     let mut staged_noupdate: HashMap<String, bool> = HashMap::new();
     let mut stats = LoadStats::default();
 
-    for record in records {
+    // named once per model rather than per record: `base` alone ships
+    // hundreds of rows for one model
+    let mut unmodelled: BTreeSet<&str> = BTreeSet::new();
+    let mut unmodelled_fields: BTreeSet<String> = BTreeSet::new();
+    let mut unresolved: BTreeSet<String> = BTreeSet::new();
+    'record: for record in records {
+        // A model with no code cannot have a table, so its rows have
+        // nowhere to go. Refusing the boot over it would mean this server
+        // cannot start against the real Odoo tree until every model of
+        // every installed addon is ported — and one third-party addon
+        // shipping data for a model this build lacks would take a
+        // production server down. The row is dropped, counted and named.
+        if registry.get(&record.model).is_none() {
+            unmodelled.insert(record.model.as_str());
+            stats.unmodelled += 1;
+            continue;
+        }
         let mut pairs: Vec<(&str, Value)> = Vec::new();
         for (name, field_value) in &record.fields {
+            // The same reasoning as an unmodelled model, one level down:
+            // Odoo's data speaks about fields Odoo declares, so a field
+            // this build has not ported is the port's gap. Dropping the
+            // value keeps the record — a language without its flag is
+            // still a language — where refusing it would mean no boot
+            // against the real tree until every field exists.
+            if registry
+                .get(&record.model)
+                .and_then(|model| model.field(name))
+                .is_none()
+            {
+                unmodelled_fields.insert(format!("{}.{name}", record.model));
+                stats.unmodelled_fields += 1;
+                continue;
+            }
             let value = match field_value {
                 // the element text is a string in the file whatever the
                 // column is; `convert.py` coerces it by the field's type
@@ -133,17 +174,27 @@ pub async fn load_records(
                 }
                 FieldValue::Ref(xml_id) => {
                     let key = qualify(module, xml_id);
-                    let (_, id) =
-                        staged
-                            .get(&key)
-                            .or_else(|| xml_ids.get(&key))
-                            .ok_or_else(|| {
-                                RusdooError::Validation(format!(
-                                    "unresolved external id {key} (field {name:?} on {})",
-                                    record.model
-                                ))
-                            })?;
-                    Value::from(*id)
+                    match staged.get(&key).or_else(|| xml_ids.get(&key)) {
+                        Some((_, id)) => Value::from(*id),
+                        // Odoo skips the whole record when a `ref` does
+                        // not resolve, with a warning and without writing
+                        // the relation empty (`tools/convert.py`: "Skipping
+                        // creation of %r because %s=%r could not be
+                        // resolved"). It has to: its own `base` refers
+                        // forward — `res_partner_data.xml` points at
+                        // `main_company`, which `res_company_data.xml`
+                        // creates two files later. Failing the file
+                        // instead means `base` never loads at all, and
+                        // writing a null relation would be the silent
+                        // corruption the fail-fast was there to stop.
+                        // A later `--init` finds the id and creates the
+                        // record then.
+                        None => {
+                            unresolved.insert(key);
+                            stats.unresolved += 1;
+                            continue 'record;
+                        }
+                    }
                 }
             };
             pairs.push((name.as_str(), value));
@@ -207,6 +258,27 @@ pub async fn load_records(
     tx.commit().await.map_err(db_err)?;
     for (key, entry) in staged {
         xml_ids.insert(key, entry.0, entry.1);
+    }
+    if !unmodelled.is_empty() {
+        tracing::warn!(
+            "module {module}: {} record(s) dropped, no model in this build for {}",
+            stats.unmodelled,
+            unmodelled.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
+    if !unresolved.is_empty() {
+        tracing::warn!(
+            "module {module}: {} record(s) held back, external id not there yet: {}",
+            stats.unresolved,
+            unresolved.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
+    if !unmodelled_fields.is_empty() {
+        tracing::warn!(
+            "module {module}: {} value(s) dropped, no field in this build for {}",
+            stats.unmodelled_fields,
+            unmodelled_fields.into_iter().collect::<Vec<_>>().join(", ")
+        );
     }
     Ok(stats)
 }
@@ -634,6 +706,9 @@ pub async fn install_manifests(
             totals.created += stats.created;
             totals.updated += stats.updated;
             totals.skipped += stats.skipped;
+            totals.unmodelled += stats.unmodelled;
+            totals.unmodelled_fields += stats.unmodelled_fields;
+            totals.unresolved += stats.unresolved;
         }
         // the module's own translations onto its own records, now that
         // its data files have run and its external ids exist

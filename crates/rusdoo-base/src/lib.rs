@@ -138,7 +138,11 @@ fn lang() -> Model {
             char("code").required(),
             // the name of the `.po` file the translations come from
             char("iso_code"),
-            char("url_code").required(),
+            // Odoo declares it required and fills it from `install_lang`,
+            // a `<function>` in `res_lang_data.xml` that this port does
+            // not run yet. Requiring it here turns Odoo's own data into
+            // an error, which is being stricter than Odoo about Odoo.
+            char("url_code"),
             Field::new("active", FieldType::Boolean).default_value(json!(true)),
             Field::new(
                 "direction",

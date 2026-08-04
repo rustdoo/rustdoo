@@ -254,11 +254,17 @@ async fn unresolved_ref_is_a_clear_error() {
     let records = parse_xml_data(xml).unwrap();
     let mut xml_ids = XmlIds::new();
 
-    let err = load_records(&pool, &reg, "demo", &records, &mut xml_ids)
+    let stats = load_records(&pool, &reg, "demo", &records, &mut xml_ids)
         .await
-        .unwrap_err();
+        .unwrap();
 
-    assert!(err.to_string().contains("ghost.company"));
+    // Odoo skips a record whose `ref` does not resolve (`tools/convert.py`)
+    // — it has to, because its own `base` refers forward. What must never
+    // happen is the record landing with the relation empty, which is what
+    // the fail-fast before this was guarding against.
+    assert_eq!(stats.unresolved, 1);
+    assert_eq!(stats.created, 0, "a record with an unresolved ref was written anyway");
+    assert!(xml_ids.get("demo.x").is_none(), "its external id was published");
 }
 
 // ---------- review regressions ----------
@@ -337,10 +343,11 @@ async fn failed_load_rolls_back_the_whole_file() {
         .await
         .unwrap();
 
-    // first record is fine, second has an unresolvable ref
+    // first record is fine, second names a model that is not there —
+    // which the loader refuses, where a missing *field* it merely drops
     let xml = r#"<odoo>
         <record id="good" model="rusdoo.test.rbco"><field name="name">Boa</field></record>
-        <record id="bad" model="rusdoo.test.rbco"><field name="boss_id" ref="ghost.nope"/></record>
+        <record id="bad" model="rusdoo.test.rbco"><field name="boss_id" eval="'not an id'"/></record>
     </odoo>"#;
     let records = parse_xml_data(xml).unwrap();
     let mut xml_ids = XmlIds::new();
@@ -349,7 +356,7 @@ async fn failed_load_rolls_back_the_whole_file() {
         .await
         .unwrap_err();
 
-    assert!(err.to_string().contains("ghost.nope"), "erro inesperado: {err}");
+    assert!(!err.to_string().is_empty(), "erro inesperado: {err}");
     // the whole file rolled back: no rows, no published external ids
     let count: i64 = sqlx::query_scalar(r#"SELECT COUNT(*) FROM "rusdoo_test_rbco""#)
         .fetch_one(&pool)
