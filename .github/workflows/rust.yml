@@ -1,0 +1,62 @@
+name: Rust
+
+# O que a máquina do CI tem de conferir é o mesmo que se confere aqui
+# antes de cada commit: compila, o clippy não reclama, a suíte passa
+# inteira. Nada de "só os testes rápidos" — os que valem alguma coisa
+# neste port são os que falam com o Postgres.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  # um aviso do clippy é um erro aqui: o hábito local é a suíte verde e o
+  # clippy limpo, e um CI mais frouxo do que o hábito não serve de rede
+  RUSTFLAGS: -D warnings
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    # A suíte roda contra um Postgres de verdade. Cada teste cria o
+    # próprio schema e o derruba no fim (`rusdoo-testing`), então um
+    # banco só dá conta de todos eles em paralelo.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: rusdoo
+          POSTGRES_DB: rusdoo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      RUSDOO_TEST_DATABASE_URL: postgres://postgres:rusdoo@localhost:5432/rusdoo_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: rustup component add clippy
+
+      # compilação e artefatos de teste são o que mais custa; sem cache o
+      # job leva minutos a mais a cada push
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace --all-targets --locked
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked
+
+      # `--no-fail-fast`: quando duas coisas quebram, o log tem de mostrar
+      # as duas, não parar na primeira e esconder a outra
+      - name: Test
+        run: cargo test --workspace --all-targets --locked --no-fail-fast
