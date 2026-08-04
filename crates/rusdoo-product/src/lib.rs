@@ -20,10 +20,12 @@
 //! why the port can add the template without changing a single caller.
 
 use rusdoo_core::RusdooError;
-use rusdoo_orm::fields::{Field, FieldType, OnDelete};
+use rusdoo_orm::fields::{DefaultCtx, Field, FieldType, OnDelete};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
 use serde_json::{json, Map, Value};
+use std::future::Future;
+use std::pin::Pin;
 
 /// Money: two decimals, Odoo's default price precision.
 pub const PRICE: FieldType = FieldType::Float {
@@ -73,6 +75,55 @@ fn sales_price_is_not_negative(record: &Map<String, Value>) -> Result<(), String
 
 fn cost_is_not_negative(record: &Map<String, Value>) -> Result<(), String> {
     price_is_not_negative(record, "standard_price", "cost")
+}
+
+/// The unit a product is measured in when nobody said otherwise, as an
+/// external id: Odoo's `default=lambda self: self.env.ref('uom.product_uom_unit')`.
+///
+/// Resolved from `ir_model_data` on the create's own connection rather
+/// than held as an id, because the id is whatever the database that
+/// installed `uom` handed out. A database without `uom` installed gives
+/// no default instead of an error — the field is optional, and a
+/// catalogue of services has nothing to weigh.
+const REFERENCE_UNIT: (&str, &str) = ("uom", "product_uom_unit");
+
+type Answer<'a> = Pin<Box<dyn Future<Output = Result<Value, RusdooError>> + Send + 'a>>;
+
+fn default_unit(ctx: DefaultCtx<'_>) -> Answer<'_> {
+    Box::pin(async move {
+        let failed = |error: sqlx::Error| {
+            RusdooError::Database(format!("default de unidade em {}: {error}", ctx.model))
+        };
+        // Asked first, and not for elegance: a query against a table that
+        // does not exist aborts the transaction it runs in, and this one
+        // is the create's. Every statement after it would then fail with
+        // "current transaction is aborted" and the real cause would be
+        // named nowhere. A database that never installed a module — a
+        // test that builds its own tables — has no `ir_model_data` at
+        // all, and that is not this create's problem.
+        let registered: bool =
+            sqlx::query_scalar("SELECT to_regclass('ir_model_data') IS NOT NULL")
+                .fetch_one(&mut *ctx.conn)
+                .await
+                .map_err(failed)?;
+        if !registered {
+            return Ok(Value::Null);
+        }
+        let (module, name) = REFERENCE_UNIT;
+        let found: Option<i32> = sqlx::query_scalar(
+            r#"SELECT "res_id" FROM "ir_model_data"
+               WHERE "module" = $1 AND "name" = $2 AND "model" = 'uom.uom'"#,
+        )
+        .bind(module)
+        .bind(name)
+        .fetch_optional(&mut *ctx.conn)
+        .await
+        .map_err(failed)?;
+        Ok(match found {
+            Some(id) => Value::from(i64::from(id)),
+            None => Value::Null,
+        })
+    })
 }
 
 /// `product.category` — how the catalogue is filed.
@@ -134,6 +185,15 @@ fn template() -> Model {
                     comodel: "product.category".into(),
                 },
             ),
+            // what a quantity of this product means: two of it is two
+            // units, or two dozen, or two kilos
+            Field::new(
+                "uom_id",
+                FieldType::Many2one {
+                    comodel: "uom.uom".into(),
+                },
+            )
+            .default_from(default_unit),
             Field::new("active", FieldType::Boolean).default_value(json!(true)),
             // Odoo's `image.mixin` gives every product an image; here
             // only the original, without the sizes it materialises

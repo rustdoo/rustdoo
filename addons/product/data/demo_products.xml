@@ -34,6 +34,10 @@
             <field name="name">Montagem e instalação</field>
             <field name="default_code">SRV-001</field>
             <field name="categ_id" ref="category_services"/>
+            <!-- billed by the hour, not by the unit the others default
+                 to: the module depends on `uom` so this reference
+                 resolves -->
+            <field name="uom_id" ref="uom.product_uom_hour"/>
             <field name="type">service</field>
             <field name="list_price">300.00</field>
         </record>

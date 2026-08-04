@@ -1147,10 +1147,12 @@ impl Registry {
                 }
             }
 
-            // many2one reads as [id, display_name], like Odoo's name_get
+            // many2one reads as [id, display_name], like Odoo's name_get —
+            // a delegated one too, since the caller cannot tell which row
+            // it came from and the client renders both the same way
             let m2o: Vec<(String, String)> = fields
                 .iter()
-                .filter_map(|name| match model.field(name).map(|f| &f.ty) {
+                .filter_map(|name| match self.field_of(model, name).map(|f| &f.ty) {
                     Some(FieldType::Many2one { comodel }) => {
                         Some((name.to_string(), comodel.clone()))
                     }

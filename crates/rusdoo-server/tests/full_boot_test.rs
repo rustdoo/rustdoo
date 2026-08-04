@@ -159,6 +159,27 @@ async fn the_addons_tree_installs_and_adds_up_live() {
         .expect("products readable");
     assert!(products.len() >= 3, "demo products: {products:?}");
 
+    // every one of them is measured in something: the ones that said
+    // nothing default to the reference unit `uom` installs, and the
+    // service that named hours got hours. Both answers come from the
+    // template, through the delegation.
+    let rows = registry
+        .read(&pool, "product.product", &products, &["name", "uom_id"])
+        .await
+        .expect("products read");
+    for row in &rows {
+        assert!(
+            row["uom_id"].is_array(),
+            "a product with no unit: {}",
+            row["name"]
+        );
+    }
+    let service = rows
+        .iter()
+        .find(|row| row["name"].as_str() == Some("Montagem e instalação"))
+        .expect("the demo service");
+    assert_eq!(service["uom_id"][1], json!("Horas"));
+
     // and an order adds up: two lines, subtotals, total — the whole
     // point of the module
     let partner = registry

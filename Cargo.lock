@@ -1640,6 +1640,7 @@ dependencies = [
  "rusdoo-core",
  "rusdoo-orm",
  "serde_json",
+ "sqlx",
  "tokio",
 ]
 
@@ -1785,6 +1786,7 @@ dependencies = [
  "rusdoo-purchase",
  "rusdoo-sale",
  "rusdoo-stock",
+ "rusdoo-uom",
  "serde_json",
  "sqlx",
  "tokio",
