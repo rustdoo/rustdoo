@@ -128,17 +128,23 @@ impl AssetHub {
             }
         };
         let mut body = Vec::new();
-        // whatever Sass hoisted above the first file — `@charset`, and
-        // the at-rules CSS 2.1 requires at the top — belongs there and
-        // nowhere else
-        if let Some(hoisted) = compiled.get(HOISTED) {
-            body.extend_from_slice(hoisted.as_bytes());
-            body.push(b'\n');
+        // `@charset` is only a charset where it is first, so the sheet
+        // opens with it rather than carrying grass's own copy inline
+        if compiled.is_some() {
+            body.extend_from_slice(b"@charset \"UTF-8\";\n");
         }
+        let mut sheet_emitted = false;
         for file in files {
-            let content = match compiled.get(&file.path) {
-                Some(css) => css.clone().into_bytes(),
-                None => match std::fs::read(&file.disk) {
+            let is_sass = matches!(file.extension(), "scss" | "sass");
+            let content = match (is_sass, &compiled) {
+                // the whole compiled sheet takes the place of the first
+                // Sass file of the bundle; the rest contributed to it
+                (true, Some(sheet)) if !sheet_emitted => {
+                    sheet_emitted = true;
+                    sheet.clone().into_bytes()
+                }
+                (true, _) => Vec::new(),
+                _ => match std::fs::read(&file.disk) {
                     Ok(content) => match as_module(file, content) {
                         Ok(content) => content,
                         Err(error) => {
@@ -159,9 +165,15 @@ impl AssetHub {
                     }
                 },
             };
+            if content.is_empty() {
+                continue;
+            }
             // keep the origin of each chunk visible: a stack trace in the
-            // browser is otherwise a line number into a file nobody wrote
-            body.extend_from_slice(format!("/* {} */\n", file.path).as_bytes());
+            // browser is otherwise a line number into a file nobody wrote.
+            // The compiled sheet carries the markers of its own files.
+            if !is_sass {
+                body.extend_from_slice(format!("/* {} */\n", file.path).as_bytes());
+            }
             body.extend_from_slice(&content);
             body.push(b'\n');
         }
@@ -337,10 +349,6 @@ fn as_module(
     Ok(rusdoo_modules::js_module::transpile(&url, &source)?.into_bytes())
 }
 
-/// The key the at-rules Sass hoisted above everything are filed under.
-/// Not a path any asset can have, because `/` never starts one here.
-const HOISTED: &str = "/hoisted";
-
 /// The bundle's Sass as the CSS the browser can actually read, port of
 /// `preprocess_css` in `odoo/addons/base/models/assetsbundle.py`.
 ///
@@ -367,13 +375,13 @@ const HOISTED: &str = "/hoisted";
 fn compile_sass(
     files: &[&rusdoo_modules::assets::AssetFile],
     roots: &HashMap<String, PathBuf>,
-) -> Result<HashMap<String, String>, String> {
+) -> Result<Option<String>, String> {
     let sass: Vec<&&rusdoo_modules::assets::AssetFile> = files
         .iter()
         .filter(|file| matches!(file.extension(), "scss" | "sass"))
         .collect();
     if sass.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(None);
     }
     let mut source = String::new();
     for file in &sass {
@@ -391,7 +399,36 @@ fn compile_sass(
         options = options.load_path(root);
     }
     let css = grass::from_string(source, &options).map_err(|error| error.to_string())?;
-    Ok(split_by_marker(&css))
+    Ok(Some(as_one_sheet(&css)))
+}
+
+/// The compiled sheet, with the markers turned into the comments the
+/// concatenation uses elsewhere and the `@charset` lifted out.
+///
+/// It is served whole, never cut: Sass emits a rule's nested children
+/// after the parent's own declarations, so a marker can land inside an
+/// open block — and cutting there hands the browser an unbalanced brace,
+/// which makes it read every rule after it as nested and apply none of
+/// them. That is what left the real client unstyled.
+fn as_one_sheet(css: &str) -> String {
+    let mut out = String::with_capacity(css.len());
+    for line in css.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("@charset") {
+            continue;
+        }
+        match trimmed
+            .strip_prefix("/*!")
+            .and_then(|rest| rest.strip_suffix("*/"))
+        {
+            Some(path) => out.push_str(&format!("/* {path} */\n")),
+            None => {
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+    }
+    out
 }
 
 /// Put back the semicolon a `@include` statement is missing.
@@ -466,37 +503,6 @@ fn load_paths(
         }
     }
     paths
-}
-
-/// The compiled bundle cut back into the files it came from, on the
-/// markers [`compile_sass`] planted.
-///
-/// Anything before the first marker is what Sass hoisted to the top and
-/// is filed under [`HOISTED`].
-fn split_by_marker(css: &str) -> HashMap<String, String> {
-    let mut chunks = HashMap::new();
-    let mut key = HOISTED.to_string();
-    let mut current = String::new();
-    for line in css.lines() {
-        let trimmed = line.trim();
-        if let Some(path) = trimmed
-            .strip_prefix("/*!")
-            .and_then(|rest| rest.strip_suffix("*/"))
-        {
-            if !current.trim().is_empty() {
-                chunks.insert(key, current.trim().to_string());
-            }
-            key = path.to_string();
-            current = String::new();
-            continue;
-        }
-        current.push_str(line);
-        current.push('\n');
-    }
-    if !current.trim().is_empty() {
-        chunks.insert(key, current.trim().to_string());
-    }
-    chunks
 }
 
 fn newest_mtime(files: &[&rusdoo_modules::assets::AssetFile]) -> Option<std::time::SystemTime> {

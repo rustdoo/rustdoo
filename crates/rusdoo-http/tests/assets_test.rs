@@ -257,6 +257,57 @@ async fn a_changed_file_is_served_instead_of_the_cached_bundle() {
     );
 }
 
+/// A bundle carries files that define and files that use: variables and
+/// mixins compile to nothing of their own. Serving their source instead
+/// is what broke the real client — the browser meets `@mixin` and `//`,
+/// which are not CSS, and drops the stylesheet from there on.
+#[tokio::test]
+async fn a_scss_that_only_defines_contributes_no_source() {
+    let fixture = Fixture::new("defs");
+    let manifest_source = r#"{
+        'name': 'Defs',
+        'assets': {'web.assets_backend': [
+            'defs/static/src/_mixins.scss',
+            'defs/static/src/app.scss',
+        ]},
+    }"#;
+    let addon = fixture.root.join("defs");
+    fixture.write("defs/__manifest__.py", manifest_source);
+    fixture.write(
+        "defs/static/src/_mixins.scss",
+        "// only definitions, no rules\n$brand: #336699;\n@mixin padded { padding: 4px; }\n",
+    );
+    fixture.write(
+        "defs/static/src/app.scss",
+        "@import \"mixins\";\n.o_form { color: $brand; @include padded; }\n",
+    );
+    let mut manifest = parse_manifest(manifest_source, "defs").expect("manifest");
+    manifest.path = addon.clone();
+    let bundles = resolve_bundles(&[&manifest]).expect("bundles resolve");
+    let roots: HashMap<String, PathBuf> = [("defs".to_string(), addon)].into_iter().collect();
+    let url = std::env::var("RUSDOO_TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:rusdoo@localhost:55432/postgres".into());
+    let service = OrmService::insecure(
+        Arc::new(Registry::new()),
+        rusdoo_orm::db::lazy_pool(&url).unwrap(),
+    )
+    .with_assets(AssetHub::new(bundles, roots));
+
+    let (status, _, css) = get(router(service), "/web/assets/web.assets_backend.css").await;
+    assert_eq!(status, StatusCode::OK);
+
+    // what it uses is there, compiled
+    assert!(css.contains("color: #336699"), "{css}");
+    assert!(css.contains("padding: 4px"), "{css}");
+    // and no line of Sass reached the browser
+    for sass_only in ["@mixin", "$brand", "//", "@import"] {
+        assert!(
+            !css.contains(sass_only),
+            "{sass_only:?} was served as CSS:\n{css}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn web_serves_the_client_when_an_addon_ships_one() {
     let fixture = Fixture::new("shell");
