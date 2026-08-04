@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>probe</title></head>
+<body>
+<div id="state">booting…</div>
+<script>
+const log = [];
+const failed = [];
+const consoleErrors = [];
+for (const level of ["error", "warn"]) {
+  const original = console[level].bind(console);
+  console[level] = (...args) => { consoleErrors.push(level + ": " + args.map(String).join(" ")); original(...args); };
+}
+window.addEventListener("error", (e) => consoleErrors.push("window.error: " + (e.error && e.error.stack || e.message)));
+window.addEventListener("unhandledrejection", (e) => {
+  let r = e.reason, chain = [];
+  while (r) { chain.push(r.message || String(r)); r = r.cause; }
+  consoleErrors.push("rejection: " + chain.join(" <- "));
+});
+
+const realFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const res = await realFetch(...args);
+  const url = typeof args[0] === "string" ? args[0] : args[0].url;
+  if (!res.ok) failed.push(res.status + " " + url);
+  return res;
+};
+
+function render() {
+  const loader = window.odoo && odoo.loader;
+  const state = {
+    ready: window.odoo ? odoo.isReady : "no odoo",
+    defined: loader ? loader.modules.size : 0,
+    failedModules: loader ? [...(loader.failed || [])].slice(0, 8) : [],
+    jobs: loader ? loader.jobs.size : 0,
+    action: document.querySelector(".o_action_manager") ? document.querySelector(".o_action_manager").innerText.slice(0, 300) : "(no action manager)",
+    navbar: document.querySelector(".o_main_navbar") ? document.querySelector(".o_main_navbar").innerText.replace(/\s+/g, " ").slice(0, 200) : "(no navbar)",
+    apps: [...document.querySelectorAll(".o_menu_sections a, .o_app, .dropdown-item")].slice(0, 12).map(a => a.innerText.trim()).filter(Boolean),
+    bodyText: document.body.innerText.replace(/\s+/g, " ").slice(0, 200),
+    elements: document.querySelectorAll("*").length,
+    odooClasses: [...new Set([...document.querySelectorAll("[class*='o_']")].map(e => e.className.toString().split(" ")[0]))].slice(0, 10),
+    started: window.odoo && odoo.__WOWL_DEBUG__ ? Object.keys(odoo.__WOWL_DEBUG__) : "no debug",
+    failed: failed.slice(0, 10),
+    errors: consoleErrors.slice(0, 10),
+    log,
+  };
+  document.getElementById("state").textContent = JSON.stringify(state, null, 1);
+}
+setInterval(render, 500);
+
+(async () => {
+  try {
+    const auth = await realFetch("/web/session/authenticate", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({jsonrpc: "2.0", method: "call", params: {db: "rusdoo", login: "admin", password: "admin"}}),
+    });
+    const session = await auth.json();
+    log.push("auth: " + (session.result ? "uid " + session.result.uid : JSON.stringify(session.error).slice(0, 200)));
+    window.odoo = window.odoo || {};
+    odoo.__session_info__ = session.result;
+    odoo.csrf_token = session.result && session.result.csrf_token;
+    odoo.debug = "";
+    odoo.__WOWL_DEBUG__ = {};
+
+    const menus = await realFetch("/web/webclient/load_menus/" + (session.result && session.result.cache_hashes ? session.result.cache_hashes.load_menus : "1"));
+    const menuData = await menus.json();
+    log.push("menus: " + JSON.stringify(menuData).slice(0, 300));
+    odoo.loadMenusPromise = Promise.resolve(menuData);
+
+    // Depois que o cliente monta, o harness faz o que um usuário faz:
+    // clica numa linha, espera o formulário, troca um campo e salva.
+    // Cada passo escreve no log, então o dump diz até onde chegou.
+    const waitFor = async (selector, label, tries = 60) => {
+      for (let i = 0; i < tries; i++) {
+        const found = document.querySelector(selector);
+        if (found) { log.push("achou " + label); return found; }
+        await new Promise(r => setTimeout(r, 250));
+      }
+      log.push("NAO achou " + label + " (" + selector + ")");
+      return null;
+    };
+    window.__scenario = async () => {
+      const cell = await waitFor(".o_data_row .o_data_cell", "linha da lista");
+      if (!cell) return;
+      cell.click();
+      const form = await waitFor(".o_form_view", "formulário");
+      if (!form) return;
+      log.push("form: " + form.innerText.replace(/\s+/g, " ").slice(0, 200));
+      const input = document.querySelector(".o_form_view input[id], .o_form_view .o_field_char input");
+      if (!input) { log.push("NAO achou campo editável"); return; }
+      input.value = "Ana Ribeiro Costa";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      log.push("campo alterado");
+      const save = await waitFor(".o_form_button_save, button[data-hotkey='s'], .o_form_status_indicator button", "botão salvar");
+      if (!save) return;
+      save.click();
+      await new Promise(r => setTimeout(r, 3000));
+      log.push("salvou; form agora: " + (document.querySelector(".o_form_view") || {innerText: ""}).innerText.replace(/\s+/g, " ").slice(0, 160));
+    };
+
+    const script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src = "/web/assets/web.assets_web.js";
+    script.onerror = () => log.push("BUNDLE FAILED TO LOAD");
+    document.head.appendChild(script);
+    log.push("bundle injected");
+    const started = Date.now();
+    while (!(window.odoo && odoo.isReady) && Date.now() - started < 30000) {
+      await new Promise(r => setTimeout(r, 250));
+    }
+    log.push(odoo.isReady ? "cliente pronto" : "cliente NAO ficou pronto");
+    if (odoo.isReady) { await window.__scenario(); }
+  } catch (error) {
+    log.push("harness error: " + error.message);
+  }
+})();
+</script>
+</body>
+</html>
