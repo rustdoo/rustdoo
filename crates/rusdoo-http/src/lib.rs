@@ -16,6 +16,7 @@ pub mod pdf;
 pub mod report;
 pub mod routes;
 pub mod session;
+mod session_info;
 mod shell;
 mod translations;
 pub mod view_inherit;

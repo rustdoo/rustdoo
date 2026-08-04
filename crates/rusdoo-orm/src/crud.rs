@@ -107,7 +107,14 @@ impl Model {
         let (mut sql, params) = self.select_from_where(r#""id""#, domain, opts, ctx)?;
         // a search with no order of its own gets the model's `_order`,
         // never PostgreSQL's whim
-        let order = opts.order.as_deref().unwrap_or_else(|| self.order());
+        // an order the caller sent empty is no order at all, not an
+        // error: the web client spells "I have no preference" as `""`,
+        // and Odoo reads any falsy order as the model's own
+        let order = opts
+            .order
+            .as_deref()
+            .filter(|spec| !spec.trim().is_empty())
+            .unwrap_or_else(|| self.order());
         sql.push_str(&format!(" ORDER BY {}", self.order_by(order)?));
         if let Some(limit) = opts.limit {
             sql.push_str(&format!(" LIMIT {limit}"));
@@ -382,6 +389,7 @@ impl Model {
     fn order_by(&self, spec: &str) -> Result<String, RusdooError> {
         let clauses: Vec<String> = spec
             .split(',')
+            .filter(|part| !part.trim().is_empty())
             .map(|part| {
                 let mut words = part.split_whitespace();
                 let field = words

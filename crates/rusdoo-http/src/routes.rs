@@ -26,10 +26,17 @@ pub fn router(service: OrmService) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/web/dataset/call_kw", post(call_kw))
+        // The client names the model and the method in the path as well —
+        // `/web/dataset/call_kw/res.partner/get_views` — which is what a
+        // network log reads. Odoo routes both to one handler and takes the
+        // body as the truth; a path that disagrees with it changes
+        // nothing, so nothing here reads it.
+        .route("/web/dataset/call_kw/{*path}", post(call_kw))
         .route("/web/session/authenticate", post(authenticate))
         .route("/web/session/destroy", post(destroy))
         .route("/web/session/get_session_info", post(session_info))
         .route("/web/webclient/load_menus", get(load_menus))
+        .route("/web/webclient/version_info", post(version_info))
         .route(
             "/web/webclient/translations",
             get(crate::translations::translations),
@@ -286,6 +293,14 @@ async fn action_load(
     };
     let outcome = service.load_action(reference, session.as_ref()).await;
     respond(request.id, outcome)
+}
+
+/// `/web/webclient/version_info` — port of
+/// `odoo/service/common.py::exp_version`. The client polls it to tell a
+/// server that is down from a request that merely failed, so it answers
+/// without a session, like Odoo's `auth="none"`.
+async fn version_info() -> Json<JsonRpcResponse> {
+    respond(Some(json!(1)), Ok(crate::session_info::version()))
 }
 
 /// `/web/webclient/load_menus` — the navigation tree, flat and keyed by

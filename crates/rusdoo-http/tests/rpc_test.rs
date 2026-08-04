@@ -82,6 +82,79 @@ async fn unknown_model_returns_jsonrpc_error() {
 }
 
 #[tokio::test]
+async fn the_model_and_method_may_also_be_in_the_path() {
+    // The client posts to `/web/dataset/call_kw/res.partner/get_views`:
+    // Odoo routes `/web/dataset/call_kw/<path:path>` to the same handler,
+    // where the path is there to be read in a network log and the body
+    // is what decides. Without the route it is a 404 and the first view
+    // never opens.
+    let app = router(test_service());
+
+    let (status, resp) = rpc(
+        app,
+        "/web/dataset/call_kw/res.nope/search",
+        json!({
+            "jsonrpc": "2.0", "id": 9, "method": "call",
+            "params": {"model": "res.nope", "method": "search", "args": [[]], "kwargs": {}}
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resp["id"], json!(9));
+    // the same answer the bare path gives: routed, then refused by the ORM
+    assert!(resp["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("unknown model"));
+}
+
+#[tokio::test]
+async fn an_order_the_client_sent_empty_is_no_order() {
+    // The web client spells "I have no preference" as `order: ""`. Odoo
+    // reads any falsy order as the model's own `_order`; refusing it
+    // turned the first list view into an error dialog.
+    let app = router(test_service());
+
+    let (_, resp) = rpc(
+        app,
+        "/web/dataset/call_kw",
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "call",
+            "params": {"model": "res.nope", "method": "search_read",
+                       "args": [[]], "kwargs": {"order": ""}}
+        }),
+    )
+    .await;
+
+    // it reaches the ORM and is refused for the model, not for the order
+    let message = resp["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains("unknown model"), "{resp}");
+    assert!(!message.contains("ORDER BY"), "{resp}");
+}
+
+#[tokio::test]
+async fn the_server_says_which_version_it_is() {
+    // `/web/webclient/version_info`, port of `service.common.exp_version`.
+    // The client asks on every connection-lost check, so a 404 here is a
+    // client that believes the server is down.
+    let app = router(test_service());
+
+    let (status, resp) = rpc(
+        app,
+        "/web/webclient/version_info",
+        json!({"jsonrpc": "2.0", "id": 1, "method": "call", "params": {}}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resp["result"]["server_version"], json!("19.0"));
+    assert_eq!(resp["result"]["server_serie"], json!("19.0"));
+    assert_eq!(resp["result"]["protocol_version"], json!(1));
+    assert!(resp["result"]["server_version_info"].is_array(), "{resp}");
+}
+
+#[tokio::test]
 async fn unknown_orm_method_is_method_not_found() {
     let app = router(test_service());
 
