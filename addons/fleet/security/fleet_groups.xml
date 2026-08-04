@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Odoo's two steps, kept as they are: the officer runs the fleet and
+     the administrator configures it. The catalogue (brands, models,
+     categories, service types) is read-only to the officer on purpose —
+     a fleet where anyone can invent a new brand is a fleet whose reports
+     group nothing. -->
+<odoo>
+    <data noupdate="1">
+        <record id="fleet_group_user" model="res.groups">
+            <field name="name">Fleet: officer</field>
+            <field name="category">Fleet</field>
+            <field name="comment">Manages every vehicle, its drivers, odometer and contracts.</field>
+        </record>
+        <record id="fleet_group_manager" model="res.groups">
+            <field name="name">Fleet: administrator</field>
+            <field name="category">Fleet</field>
+            <field name="comment">Also maintains the catalogue: brands, models, categories, states and service types.</field>
+        </record>
+    </data>
+</odoo>

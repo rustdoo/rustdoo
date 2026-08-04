@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_fleet_root" model="ir.ui.menu">
+        <field name="name">Frota</field>
+        <field name="sequence">55</field>
+    </record>
+    <record id="menu_vehicles" model="ir.ui.menu">
+        <field name="name">Veículos</field>
+        <field name="parent_id" ref="menu_fleet_root"/>
+        <field name="sequence">10</field>
+        <field name="action">fleet.action_vehicles</field>
+    </record>
+    <record id="menu_odometers" model="ir.ui.menu">
+        <field name="name">Odômetro</field>
+        <field name="parent_id" ref="menu_fleet_root"/>
+        <field name="sequence">20</field>
+        <field name="action">fleet.action_odometers</field>
+    </record>
+    <record id="menu_services" model="ir.ui.menu">
+        <field name="name">Serviços</field>
+        <field name="parent_id" ref="menu_fleet_root"/>
+        <field name="sequence">30</field>
+        <field name="action">fleet.action_services</field>
+    </record>
+    <record id="menu_contracts" model="ir.ui.menu">
+        <field name="name">Contratos</field>
+        <field name="parent_id" ref="menu_fleet_root"/>
+        <field name="sequence">40</field>
+        <field name="action">fleet.action_contracts</field>
+    </record>
+    <record id="menu_models" model="ir.ui.menu">
+        <field name="name">Modelos</field>
+        <field name="parent_id" ref="menu_fleet_root"/>
+        <field name="sequence">50</field>
+        <field name="action">fleet.action_models</field>
+    </record>
+</odoo>

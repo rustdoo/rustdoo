@@ -213,6 +213,24 @@ fn modules() -> Vec<Module> {
             sequences: &[("sale.order", "SO")],
         },
         Module {
+            name: "fleet",
+            extend: rusdoo_fleet::extend,
+            methods: Some(rusdoo_fleet::extend_methods),
+            sequences: &[],
+        },
+        Module {
+            name: "lunch",
+            extend: rusdoo_lunch::extend,
+            methods: Some(rusdoo_lunch::extend_methods),
+            sequences: &[],
+        },
+        Module {
+            name: "phone_validation",
+            extend: rusdoo_phone_validation::extend,
+            methods: Some(rusdoo_phone_validation::extend_methods),
+            sequences: &[],
+        },
+        Module {
             name: "account_check_printing",
             extend: rusdoo_account_check_printing::extend,
             methods: Some(rusdoo_account_check_printing::extend_methods),

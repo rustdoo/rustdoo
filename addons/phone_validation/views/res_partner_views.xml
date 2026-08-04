@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- View inheritance, not a copy: this module publishes what it changes
+     about `base`'s contact screens. Whoever edits the form over there
+     does not have to remember this file exists.
+
+     Odoo replaces the search view's `phone` with `phone_mobile_search`,
+     a search-only field whose SQL strips punctuation so that `0456 99`
+     finds `+32456998877`. There is no search-only field in this ORM, so
+     what is offered instead is the sanitized column itself — the exact
+     same string every blacklist lookup matches on. -->
+<odoo>
+    <record id="view_partner_form_phone" model="ir.ui.view">
+        <field name="name">res.partner.form.phone.validation</field>
+        <field name="model">res.partner</field>
+        <field name="type">form</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml"><data><xpath expr="//field[@name='mobile']" position="after"><field name="phone_sanitized" string="Number as dialled" readonly="1"/></xpath></data></field>
+    </record>
+
+    <record id="view_partner_search_phone" model="ir.ui.view">
+        <field name="name">res.partner.search.phone.validation</field>
+        <field name="model">res.partner</field>
+        <field name="type">search</field>
+        <field name="inherit_id" ref="base.view_partner_search"/>
+        <field name="arch" type="xml"><data><xpath expr="//field[@name='email']" position="after"><field name="phone_sanitized" string="Phone number"/></xpath></data></field>
+    </record>
+</odoo>

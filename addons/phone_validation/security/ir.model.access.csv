@@ -1,0 +1,3 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_phone_blacklist_system,phone blacklist for the administrator,phone.blacklist,base.group_system,1,1,1,1
+access_phone_blacklist_remove_system,unblacklist dialog for the administrator,phone.blacklist.remove,base.group_system,1,1,1,1

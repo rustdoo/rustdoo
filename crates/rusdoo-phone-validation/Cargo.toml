@@ -1,0 +1,19 @@
+[package]
+name = "rusdoo-phone-validation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+# the number patterns are libphonenumber's own regexes, kept as regexes
+regex.workspace = true
+rusdoo-core = { path = "../rusdoo-core" }
+rusdoo-orm = { path = "../rusdoo-orm" }
+
+[dev-dependencies]
+rusdoo-testing = { path = "../rusdoo-testing" }
+tokio.workspace = true
+sqlx.workspace = true
+rusdoo-base = { path = "../rusdoo-base" }
+rusdoo-mail = { path = "../rusdoo-mail" }

@@ -1,0 +1,23 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_fleet_vehicle_user,vehicle officer,fleet.vehicle,fleet_group_user,1,1,1,1
+access_fleet_vehicle_manager,vehicle administrator,fleet.vehicle,fleet_group_manager,1,1,1,1
+access_fleet_vehicle_odometer_user,odometer officer,fleet.vehicle.odometer,fleet_group_user,1,1,1,1
+access_fleet_vehicle_odometer_manager,odometer administrator,fleet.vehicle.odometer,fleet_group_manager,1,1,1,1
+access_fleet_vehicle_log_contract_user,contract officer,fleet.vehicle.log.contract,fleet_group_user,1,1,1,1
+access_fleet_vehicle_log_contract_manager,contract administrator,fleet.vehicle.log.contract,fleet_group_manager,1,1,1,1
+access_fleet_vehicle_assignation_log_user,driver history officer,fleet.vehicle.assignation.log,fleet_group_user,1,1,1,1
+access_fleet_vehicle_assignation_log_manager,driver history administrator,fleet.vehicle.assignation.log,fleet_group_manager,1,1,1,1
+access_fleet_vehicle_log_services_user,service officer,fleet.vehicle.log.services,fleet_group_user,1,0,0,0
+access_fleet_vehicle_log_services_manager,service administrator,fleet.vehicle.log.services,fleet_group_manager,1,1,1,1
+access_fleet_vehicle_model_user,model officer,fleet.vehicle.model,fleet_group_user,1,0,0,0
+access_fleet_vehicle_model_manager,model administrator,fleet.vehicle.model,fleet_group_manager,1,1,1,1
+access_fleet_vehicle_model_brand_user,brand officer,fleet.vehicle.model.brand,fleet_group_user,1,0,0,0
+access_fleet_vehicle_model_brand_manager,brand administrator,fleet.vehicle.model.brand,fleet_group_manager,1,1,1,1
+access_fleet_vehicle_model_category_user,category officer,fleet.vehicle.model.category,fleet_group_user,1,0,0,0
+access_fleet_vehicle_model_category_manager,category administrator,fleet.vehicle.model.category,fleet_group_manager,1,1,1,1
+access_fleet_vehicle_state_user,state officer,fleet.vehicle.state,fleet_group_user,1,0,0,0
+access_fleet_vehicle_state_manager,state administrator,fleet.vehicle.state,fleet_group_manager,1,1,1,1
+access_fleet_vehicle_tag_user,tag officer,fleet.vehicle.tag,fleet_group_user,1,0,0,0
+access_fleet_vehicle_tag_manager,tag administrator,fleet.vehicle.tag,fleet_group_manager,1,1,1,1
+access_fleet_service_type_user,service type officer,fleet.service.type,fleet_group_user,1,0,0,0
+access_fleet_service_type_manager,service type administrator,fleet.service.type,fleet_group_manager,1,1,1,1

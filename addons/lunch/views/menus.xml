@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_lunch_root" model="ir.ui.menu">
+        <field name="name">Almoço</field>
+        <field name="sequence">70</field>
+    </record>
+    <record id="menu_orders" model="ir.ui.menu">
+        <field name="name">Meus pedidos</field>
+        <field name="parent_id" ref="menu_lunch_root"/>
+        <field name="sequence">10</field>
+        <field name="action">lunch.action_orders</field>
+    </record>
+    <record id="menu_products" model="ir.ui.menu">
+        <field name="name">Cardápio</field>
+        <field name="parent_id" ref="menu_lunch_root"/>
+        <field name="sequence">20</field>
+        <field name="action">lunch.action_products</field>
+    </record>
+    <record id="menu_suppliers" model="ir.ui.menu">
+        <field name="name">Fornecedores</field>
+        <field name="parent_id" ref="menu_lunch_root"/>
+        <field name="sequence">30</field>
+        <field name="action">lunch.action_suppliers</field>
+    </record>
+    <record id="menu_cashmoves" model="ir.ui.menu">
+        <field name="name">Carteira</field>
+        <field name="parent_id" ref="menu_lunch_root"/>
+        <field name="sequence">40</field>
+        <field name="action">lunch.action_cashmoves</field>
+    </record>
+</odoo>

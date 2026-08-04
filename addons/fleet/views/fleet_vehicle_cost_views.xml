@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_odometer_list" model="ir.ui.view">
+        <field name="name">fleet.vehicle.odometer.list</field>
+        <field name="model">fleet.vehicle.odometer</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="date" string="Data"/><field name="vehicle_id" string="Veículo"/><field name="value" string="Leitura"/><field name="driver_id" string="Motorista"/></list></field>
+    </record>
+
+    <record id="action_odometers" model="ir.actions.act_window">
+        <field name="name">Leituras de odômetro</field>
+        <field name="res_model">fleet.vehicle.odometer</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_services_list" model="ir.ui.view">
+        <field name="name">fleet.vehicle.log.services.list</field>
+        <field name="model">fleet.vehicle.log.services</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="date" string="Data"/><field name="vehicle_id" string="Veículo"/><field name="service_type_id" string="Serviço"/><field name="amount" string="Valor"/><field name="state" string="Situação"/></list></field>
+    </record>
+
+    <record id="action_services" model="ir.actions.act_window">
+        <field name="name">Serviços</field>
+        <field name="res_model">fleet.vehicle.log.services</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_contracts_list" model="ir.ui.view">
+        <field name="name">fleet.vehicle.log.contract.list</field>
+        <field name="model">fleet.vehicle.log.contract</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="vehicle_id" string="Veículo"/><field name="start_date" string="Início"/><field name="expiration_date" string="Vencimento"/><field name="amount" string="Valor"/><field name="state" string="Situação"/></list></field>
+    </record>
+
+    <record id="action_contracts" model="ir.actions.act_window">
+        <field name="name">Contratos</field>
+        <field name="res_model">fleet.vehicle.log.contract</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- As situações e os tipos de serviço que o Odoo instala de fábrica: um
+     veículo precisa de uma situação antes de qualquer tela ser útil, e um
+     serviço precisa de um tipo.
+
+     noupdate: o usuário renomeia e reordena estes — é a primeira coisa que
+     uma frota ajusta. -->
+<odoo noupdate="1">
+    <record id="vehicle_state_new" model="fleet.vehicle.state">
+        <field name="name">Novo</field>
+        <field name="sequence">10</field>
+    </record>
+    <record id="vehicle_state_registered" model="fleet.vehicle.state">
+        <field name="name">Emplacado</field>
+        <field name="sequence">20</field>
+    </record>
+    <record id="vehicle_state_downgraded" model="fleet.vehicle.state">
+        <field name="name">Em manutenção</field>
+        <field name="sequence">30</field>
+    </record>
+    <record id="vehicle_state_reserve" model="fleet.vehicle.state">
+        <field name="name">Reserva</field>
+        <field name="sequence">40</field>
+    </record>
+    <record id="vehicle_state_waiting_list" model="fleet.vehicle.state">
+        <field name="name">Aguardando</field>
+        <field name="sequence">50</field>
+    </record>
+    <record id="vehicle_state_sold" model="fleet.vehicle.state">
+        <field name="name">Vendido</field>
+        <field name="sequence">60</field>
+    </record>
+
+    <record id="type_service_refueling" model="fleet.service.type">
+        <field name="name">Abastecimento</field>
+        <field name="category">service</field>
+    </record>
+    <record id="type_service_repair" model="fleet.service.type">
+        <field name="name">Reparo</field>
+        <field name="category">service</field>
+    </record>
+    <record id="type_service_revision" model="fleet.service.type">
+        <field name="name">Revisão</field>
+        <field name="category">service</field>
+    </record>
+    <record id="type_contract_leasing" model="fleet.service.type">
+        <field name="name">Leasing</field>
+        <field name="category">contract</field>
+    </record>
+    <record id="type_contract_insurance" model="fleet.service.type">
+        <field name="name">Seguro</field>
+        <field name="category">contract</field>
+    </record>
+</odoo>

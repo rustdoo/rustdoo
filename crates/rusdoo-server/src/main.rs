@@ -173,6 +173,9 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
         // depois do `base`: estende `res.partner`, que ele declara
         ("base_vat", rusdoo_base_vat::extend as ModelProvider),
         ("calendar", rusdoo_calendar::extend as ModelProvider),
+        ("phone_validation", rusdoo_phone_validation::extend as ModelProvider),
+        ("fleet", rusdoo_fleet::extend as ModelProvider),
+        ("lunch", rusdoo_lunch::extend as ModelProvider),
         ("resource", rusdoo_resource::extend as ModelProvider),
         ("mail", rusdoo_mail::extend as ModelProvider),
         ("rating", rusdoo_rating::extend as ModelProvider),
@@ -308,6 +311,15 @@ fn code_methods(manifests: &[Manifest]) -> anyhow::Result<rusdoo_orm::methods::M
     }
     if installed.contains(&"sale_purchase") {
         rusdoo_sale_purchase::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"phone_validation") {
+        rusdoo_phone_validation::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"fleet") {
+        rusdoo_fleet::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"lunch") {
+        rusdoo_lunch::extend_methods(&mut methods)?;
     }
     if installed.contains(&"calendar") {
         rusdoo_calendar::extend_methods(&mut methods)?;

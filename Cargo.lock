@@ -1585,6 +1585,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-fleet"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "rusdoo-testing",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-http"
 version = "0.1.0"
 dependencies = [
@@ -1616,6 +1630,21 @@ dependencies = [
  "tower",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "rusdoo-lunch"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-mail",
+ "rusdoo-orm",
+ "rusdoo-testing",
+ "serde_json",
+ "sqlx",
+ "tokio",
 ]
 
 [[package]]
@@ -1676,6 +1705,21 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "rusdoo-phone-validation"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-mail",
+ "rusdoo-orm",
+ "rusdoo-testing",
+ "serde_json",
+ "sqlx",
+ "tokio",
 ]
 
 [[package]]
@@ -1840,11 +1884,14 @@ dependencies = [
  "rusdoo-calendar",
  "rusdoo-core",
  "rusdoo-data-recycle",
+ "rusdoo-fleet",
  "rusdoo-http",
+ "rusdoo-lunch",
  "rusdoo-mail",
  "rusdoo-modules",
  "rusdoo-onboarding",
  "rusdoo-orm",
+ "rusdoo-phone-validation",
  "rusdoo-product",
  "rusdoo-purchase",
  "rusdoo-purchase-requisition",
@@ -1921,8 +1968,11 @@ dependencies = [
  "rusdoo-base-vat",
  "rusdoo-calendar",
  "rusdoo-core",
+ "rusdoo-fleet",
+ "rusdoo-lunch",
  "rusdoo-mail",
  "rusdoo-orm",
+ "rusdoo-phone-validation",
  "rusdoo-product",
  "rusdoo-purchase",
  "rusdoo-purchase-requisition",

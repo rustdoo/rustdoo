@@ -1,0 +1,16 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_lunch_location_user,local usuário,lunch.location,base.group_user,1,0,0,0
+access_lunch_location_system,local admin,lunch.location,base.group_system,1,1,1,1
+access_lunch_supplier_user,fornecedor usuário,lunch.supplier,base.group_user,1,0,0,0
+access_lunch_supplier_system,fornecedor admin,lunch.supplier,base.group_system,1,1,1,1
+access_lunch_product_category_user,categoria usuário,lunch.product.category,base.group_user,1,0,0,0
+access_lunch_product_category_system,categoria admin,lunch.product.category,base.group_system,1,1,1,1
+access_lunch_product_user,prato usuário,lunch.product,base.group_user,1,0,0,0
+access_lunch_product_system,prato admin,lunch.product,base.group_system,1,1,1,1
+access_lunch_topping_user,acompanhamento usuário,lunch.topping,base.group_user,1,0,0,0
+access_lunch_topping_system,acompanhamento admin,lunch.topping,base.group_system,1,1,1,1
+access_lunch_order_user,pedido usuário,lunch.order,base.group_user,1,1,1,1
+access_lunch_cashmove_user,lançamento usuário,lunch.cashmove,base.group_user,1,0,0,0
+access_lunch_cashmove_system,lançamento admin,lunch.cashmove,base.group_system,1,1,1,1
+access_lunch_alert_user,aviso usuário,lunch.alert,base.group_user,1,0,0,0
+access_lunch_alert_system,aviso admin,lunch.alert,base.group_system,1,1,1,1

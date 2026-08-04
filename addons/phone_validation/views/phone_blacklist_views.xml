@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="phone_blacklist_view_list" model="ir.ui.view">
+        <field name="name">phone.blacklist.view.list</field>
+        <field name="model">phone.blacklist</field>
+        <field name="type">list</field>
+        <field name="arch" type="xml"><list string="Blacklisted phone numbers"><field name="create_date" string="Blacklisted on"/><field name="number" string="Phone number"/></list></field>
+    </record>
+
+    <record id="phone_blacklist_view_form" model="ir.ui.view">
+        <field name="name">phone.blacklist.view.form</field>
+        <field name="model">phone.blacklist</field>
+        <field name="type">form</field>
+        <field name="arch" type="xml"><form string="Blacklisted phone number"><header><button name="phone_action_blacklist_remove" type="object" string="Unblacklist" class="btn-primary" invisible="not active or not number"/><button name="action_add" type="object" string="Blacklist again" class="btn-primary" invisible="active or not number"/></header><sheet><group><field name="number" string="Phone number"/><field name="active" string="On the blacklist"/></group></sheet></form></field>
+    </record>
+
+    <record id="phone_blacklist_view_search" model="ir.ui.view">
+        <field name="name">phone.blacklist.view.search</field>
+        <field name="model">phone.blacklist</field>
+        <field name="type">search</field>
+        <field name="arch" type="xml"><search><field name="number"/><filter string="Taken off the blacklist" name="inactive" domain="[('active','=',False)]"/></search></field>
+    </record>
+
+    <record id="phone_blacklist_action" model="ir.actions.act_window">
+        <field name="name">Blacklisted phone numbers</field>
+        <field name="res_model">phone.blacklist</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_id" ref="phone_blacklist_view_list"/>
+        <field name="search_view_id" ref="phone_blacklist_view_search"/>
+    </record>
+
+    <!-- Under Settings, as Odoo hangs it under the technical menu: the
+         blacklist is not a screen anybody works in day to day, and the
+         access rules only give it to the administrator anyway. -->
+    <record id="menu_phone_blacklist" model="ir.ui.menu">
+        <field name="name">Phone blacklist</field>
+        <field name="parent_id" ref="base.menu_settings_root"/>
+        <field name="sequence">40</field>
+        <field name="action">phone_validation.phone_blacklist_action</field>
+    </record>
+</odoo>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_vehicle_list" model="ir.ui.view">
+        <field name="name">fleet.vehicle.list</field>
+        <field name="model">fleet.vehicle</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="license_plate" string="Placa"/><field name="model_id" string="Modelo"/><field name="driver_id" string="Motorista"/><field name="state_id" string="Situação"/><field name="odometer" string="Odômetro"/></list></field>
+    </record>
+
+    <record id="view_vehicle_form" model="ir.ui.view">
+        <field name="name">fleet.vehicle.form</field>
+        <field name="model">fleet.vehicle</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="model_id" string="Modelo"/><field name="license_plate" string="Placa"/><field name="vin_sn" string="Chassi"/><field name="state_id" string="Situação"/><field name="active" string="Ativo"/></group><group><field name="driver_id" string="Motorista"/><field name="odometer" string="Odômetro"/><field name="odometer_unit" string="Unidade"/><field name="acquisition_date" string="Aquisição"/></group></form></field>
+    </record>
+
+    <record id="view_vehicle_search" model="ir.ui.view">
+        <field name="name">fleet.vehicle.search</field>
+        <field name="model">fleet.vehicle</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="license_plate"/><field name="model_id"/><field name="driver_id"/><groupby name="state_id" string="Situação"/></search></field>
+    </record>
+
+    <record id="action_vehicles" model="ir.actions.act_window">
+        <field name="name">Veículos</field>
+        <field name="res_model">fleet.vehicle</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_vehicle_state_list" model="ir.ui.view">
+        <field name="name">fleet.vehicle.state.list</field>
+        <field name="model">fleet.vehicle.state</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="sequence" string="Ordem"/><field name="name" string="Situação"/></list></field>
+    </record>
+
+    <record id="action_vehicle_states" model="ir.actions.act_window">
+        <field name="name">Situações</field>
+        <field name="res_model">fleet.vehicle.state</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>
