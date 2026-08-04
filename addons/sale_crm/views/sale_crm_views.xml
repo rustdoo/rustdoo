@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_lead_form_sale" model="ir.ui.view">
+        <field name="name">crm.lead.form.sale</field>
+        <field name="model">crm.lead</field>
+        <field name="type">form</field>
+        <field name="priority">20</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Oportunidade"/><field name="partner_id" string="Cliente"/><field name="stage_id" string="Etapa"/><field name="user_id" string="Responsável"/></group><group string="Vendas"><field name="sale_amount_total" string="Total assinado"/><field name="quotation_count" string="Cotações abertas"/><field name="sale_order_count" string="Pedidos"/></group><field name="order_ids"><list><field name="name" string="Pedido"/><field name="date_order" string="Data"/><field name="amount_total" string="Total"/><field name="state" string="Situação"/></list></field></form></field>
+    </record>
+
+    <record id="view_order_list_crm" model="ir.ui.view">
+        <field name="name">sale.order.list.crm</field>
+        <field name="model">sale.order</field>
+        <field name="type">list</field>
+        <field name="priority">20</field>
+        <field name="arch" type="xml"><list><field name="name" string="Pedido"/><field name="partner_id" string="Cliente"/><field name="opportunity_id" string="Oportunidade"/><field name="amount_total" string="Total"/><field name="state" string="Situação"/></list></field>
+    </record>
+</odoo>

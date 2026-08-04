@@ -8,6 +8,7 @@ members = [
     "crates/rusdoo-resource",
     "crates/rusdoo-hr",
     "crates/rusdoo-crm",
+    "crates/rusdoo-sale-crm",
     "crates/rusdoo-phone-validation",
     "crates/rusdoo-lunch",
     "crates/rusdoo-fleet",

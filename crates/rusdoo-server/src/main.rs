@@ -209,6 +209,8 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
         ("sale", rusdoo_sale::extend as ModelProvider),
         // depois de `sale` e `purchase`, que ele amarra um ao outro
         ("sale_purchase", rusdoo_sale_purchase::extend as ModelProvider),
+        // depois de `crm` e `sale`, que ele amarra
+        ("sale_crm", rusdoo_sale_crm::extend as ModelProvider),
     ]
 }
 
@@ -320,6 +322,9 @@ fn code_methods(manifests: &[Manifest]) -> anyhow::Result<rusdoo_orm::methods::M
     }
     if installed.contains(&"sale_purchase") {
         rusdoo_sale_purchase::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"sale_crm") {
+        rusdoo_sale_crm::extend_methods(&mut methods)?;
     }
     if installed.contains(&"crm") {
         rusdoo_crm::extend_methods(&mut methods)?;

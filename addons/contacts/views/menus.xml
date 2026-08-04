@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_contacts" model="ir.ui.menu">
+        <field name="name">Contatos</field>
+        <field name="sequence">10</field>
+    </record>
+    <record id="menu_contacts_people" model="ir.ui.menu">
+        <field name="name">Contatos</field>
+        <field name="parent_id" ref="menu_contacts"/>
+        <field name="sequence">10</field>
+        <field name="action">contacts.action_contacts</field>
+    </record>
+    <record id="menu_contacts_companies" model="ir.ui.menu">
+        <field name="name">Empresas</field>
+        <field name="parent_id" ref="menu_contacts"/>
+        <field name="sequence">20</field>
+        <field name="action">contacts.action_contacts_companies</field>
+    </record>
+</odoo>

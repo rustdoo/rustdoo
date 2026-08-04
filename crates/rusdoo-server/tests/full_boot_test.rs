@@ -80,6 +80,7 @@ fn registry() -> Registry {
     rusdoo_sale::extend(&mut registry).expect("sale models");
     // depois de `sale` e `purchase`: ele estende as linhas dos dois
     rusdoo_sale_purchase::extend(&mut registry).expect("sale_purchase models");
+    rusdoo_sale_crm::extend(&mut registry).expect("sale_crm models");
     registry
 }
 
@@ -106,7 +107,7 @@ async fn the_addons_tree_installs_and_adds_up_live() {
         "base", "base_vat", "web", "mail", "product", "account", "stock", "purchase",
         "sale", "sale_purchase", "calendar", "resource", "stock_account",
         "stock_picking_batch", "purchase_requisition", "account_check_printing",
-        "phone_validation", "fleet", "lunch", "hr", "crm", "uom",
+        "phone_validation", "fleet", "lunch", "hr", "crm", "sale_crm", "contacts", "uom",
         "barcodes", "utm", "sales_team",
         "account_debit_note", "data_recycle", "onboarding",
     ] {

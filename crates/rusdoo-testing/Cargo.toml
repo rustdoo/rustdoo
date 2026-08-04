@@ -16,6 +16,7 @@ rusdoo-base-vat = { path = "../rusdoo-base-vat" }
 rusdoo-calendar = { path = "../rusdoo-calendar" }
 rusdoo-fleet = { path = "../rusdoo-fleet" }
 rusdoo-crm = { path = "../rusdoo-crm" }
+rusdoo-sale-crm = { path = "../rusdoo-sale-crm" }
 rusdoo-utm = { path = "../rusdoo-utm" }
 rusdoo-sales-team = { path = "../rusdoo-sales-team" }
 rusdoo-hr = { path = "../rusdoo-hr" }

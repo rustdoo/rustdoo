@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- O cartão é a tela que o Odoo abre por padrão em Contatos: uma
+         agenda se lê olhando, não lendo linha por linha. -->
+    <record id="view_partner_kanban" model="ir.ui.view">
+        <field name="name">res.partner.kanban.contacts</field>
+        <field name="model">res.partner</field>
+        <field name="type">kanban</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><kanban><field name="name"/><field name="function" string="Cargo"/><field name="email" string="E-mail"/><field name="phone" string="Telefone"/><field name="city" string="Cidade"/></kanban></field>
+    </record>
+
+    <record id="action_contacts" model="ir.actions.act_window">
+        <field name="name">Contatos</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+
+    <record id="action_contacts_companies" model="ir.actions.act_window">
+        <field name="name">Empresas</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="domain">[["is_company", "=", true]]</field>
+    </record>
+</odoo>
