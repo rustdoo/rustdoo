@@ -778,16 +778,17 @@ pub fn apply_rule_records(
             remaining.push(record.clone());
             continue;
         }
-        let Some(model) = text_of(record_field(record, "model")) else {
-            return Err(RusdooError::Validation(
-                "ir.rule needs a 'model' column with the model tech name".into(),
-            ));
+        let Some(model) = rule_model(record, registry)? else {
+            // The rule names a model this build has not ported. Skipping
+            // it opens nothing — there are no rows of a model that does
+            // not exist — which is exactly why this is the one skip a
+            // rule is allowed: everything else about a rule is an error.
+            tracing::warn!(
+                "module {module}: ir.rule skipped, its model is not in this build ({:?})",
+                record_field(record, "model_id").or_else(|| record_field(record, "model"))
+            );
+            continue;
         };
-        if registry.get(&model).is_none() {
-            return Err(RusdooError::Validation(format!(
-                "ir.rule constrains unknown model {model:?}"
-            )));
-        }
         let domain = match record_field(record, "domain_force") {
             Some(FieldValue::Text(text)) => parse_py_literal(text)?,
             Some(FieldValue::Eval(value)) => value.clone(),
@@ -827,6 +828,41 @@ pub fn apply_rule_records(
         });
     }
     Ok(remaining)
+}
+
+/// Which model a rule constrains.
+///
+/// Two spellings reach the same answer. This port's own addons write the
+/// technical name in a `model` column; Odoo's data writes
+/// `model_id` as a ref to an `ir.model` record whose external id it
+/// never declares by hand — `ir.model._reflect` makes them, named
+/// `model_` plus the model's name with its dots turned into underscores.
+///
+/// Reversing that name is ambiguous on its own (`model_res_partner_bank`
+/// could be `res.partner.bank` or `res_partner.bank`), so it is not
+/// reversed: every registered model is asked whether *its* name spells
+/// that suffix. A model nobody claims is a model this build has not
+/// ported, and the answer is `None`.
+fn rule_model(record: &DataRecord, registry: &Registry) -> Result<Option<String>, RusdooError> {
+    if let Some(name) = text_of(record_field(record, "model")) {
+        return Ok(registry.get(&name).map(|_| name));
+    }
+    let Some(FieldValue::Ref(xml_id)) = record_field(record, "model_id") else {
+        return Err(RusdooError::Validation(
+            "ir.rule needs a 'model' column with the model tech name, or a \
+             'model_id' ref to an ir.model".into(),
+        ));
+    };
+    let external = xml_id.rsplit('.').next().unwrap_or(xml_id);
+    let Some(spelled) = external.strip_prefix("model_") else {
+        return Err(RusdooError::Validation(format!(
+            "ir.rule: {xml_id:?} does not name an ir.model (expected model_<name>)"
+        )));
+    };
+    Ok(registry
+        .models()
+        .map(|model| model.meta.name.clone())
+        .find(|name| name.replace('.', "_") == spelled))
 }
 
 /// The `res.groups` ids a rule applies to. Absent means a global rule,

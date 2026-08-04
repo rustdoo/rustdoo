@@ -291,11 +291,26 @@ async fn ir_model_access_csv_loads_into_acl() {
         vec![json!(42)],
         "\"user.id\" resolves to the acting user"
     );
-    // ...not the operations it left out, nor users outside the group
-    assert!(rules
+    // the same rule written the way Odoo writes it — the model named by
+    // a `model_id` ref to an `ir.model` external id — reaches the same
+    // model. It covers unlink, which the first rule does not.
+    let domain = rules
         .domain_for("x_demo.doc", Operation::Unlink, 42, &[group_id], false)
         .unwrap()
+        .expect("the rule named by model_id applies too");
+    let (sql, _) = reg
+        .search_sql("x_demo.doc", &domain, &SearchOptions::default())
+        .unwrap();
+    assert!(sql.contains(r#""owner_id" = $1"#), "{sql}");
+
+    // ...not the operations it left out, nor users outside the group
+    assert!(rules
+        .domain_for("x_demo.doc", Operation::Create, 42, &[group_id], false)
+        .unwrap()
         .is_none());
+    // and the rule about a model this build does not have was skipped,
+    // not loaded: there are no rows of it to leave open
+    assert!(!rules.covers("x_demo.absent"));
     assert!(rules
         .domain_for("x_demo.doc", Operation::Read, 42, &[], false)
         .unwrap()

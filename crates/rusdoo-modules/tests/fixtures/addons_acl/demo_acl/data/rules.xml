@@ -11,4 +11,26 @@
         <field name="perm_read" eval="True"/>
         <field name="perm_write" eval="True"/>
     </record>
+
+    <!-- A mesma regra dita como o Odoo dita: o modelo por `model_id`,
+         apontando para o `ir.model` que o próprio Odoo nunca declara à
+         mão (`ir.model._reflect` cria o external id `model_` + o nome com
+         os pontos virando underscore). -->
+    <record id="rule_own_docs_by_model_id" model="ir.rule">
+        <field name="name">Docs próprios (por model_id)</field>
+        <field name="model_id" ref="base.model_x_demo_doc"/>
+        <field name="domain_force">[('owner_id', '=', 'user.id')]</field>
+        <field name="groups" eval="[Command.link(ref('group_reader'))]"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    <!-- E uma regra sobre um modelo que este build não porta: pular não
+         abre linha nenhuma, porque não há linhas de um modelo que não
+         existe — é o único pulo que uma regra pode ter. -->
+    <record id="rule_on_a_model_we_do_not_have" model="ir.rule">
+        <field name="name">Sobre um modelo ausente</field>
+        <field name="model_id" ref="base.model_x_demo_absent"/>
+        <field name="domain_force">[('owner_id', '=', 'user.id')]</field>
+        <field name="perm_read" eval="True"/>
+    </record>
 </odoo>
