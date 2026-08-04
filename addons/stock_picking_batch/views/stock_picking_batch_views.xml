@@ -29,7 +29,7 @@
         <field name="model">stock.picking.batch</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="description" string="Description"/><field name="user_id" string="Responsible"/><field name="picking_count" string="Transfers"/></kanban></field>
+        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="description"/><field name="user_id"/><field name="picking_count"/><templates><t t-name="card"><field name="name"/><field name="description"/><field name="user_id"/><field name="picking_count"/></t></templates></kanban></field>
     </record>
 
     <!-- Batches and waves are one model; the two screens are one domain

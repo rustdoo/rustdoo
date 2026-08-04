@@ -35,7 +35,7 @@
         <field name="model">sale.order</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="partner_id" string="Cliente"/><field name="amount_total" string="Total"/><field name="date_order" string="Data"/></kanban></field>
+        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="partner_id"/><field name="amount_total"/><field name="date_order"/><templates><t t-name="card"><field name="name"/><field name="partner_id"/><field name="amount_total"/><field name="date_order"/></t></templates></kanban></field>
     </record>
 
     <record id="view_order_cancel_form" model="ir.ui.view">

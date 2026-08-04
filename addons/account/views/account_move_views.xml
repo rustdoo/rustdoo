@@ -35,6 +35,6 @@
         <field name="model">account.move</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="partner_id" string="Cliente"/><field name="amount_total" string="Total"/><field name="invoice_origin" string="Origem"/></kanban></field>
+        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="partner_id"/><field name="amount_total"/><field name="invoice_origin"/><templates><t t-name="card"><field name="name"/><field name="partner_id"/><field name="amount_total"/><field name="invoice_origin"/></t></templates></kanban></field>
     </record>
 </odoo>

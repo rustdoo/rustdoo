@@ -21,7 +21,7 @@
         <field name="model">maintenance.request</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban default_group_by="stage_id"><field name="name"/><field name="equipment_id" string="Equipamento"/><field name="maintenance_type" string="Tipo"/><field name="user_id" string="Responsável"/></kanban></field>
+        <field name="arch" type="xml"><kanban default_group_by="stage_id"><field name="name"/><field name="equipment_id"/><field name="maintenance_type"/><field name="user_id"/><templates><t t-name="card"><field name="name"/><field name="equipment_id"/><field name="maintenance_type"/><field name="user_id"/></t></templates></kanban></field>
     </record>
 
     <record id="action_requests" model="ir.actions.act_window">

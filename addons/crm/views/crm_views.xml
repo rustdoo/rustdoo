@@ -29,7 +29,7 @@
         <field name="model">crm.lead</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban default_group_by="stage_id"><field name="name"/><field name="partner_id" string="Cliente"/><field name="expected_revenue" string="Receita esperada"/><field name="user_id" string="Responsável"/></kanban></field>
+        <field name="arch" type="xml"><kanban default_group_by="stage_id"><field name="name"/><field name="partner_id"/><field name="expected_revenue"/><field name="user_id"/><templates><t t-name="card"><field name="name"/><field name="partner_id"/><field name="expected_revenue"/><field name="user_id"/></t></templates></kanban></field>
     </record>
 
     <record id="action_opportunities" model="ir.actions.act_window">

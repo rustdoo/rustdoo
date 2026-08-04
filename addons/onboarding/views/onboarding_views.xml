@@ -80,7 +80,7 @@
         <field name="model">onboarding.progress</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban default_group_by="onboarding_state"><field name="onboarding_id"/><field name="company_id" string="Empresa"/><field name="is_onboarding_closed" string="Fechado"/></kanban></field>
+        <field name="arch" type="xml"><kanban default_group_by="onboarding_state"><field name="onboarding_id"/><field name="company_id"/><field name="is_onboarding_closed"/><templates><t t-name="card"><field name="onboarding_id"/><field name="company_id"/><field name="is_onboarding_closed"/></t></templates></kanban></field>
     </record>
 
     <record id="action_onboarding" model="ir.actions.act_window">

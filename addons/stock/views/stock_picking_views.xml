@@ -57,6 +57,6 @@
         <field name="model">stock.picking</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="partner_id" string="Parceiro"/><field name="picking_type" string="Tipo"/><field name="origin" string="Origem"/></kanban></field>
+        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="partner_id"/><field name="picking_type"/><field name="origin"/><templates><t t-name="card"><field name="name"/><field name="partner_id"/><field name="picking_type"/><field name="origin"/></t></templates></kanban></field>
     </record>
 </odoo>

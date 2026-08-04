@@ -7,7 +7,7 @@
         <field name="model">res.partner</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban><field name="name"/><field name="function" string="Cargo"/><field name="email" string="E-mail"/><field name="phone" string="Telefone"/><field name="city" string="Cidade"/></kanban></field>
+        <field name="arch" type="xml"><kanban><field name="name"/><field name="function"/><field name="email"/><field name="phone"/><field name="city"/><templates><t t-name="card"><field name="name"/><field name="function"/><field name="email"/><field name="phone"/><field name="city"/></t></templates></kanban></field>
     </record>
 
     <record id="action_contacts" model="ir.actions.act_window">

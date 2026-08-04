@@ -29,7 +29,7 @@
         <field name="model">account.analytic.account</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban><field name="display_name"/><field name="plan_id" string="Plan"/><field name="balance" string="Balance"/></kanban></field>
+        <field name="arch" type="xml"><kanban><field name="display_name"/><field name="plan_id"/><field name="balance"/><templates><t t-name="card"><field name="display_name"/><field name="plan_id"/><field name="balance"/></t></templates></kanban></field>
     </record>
 
     <record id="action_account_analytic_account" model="ir.actions.act_window">

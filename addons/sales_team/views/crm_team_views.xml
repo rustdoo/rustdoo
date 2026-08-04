@@ -32,7 +32,7 @@
         <field name="model">crm.team</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban><field name="name"/><field name="user_id" string="Líder"/><field name="member_count" string="Vendedores"/></kanban></field>
+        <field name="arch" type="xml"><kanban><field name="name"/><field name="user_id"/><field name="member_count"/><templates><t t-name="card"><field name="name"/><field name="user_id"/><field name="member_count"/></t></templates></kanban></field>
     </record>
 
     <record id="crm_team_action" model="ir.actions.act_window">

@@ -29,7 +29,7 @@
         <field name="model">purchase.requisition</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="vendor_id" string="Vendor"/><field name="requisition_type" string="Type"/><field name="date_end" string="Valid to"/></kanban></field>
+        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="vendor_id"/><field name="requisition_type"/><field name="date_end"/><templates><t t-name="card"><field name="name"/><field name="vendor_id"/><field name="requisition_type"/><field name="date_end"/></t></templates></kanban></field>
     </record>
 
     <record id="action_purchase_requisition" model="ir.actions.act_window">

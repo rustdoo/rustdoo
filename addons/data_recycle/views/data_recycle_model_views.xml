@@ -30,7 +30,7 @@
         <field name="model">data_recycle.model</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban default_group_by="recycle_action"><field name="name"/><field name="res_model_name" string="Modelo"/><field name="records_to_recycle_count" string="A reciclar"/><field name="recycle_mode" string="Modo"/></kanban></field>
+        <field name="arch" type="xml"><kanban default_group_by="recycle_action"><field name="name"/><field name="res_model_name"/><field name="records_to_recycle_count"/><field name="recycle_mode"/><templates><t t-name="card"><field name="name"/><field name="res_model_name"/><field name="records_to_recycle_count"/><field name="recycle_mode"/></t></templates></kanban></field>
     </record>
 
     <record id="action_recycle_rules" model="ir.actions.act_window">

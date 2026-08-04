@@ -35,6 +35,6 @@
         <field name="model">purchase.order</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="partner_id" string="Fornecedor"/><field name="amount_total" string="Total"/></kanban></field>
+        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="partner_id"/><field name="amount_total"/><templates><t t-name="card"><field name="name"/><field name="partner_id"/><field name="amount_total"/></t></templates></kanban></field>
     </record>
 </odoo>

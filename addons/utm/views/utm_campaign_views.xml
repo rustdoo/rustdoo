@@ -31,7 +31,7 @@
         <field name="model">utm.campaign</field>
         <field name="type">kanban</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><kanban default_group_by="stage_id"><field name="title"/><field name="user_id" string="Responsável"/><field name="tag_ids" string="Etiquetas"/></kanban></field>
+        <field name="arch" type="xml"><kanban default_group_by="stage_id"><field name="title"/><field name="user_id"/><field name="tag_ids"/><templates><t t-name="card"><field name="title"/><field name="user_id"/><field name="tag_ids"/></t></templates></kanban></field>
     </record>
 
     <record id="utm_campaign_action" model="ir.actions.act_window">
