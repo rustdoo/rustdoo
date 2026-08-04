@@ -16,4 +16,16 @@
         <field name="sequence">20</field>
         <field name="action">product.action_products</field>
     </record>
+    <record id="menu_product_templates" model="ir.ui.menu">
+        <field name="name">Catálogo</field>
+        <field name="parent_id" ref="menu_sale_root"/>
+        <field name="sequence">30</field>
+        <field name="action">product.action_templates</field>
+    </record>
+    <record id="menu_product_categories" model="ir.ui.menu">
+        <field name="name">Categorias de produto</field>
+        <field name="parent_id" ref="menu_sale_root"/>
+        <field name="sequence">40</field>
+        <field name="action">product.action_categories</field>
+    </record>
 </odoo>

@@ -241,3 +241,102 @@ async fn a_search_orders_and_groups_by_the_templates_fields_live() {
 
     case.close().await;
 }
+
+/// Writing through the delegation is a write on the record that stores
+/// the value, and `ir.model.access` says so. A user who may edit variants
+/// does not get to rename the catalogue for free.
+#[tokio::test]
+async fn the_templates_own_access_is_checked_through_the_delegation_live() {
+    use rusdoo_orm::access::{AccessControl, Operation};
+
+    let Some(case) = TransactionCase::open("product_delegated_acl", &MODULES).await else {
+        return;
+    };
+    let registry = case.registry();
+    let pool = case.pool();
+
+    // a user who may read and write products, and only read templates
+    let group = registry
+        .create(&pool, "res.groups", vec![("name", json!("estoque"))])
+        .await
+        .unwrap();
+    let uid = registry
+        .create(
+            &pool,
+            "res.users",
+            vec![
+                ("name", json!("Bruna")),
+                ("login", json!("bruna")),
+                ("groups_id", json!([[4, group, 0]])),
+            ],
+        )
+        .await
+        .unwrap();
+    let mut access = AccessControl::new();
+    access.grant(
+        "product.product",
+        group,
+        &[Operation::Read, Operation::Write, Operation::Create],
+    );
+    access.grant("product.template", group, &[Operation::Read]);
+    let service = rusdoo_http::dispatch::OrmService::new(registry, pool).with_access(access);
+
+    // seeded as the superuser, who bypasses the ACL like Odoo's uid 1
+    let id = call(
+        &service,
+        "product.product",
+        "create",
+        json!([{"name": "Prateleira", "standard_price": 40.0}]),
+    )
+    .await
+    .as_i64()
+    .unwrap();
+
+    // her own field: allowed
+    service
+        .call_kw(
+            uid,
+            "product.product",
+            "write",
+            &[json!([id]), json!({"standard_price": 45.0})],
+            &Default::default(),
+        )
+        .await
+        .expect("the cost is the variant's own");
+
+    // the template's field through the same call: refused
+    let refused = service
+        .call_kw(
+            uid,
+            "product.product",
+            "write",
+            &[json!([id]), json!({"name": "Prateleira grande"})],
+            &Default::default(),
+        )
+        .await;
+    let message = refused.expect_err("renaming needs write on the template").message;
+    assert!(
+        message.contains("product.template"),
+        "the refusal names the model that refused: {message}"
+    );
+
+    // and creating a variant creates a template, which she may not do
+    let refused = service
+        .call_kw(
+            uid,
+            "product.product",
+            "create",
+            &[json!({"name": "Banqueta"})],
+            &Default::default(),
+        )
+        .await;
+    let message = refused
+        .expect_err("creating a product creates its template")
+        .message;
+    assert!(
+        message.contains("product.template"),
+        "the refusal names the model that refused: {message}"
+    );
+
+    case.close().await;
+}

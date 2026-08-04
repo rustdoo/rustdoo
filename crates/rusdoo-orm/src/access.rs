@@ -310,3 +310,48 @@ fn collect_x2many_operations(
     }
     Ok(())
 }
+
+/// The `(parent model, operation)` pairs implied by writing or creating
+/// through `_inherits` delegation.
+///
+/// A product's name is stored on its template, so writing it through the
+/// variant updates a `product.template` row and creating a variant
+/// creates one. Odoo performs those on the parent record and checks
+/// `ir.model.access` there; checking only the called model would let a
+/// user who may edit variants rename, and create, records of a model they
+/// have no rights on.
+///
+/// `op` is what the caller is doing to `model_name`: `Create` or `Write`.
+/// A create that supplies the link field reuses an existing parent and
+/// only writes it — the same distinction the create path itself makes.
+pub fn delegated_operations(
+    registry: &Registry,
+    model_name: &str,
+    values: &Map<String, Value>,
+    op: Operation,
+) -> Result<Vec<(String, Operation)>, RusdooError> {
+    let model = registry
+        .get(model_name)
+        .ok_or_else(|| RusdooError::Validation(format!("unknown model: {model_name}")))?;
+    let mut found: HashSet<(String, Operation)> = HashSet::new();
+    for (parent_name, link) in &model.meta.inherits {
+        let Some(parent) = registry.get(parent_name) else {
+            continue;
+        };
+        let touched = values
+            .keys()
+            .any(|name| model.field(name).is_none() && registry.field_of(parent, name).is_some());
+        match op {
+            // a create makes the parent row, unless the caller pointed at
+            // one that already exists
+            Operation::Create if !values.contains_key(link.as_str()) => {
+                found.insert((parent_name.clone(), Operation::Create));
+            }
+            _ if touched => {
+                found.insert((parent_name.clone(), Operation::Write));
+            }
+            _ => {}
+        }
+    }
+    Ok(found.into_iter().collect())
+}

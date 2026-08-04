@@ -239,6 +239,48 @@ impl OrmService {
         Ok(())
     }
 
+    /// Enforce access on the `_inherits` parents a create or a write
+    /// reaches: writing a product's name writes its template's row, and
+    /// creating a product creates one. Odoo checks the parent model
+    /// there, and so does this.
+    pub(crate) fn check_delegated_access(
+        &self,
+        ident: &crate::session::Session,
+        model: &str,
+        values: &Map<String, Value>,
+        op: rusdoo_orm::access::Operation,
+    ) -> Result<(), RpcError> {
+        if !self.require_auth {
+            return Ok(());
+        }
+        for (parent, parent_op) in
+            rusdoo_orm::access::delegated_operations(&self.registry, model, values, op)?
+        {
+            self.check_operation(&parent, parent_op, ident)?;
+        }
+        Ok(())
+    }
+
+    /// [`Self::check_delegated_access`] for callers that hold no identity
+    /// yet — resolving one costs a query, so a model that delegates
+    /// nothing never pays it.
+    pub(crate) async fn check_delegated_access_as(
+        &self,
+        uid: i64,
+        model: &str,
+        values: &Map<String, Value>,
+        op: rusdoo_orm::access::Operation,
+    ) -> Result<(), RpcError> {
+        if !self.require_auth
+            || rusdoo_orm::access::delegated_operations(&self.registry, model, values, op)?
+                .is_empty()
+        {
+            return Ok(());
+        }
+        let ident = self.identity(uid).await;
+        self.check_delegated_access(&ident, model, values, op)
+    }
+
     /// [`Self::check_command_access`] for callers that hold no identity
     /// yet: resolving one costs a query, so it is only built when the
     /// values actually carry commands.
@@ -1089,6 +1131,8 @@ impl OrmService {
                 let mut values = parse_values(args.first())?;
                 hash_credentials(model, &mut values)?;
                 self.check_command_access_as(uid, model, &values).await?;
+                self.check_delegated_access_as(uid, model, &values, Operation::Create)
+                    .await?;
                 let pairs: Vec<(&str, Value)> = values
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
@@ -1110,6 +1154,8 @@ impl OrmService {
                 let mut values = parse_values(args.get(1))?;
                 hash_credentials(model, &mut values)?;
                 self.check_command_access_as(uid, model, &values).await?;
+                self.check_delegated_access_as(uid, model, &values, Operation::Write)
+                    .await?;
                 let pairs: Vec<(&str, Value)> = values
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
@@ -1366,6 +1412,16 @@ impl OrmService {
                         .await?;
                 }
                 self.check_command_access(&ident, model, &values)?;
+                self.check_delegated_access(
+                    &ident,
+                    model,
+                    &values,
+                    if ids.is_empty() {
+                        Operation::Create
+                    } else {
+                        Operation::Write
+                    },
+                )?;
                 let pairs: Vec<(&str, Value)> = values
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))

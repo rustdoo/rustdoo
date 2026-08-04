@@ -1,21 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data noupdate="1">
+        <record id="category_all" model="product.category">
+            <field name="name">Todos</field>
+        </record>
+        <record id="category_furniture" model="product.category">
+            <field name="name">Móveis</field>
+            <field name="parent_id" ref="category_all"/>
+        </record>
+        <record id="category_services" model="product.category">
+            <field name="name">Serviços</field>
+            <field name="parent_id" ref="category_all"/>
+        </record>
+
+        <!-- created through the variant, which is how every caller does
+             it: the template is born with it and holds the name, the
+             category and the sales price. -->
         <record id="product_desk" model="product.product">
             <field name="name">Mesa de escritório</field>
             <field name="default_code">MOB-001</field>
+            <field name="categ_id" ref="category_furniture"/>
             <field name="list_price">1250.00</field>
             <field name="standard_price">700.00</field>
         </record>
         <record id="product_chair" model="product.product">
             <field name="name">Cadeira ergonômica</field>
             <field name="default_code">MOB-002</field>
+            <field name="categ_id" ref="category_furniture"/>
             <field name="list_price">890.50</field>
             <field name="standard_price">520.00</field>
         </record>
         <record id="product_setup" model="product.product">
             <field name="name">Montagem e instalação</field>
             <field name="default_code">SRV-001</field>
+            <field name="categ_id" ref="category_services"/>
             <field name="type">service</field>
             <field name="list_price">300.00</field>
         </record>
