@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="purchase_requisition_create_alternative_form" model="ir.ui.view">
+        <field name="name">purchase.requisition.create.alternative.form</field>
+        <field name="model">purchase.requisition.create.alternative</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_create_alternative" type="object" string="Create alternatives" class="btn-primary"/><group><field name="origin_po_id" string="Original request for quotation" readonly="1"/><field name="partner_ids" string="Vendors to ask"/><field name="copy_products" string="Copy the products"/></group></form></field>
+    </record>
+
+    <record id="purchase_requisition_alternative_warning_form" model="ir.ui.view">
+        <field name="name">purchase.requisition.alternative.warning.form</field>
+        <field name="model">purchase.requisition.alternative.warning</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_keep_alternatives" type="object" string="Keep the alternatives" class="btn-primary"/><button name="action_cancel_alternatives" type="object" string="Cancel the alternatives"/><group><field name="po_ids" string="To confirm" readonly="1"/><field name="alternative_po_ids" string="Still open" readonly="1"/></group></form></field>
+    </record>
+</odoo>

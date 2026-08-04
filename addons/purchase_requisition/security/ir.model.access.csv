@@ -1,0 +1,9 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_purchase_requisition_user,agreement buyer,purchase.requisition,purchase.group_purchase_user,1,1,1,0
+access_purchase_requisition_manager,agreement manager,purchase.requisition,purchase.group_purchase_manager,1,1,1,1
+access_purchase_requisition_line_user,agreement line buyer,purchase.requisition.line,purchase.group_purchase_user,1,1,1,1
+access_purchase_requisition_line_manager,agreement line manager,purchase.requisition.line,purchase.group_purchase_manager,1,1,1,1
+access_purchase_order_group_user,tender group buyer,purchase.order.group,purchase.group_purchase_user,1,1,1,1
+access_purchase_order_group_manager,tender group manager,purchase.order.group,purchase.group_purchase_manager,1,1,1,1
+access_purchase_requisition_create_alternative_user,create alternative dialog,purchase.requisition.create.alternative,purchase.group_purchase_user,1,1,1,1
+access_purchase_requisition_alternative_warning_user,alternative warning dialog,purchase.requisition.alternative.warning,purchase.group_purchase_user,1,1,1,1

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_purchase_requisition_list" model="ir.ui.view">
+        <field name="name">purchase.requisition.list</field>
+        <field name="model">purchase.requisition</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Agreement"/><field name="vendor_id" string="Vendor"/><field name="requisition_type" string="Type"/><field name="user_id" string="Buyer"/><field name="date_start" string="From"/><field name="date_end" string="To"/><field name="reference" string="Reference"/><field name="state" string="Status"/></list></field>
+    </record>
+
+    <record id="view_purchase_requisition_form" model="ir.ui.view">
+        <field name="name">purchase.requisition.form</field>
+        <field name="model">purchase.requisition</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_confirm" type="object" string="Confirm" class="btn-primary"/><button name="action_create_rfq" type="object" string="New Quotation" class="btn-primary"/><button name="action_done" type="object" string="Close"/><button name="action_draft" type="object" string="Reset to Draft"/><button name="action_cancel" type="object" string="Cancel"/><group><field name="name" string="Agreement"/><field name="requisition_type" string="Agreement Type"/><field name="vendor_id" string="Vendor"/><field name="user_id" string="Buyer"/></group><group><field name="state" string="Status"/><field name="date_start" string="Valid from"/><field name="date_end" string="Valid to"/><field name="reference" string="Reference"/><field name="company_id" string="Company"/><field name="order_count" string="RFQs/Orders"/></group><field name="line_ids" string="Products to Purchase"><list><field name="product_id" string="Product"/><field name="product_description_variants" string="Description"/><field name="product_qty" string="Quantity"/><field name="product_uom_id" string="Unit"/><field name="price_unit" string="Unit Price"/></list></field><group><field name="description" string="Terms and Conditions"/></group><field name="purchase_ids" string="Requests for Quotation"><list><field name="name" string="Number"/><field name="partner_id" string="Vendor"/><field name="date_order" string="Date"/><field name="state" string="Status"/><field name="amount_total" string="Total"/></list></field></form></field>
+    </record>
+
+    <record id="view_purchase_requisition_search" model="ir.ui.view">
+        <field name="name">purchase.requisition.search</field>
+        <field name="model">purchase.requisition</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="reference"/><field name="vendor_id"/><filter name="blanket_order" string="Blanket Orders" domain="[[&quot;requisition_type&quot;, &quot;=&quot;, &quot;blanket_order&quot;]]"/><filter name="purchase_template" string="Purchase Templates" domain="[[&quot;requisition_type&quot;, &quot;=&quot;, &quot;purchase_template&quot;]]"/><filter name="draft" string="Draft" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;draft&quot;]]"/><filter name="confirmed" string="Confirmed" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;confirmed&quot;]]"/><filter name="done" string="Closed" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;done&quot;]]"/><groupby name="state" string="Status"/><groupby name="vendor_id" string="Vendor"/><groupby name="user_id" string="Buyer"/></search></field>
+    </record>
+
+    <record id="view_purchase_requisition_kanban" model="ir.ui.view">
+        <field name="name">purchase.requisition.kanban</field>
+        <field name="model">purchase.requisition</field>
+        <field name="type">kanban</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="vendor_id" string="Vendor"/><field name="requisition_type" string="Type"/><field name="date_end" string="Valid to"/></kanban></field>
+    </record>
+
+    <record id="action_purchase_requisition" model="ir.actions.act_window">
+        <field name="name">Purchase Agreements</field>
+        <field name="res_model">purchase.requisition</field>
+        <field name="view_mode">list,kanban,form</field>
+    </record>
+</odoo>

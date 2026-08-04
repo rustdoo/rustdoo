@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_purchase_requisition" model="ir.ui.menu">
+        <field name="name">Purchase Agreements</field>
+        <field name="parent_id" ref="purchase.menu_purchase_root"/>
+        <field name="sequence">20</field>
+        <field name="action">purchase_requisition.action_purchase_requisition</field>
+    </record>
+    <record id="menu_purchase_order_alternatives" model="ir.ui.menu">
+        <field name="name">Calls for Tender</field>
+        <field name="parent_id" ref="purchase.menu_purchase_root"/>
+        <field name="sequence">30</field>
+        <field name="action">purchase_requisition.action_purchase_order_alternatives</field>
+    </record>
+</odoo>

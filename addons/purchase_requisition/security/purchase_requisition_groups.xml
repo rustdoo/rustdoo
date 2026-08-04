@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- The switch that shows the call-for-tender buttons on a
+             request for quotation. Odoo implies it from a setting in
+             `res.config.settings`; that model is not ported, so the
+             group is granted by hand like any other. -->
+        <record id="group_purchase_alternatives" model="res.groups">
+            <field name="name">Purchase: manage alternatives</field>
+            <field name="category">Purchase</field>
+            <field name="comment">Asks several vendors for the same thing and compares the offers.</field>
+        </record>
+    </data>
+</odoo>

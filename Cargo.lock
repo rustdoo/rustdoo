@@ -1690,6 +1690,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-purchase-requisition"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusdoo-account",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "rusdoo-product",
+ "rusdoo-purchase",
+ "rusdoo-stock",
+ "rusdoo-testing",
+ "rusdoo-uom",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-python"
 version = "0.1.0"
 dependencies = [
@@ -1812,6 +1831,7 @@ dependencies = [
  "rusdoo-orm",
  "rusdoo-product",
  "rusdoo-purchase",
+ "rusdoo-purchase-requisition",
  "rusdoo-qweb",
  "rusdoo-rating",
  "rusdoo-resource",
@@ -1888,6 +1908,7 @@ dependencies = [
  "rusdoo-orm",
  "rusdoo-product",
  "rusdoo-purchase",
+ "rusdoo-purchase-requisition",
  "rusdoo-resource",
  "rusdoo-sale",
  "rusdoo-sale-purchase",

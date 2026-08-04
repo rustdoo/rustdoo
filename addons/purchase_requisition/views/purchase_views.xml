@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- A patch of `purchase`'s form, not a copy of it: whoever changes
+         the form over there does not have to remember this file. -->
+    <record id="view_purchase_form_requisition" model="ir.ui.view">
+        <field name="name">purchase.order.form.requisition</field>
+        <field name="model">purchase.order</field>
+        <field name="type">form</field>
+        <field name="inherit_id" ref="purchase.view_purchase_form"/>
+        <field name="arch" type="xml"><data><xpath expr="//button[@name='action_confirm']" position="after"><button name="button_confirm" type="object" string="Confirm" class="btn-primary"/><button name="action_create_alternative" type="object" string="Ask another vendor" groups="purchase_requisition.group_purchase_alternatives"/><button name="action_compare_alternative_lines" type="object" string="Compare offers" groups="purchase_requisition.group_purchase_alternatives"/><button name="action_remove_from_group" type="object" string="Leave the tender" groups="purchase_requisition.group_purchase_alternatives"/></xpath><xpath expr="//field[@name='partner_ref']" position="after"><field name="requisition_id" string="Agreement"/><field name="requisition_type" string="Agreement Type" readonly="1"/><field name="alternative_po_ids" string="Alternative RFQs" readonly="1" groups="purchase_requisition.group_purchase_alternatives"/></xpath></data></field>
+    </record>
+
+    <record id="action_purchase_order_alternatives" model="ir.actions.act_window">
+        <field name="name">Calls for Tender</field>
+        <field name="res_model">purchase.order</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[["purchase_group_id", "!=", false]]</field>
+    </record>
+</odoo>
