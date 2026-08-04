@@ -6,6 +6,8 @@
 //! are code. The split is the same here — this crate is the code, and
 //! `addons/base/` is the data.
 
+pub mod settings;
+
 use rusdoo_core::RusdooError;
 use rusdoo_orm::access::Operation;
 use rusdoo_orm::fields::{Field, FieldType, OnDelete};
@@ -17,11 +19,11 @@ use serde_json::{json, Map, Value};
 /// The uid of the superuser (`base.user_root`), which bypasses the ACL.
 pub const SUPERUSER_ID: i64 = 1;
 
-fn char(name: &str) -> Field {
+pub(crate) fn char(name: &str) -> Field {
     Field::new(name, FieldType::Char { size: None })
 }
 
-fn m2o(name: &str, comodel: &str) -> Field {
+pub(crate) fn m2o(name: &str, comodel: &str) -> Field {
     Field::new(
         name,
         FieldType::Many2one {
@@ -30,7 +32,7 @@ fn m2o(name: &str, comodel: &str) -> Field {
     )
 }
 
-fn meta(name: &str, table: &str) -> ModelMeta {
+pub(crate) fn meta(name: &str, table: &str) -> ModelMeta {
     ModelMeta {
         name: name.to_string(),
         table: table.to_string(),
@@ -65,6 +67,7 @@ const TRANSIENT_MAX_HOURS: i64 = 12;
 /// The methods the framework itself schedules.
 pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
     methods.register("ir.autovacuum", "power_on", Operation::Unlink, power_on)?;
+    settings::extend_methods(methods)?;
     methods.register(
         "ir.module.module",
         "button_immediate_install",
@@ -224,6 +227,7 @@ fn models() -> Vec<Model> {
         model_data(),
         model_access(),
         record_rule(),
+        settings::settings(),
     ]
 }
 

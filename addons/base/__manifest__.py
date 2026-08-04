@@ -17,6 +17,7 @@
         'views/ir_module_views.xml',
         'views/ir_technical_views.xml',
         'views/ir_technical_menus.xml',
+        'views/res_config_settings_views.xml',
     ],
     'installable': True,
     'auto_install': True,

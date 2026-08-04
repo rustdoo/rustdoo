@@ -20,9 +20,15 @@ const PROTOCOL_VERSION: &str = "19.0";
 const DEFAULT_LANG: &str = "en_US";
 
 /// Odoo's own defaults for the two limits the client reads out of
-/// `ir.config_parameter`, which is not ported yet.
+/// `ir.config_parameter`. They are fallbacks now, not constants: a
+/// database that sets the parameter gets its own value, which is what
+/// the Settings screen writes.
 const MAX_FILE_UPLOAD_SIZE: i64 = 128 * 1024 * 1024;
 const ACTIVE_IDS_LIMIT: i64 = 20_000;
+
+/// The keys Odoo reads them under (`ir.http.session_info`).
+pub const MAX_FILE_UPLOAD_SIZE_KEY: &str = "web.max_file_upload_size";
+pub const ACTIVE_IDS_LIMIT_KEY: &str = "web.active_ids_limit";
 
 /// The view types the client can draw, with the icon and the arity Odoo
 /// gives each — port of `addons/web/models/ir_ui_view.py::_get_view_info`
@@ -96,6 +102,19 @@ impl OrmService {
             });
         };
         let is_superuser = session.uid == SUPERUSER_ID;
+        // read per request, like Odoo: an administrator who raises the
+        // upload limit should not have to restart the server for it
+        let limit = |key: &'static str, fallback: i64| async move {
+            self.registry
+                .get_param(&self.pool, key)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|value| value.trim().parse::<i64>().ok())
+                .unwrap_or(fallback)
+        };
+        let max_upload = limit(MAX_FILE_UPLOAD_SIZE_KEY, MAX_FILE_UPLOAD_SIZE).await;
+        let active_ids_limit = limit(ACTIVE_IDS_LIMIT_KEY, ACTIVE_IDS_LIMIT).await;
         let (lang, tz) = self.user_locale(session.uid).await;
         // `name` is the person, `username` is what they type to log in —
         // Odoo's session_info keeps them apart, and the navbar shows the
@@ -132,8 +151,8 @@ impl OrmService {
             "name": name,
             "username": session.login,
             "partner_id": Value::Null,
-            "max_file_upload_size": MAX_FILE_UPLOAD_SIZE,
-            "active_ids_limit": ACTIVE_IDS_LIMIT,
+            "max_file_upload_size": max_upload,
+            "active_ids_limit": active_ids_limit,
             // The company switcher is drawn on every page of the backend
             // and reads these without checking: no `user_companies` is a
             // client that renders its navbar and throws.

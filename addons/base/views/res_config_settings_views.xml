@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A tela que todo mundo chama de "Configurações": uma página de
+     interruptores, um botão Salvar, e nada guardado. O registro existe
+     pelo tempo de uma visita; o que sobrevive é o que o Salvar escreve. -->
+<odoo>
+    <record id="view_res_config_settings_form" model="ir.ui.view">
+        <field name="name">res.config.settings.form</field>
+        <field name="model">res.config.settings</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group string="Aplicativos"><field name="module_crm" string="CRM"/><field name="module_project" string="Projetos"/><field name="module_hr" string="Funcionários"/><field name="module_maintenance" string="Manutenção"/><field name="module_fleet" string="Frota"/><field name="module_lunch" string="Almoço"/><field name="module_contacts" string="Contatos"/><field name="module_stock" string="Estoque"/></group><group string="Limites do cliente"><field name="max_file_upload_size" string="Tamanho máximo de upload (bytes)"/><field name="active_ids_limit" string="Limite de registros selecionados"/></group><footer><button name="execute" type="object" string="Salvar" class="btn-primary"/></footer></form></field>
+    </record>
+
+    <record id="action_res_config_settings" model="ir.actions.act_window">
+        <field name="name">Configurações gerais</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">inline</field>
+    </record>
+
+    <record id="menu_res_config_settings" model="ir.ui.menu">
+        <field name="name">Configurações gerais</field>
+        <field name="parent_id" ref="base.menu_settings_root"/>
+        <field name="sequence">1</field>
+        <field name="action">base.action_res_config_settings</field>
+    </record>
+</odoo>
