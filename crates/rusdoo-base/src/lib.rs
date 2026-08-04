@@ -8,7 +8,7 @@
 
 use rusdoo_core::RusdooError;
 use rusdoo_orm::access::Operation;
-use rusdoo_orm::fields::{Field, FieldType};
+use rusdoo_orm::fields::{Field, FieldType, OnDelete};
 use rusdoo_orm::methods::{MethodCtx, MethodFuture, MethodRegistry};
 use rusdoo_orm::model::{Model, ModelMeta};
 use rusdoo_orm::registry::Registry;
@@ -65,7 +65,104 @@ const TRANSIENT_MAX_HOURS: i64 = 12;
 /// The methods the framework itself schedules.
 pub fn extend_methods(methods: &mut MethodRegistry) -> Result<(), RusdooError> {
     methods.register("ir.autovacuum", "power_on", Operation::Unlink, power_on)?;
+    methods.register(
+        "ir.module.module",
+        "button_immediate_install",
+        Operation::Write,
+        button_immediate_install,
+    )?;
     Ok(())
+}
+
+/// `button_immediate_install` — the Install button of the Apps screen.
+///
+/// In Odoo this loads the module's Python and rebuilds the live registry
+/// inside the request, so the screen comes back with the app running.
+/// Here the models are compiled into the binary: a module the running
+/// registry does not have cannot grow one at runtime. So the button does
+/// the half that *is* honest — it records the decision, in the database,
+/// where the next boot reads it — and says plainly that the server has to
+/// come back for the models.
+///
+/// It refuses one thing and warns about another. A module whose manifest
+/// says it is not installable is on disk and out of reach on purpose, and
+/// that is a refusal. A module this build carries no *models* for is a
+/// different matter: plenty of addons are data only — views, menus,
+/// access rules over models another module declares — and those install
+/// perfectly. So it is accepted with a warning, and the boot is what
+/// decides: what it cannot create it skips, and the log names it.
+fn button_immediate_install<'a>(
+    ctx: MethodCtx<'a>,
+    _args: &'a [Value],
+    _kwargs: &'a Map<String, Value>,
+) -> MethodFuture<'a> {
+    Box::pin(async move {
+        if ctx.ids.is_empty() {
+            return Err(RusdooError::Validation("say which module to install".into()));
+        }
+        let rows = ctx
+            .registry
+            .read(
+                ctx.pool,
+                "ir.module.module",
+                &ctx.ids,
+                &["name", "state", "installable", "has_code"],
+            )
+            .await?;
+        let mut asked = Vec::new();
+        let mut warned = false;
+        for row in &rows {
+            let name = row.get("name").and_then(Value::as_str).unwrap_or("?");
+            if row.get("state").and_then(Value::as_str) == Some("installed") {
+                continue;
+            }
+            if row.get("installable").and_then(Value::as_bool) != Some(true) {
+                return Err(RusdooError::Validation(format!(
+                    "module {name:?} says it is not installable"
+                )));
+            }
+            if row.get("has_code").and_then(Value::as_bool) != Some(true) {
+                // not a refusal: a data-only addon needs no models of its
+                // own, and this is most of what a real tree ships
+                tracing::warn!(
+                    "module {name:?} has no compiled models in this build — \
+                     installing it will load its data; anything it declares that \
+                     needs a model this server does not have will be skipped and logged"
+                );
+                warned = true;
+            }
+            asked.push(row.get("id").and_then(Value::as_i64).unwrap_or_default());
+        }
+        if asked.is_empty() {
+            return Ok(json!({"already_installed": true}));
+        }
+        ctx.registry
+            .write_as(
+                ctx.pool,
+                ctx.uid,
+                "ir.module.module",
+                &asked,
+                vec![("state", json!("to install"))],
+            )
+            .await?;
+        Ok(json!({
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "type": "info",
+                "title": "Marcado para instalar",
+                "message": if warned {
+                    "O módulo entra no ar quando o servidor reiniciar. Este servidor \
+                     não traz modelos compilados para ele: os dados serão carregados, \
+                     e o que precisar de um modelo ausente é pulado e registrado no log."
+                } else {
+                    "O módulo entra no ar quando o servidor reiniciar: os modelos são \
+                     código compilado, e é o boot que os registra."
+                },
+                "sticky": true,
+            },
+        }))
+    })
 }
 
 /// `power_on` — delete the transient rows nobody came back to.
@@ -119,7 +216,102 @@ fn models() -> Vec<Model> {
         cron(),
         autovacuum(),
         ui_menu(),
+        module(),
+        module_dependency(),
     ]
+}
+
+/// The states a module is in, and the one that makes the screen useful.
+///
+/// Odoo's list, minus what this port cannot honour: `to remove`, because
+/// taking a module's data back out is a slice of its own, and
+/// `to upgrade`, which needs a version comparison and a data reload that
+/// knows what to overwrite.
+///
+/// **`to install` is not a formality here, it is the mechanism.** In
+/// Odoo, installing loads the module's Python and rebuilds the live
+/// registry in the same request. In this port the models are compiled
+/// into the binary, so a module that is not in the running registry
+/// cannot grow one at runtime: the button records the decision, and the
+/// next boot honours it — registering the models, creating the tables
+/// and loading the data. The database is what remembers, which is also
+/// what this port was missing: until now the installed set lived in an
+/// environment variable and nothing wrote it down.
+fn module_states() -> FieldType {
+    FieldType::Selection(vec![
+        ("uninstalled".into(), "Not Installed".into()),
+        ("to install".into(), "To be installed".into()),
+        ("installed".into(), "Installed".into()),
+    ])
+}
+
+/// `ir.module.module` — one row per addon found on disk.
+///
+/// Port of `odoo/addons/base/models/ir_module.py`, the part a person
+/// uses: what the module is called, what it does, whether it is on, and
+/// what it needs. The rows are not data anybody types — every boot
+/// rewrites them from the manifests on disk, because the disk is the
+/// truth about what exists and the database is the truth about what is
+/// running.
+fn module() -> Model {
+    Model::new(
+        meta("ir.module.module", "ir_module_module"),
+        vec![
+            // the directory name, which is what every dependency names
+            char("name").required(),
+            // the manifest's `name`, which is what a person reads
+            char("shortdesc"),
+            Field::new("state", module_states())
+                .required()
+                .default_value(json!("uninstalled")),
+            char("latest_version"),
+            char("author"),
+            char("website"),
+            char("category"),
+            char("summary"),
+            Field::new("description", FieldType::Text),
+            // Odoo shows applications apart from the technical modules
+            // they pull in, and so should any screen over this
+            Field::new("application", FieldType::Boolean).default_value(json!(false)),
+            Field::new("auto_install", FieldType::Boolean).default_value(json!(false)),
+            // a module whose manifest says it is not installable is on
+            // disk and out of reach: the screen has to say why
+            Field::new("installable", FieldType::Boolean).default_value(json!(true)),
+            // whether this build has the module's code compiled in. The
+            // honest column: an addon can be on disk, with data files and
+            // a manifest, and still have no models here.
+            Field::new("has_code", FieldType::Boolean).default_value(json!(false)),
+            Field::new(
+                "dependencies_id",
+                FieldType::One2many {
+                    comodel: "ir.module.module.dependency".into(),
+                    inverse: "module_id".into(),
+                },
+            ),
+        ],
+    )
+    .sql_constrained(
+        "ir_module_module_name_uniq",
+        r#"UNIQUE ("name")"#,
+        "a module is named once",
+    )
+    // applications first, then by name: the same order the Apps screen
+    // reads in Odoo
+    .ordered("application desc, shortdesc, name, id")
+}
+
+/// `ir.module.module.dependency` — what a module needs before it can
+/// run. A model of its own, as in Odoo, because a dependency is a row a
+/// screen shows and a search filters on, not a string somebody parses.
+fn module_dependency() -> Model {
+    Model::new(
+        meta("ir.module.module.dependency", "ir_module_module_dependency"),
+        vec![
+            char("name").required(),
+            m2o("module_id", "ir.module.module").ondelete(OnDelete::Cascade),
+        ],
+    )
+    .ordered("name, id")
 }
 
 /// `res.lang` — the languages a database answers in.

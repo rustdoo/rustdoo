@@ -24,3 +24,7 @@ access_ir_attachment_system,anexos admin,ir.attachment,group_system,1,1,1,1
 access_ir_cron_system,ir.cron admin,ir.cron,group_system,1,1,1,1
 access_res_lang_user,res.lang leitura,res.lang,group_user,1,0,0,0
 access_res_lang_system,res.lang admin,res.lang,group_system,1,1,1,1
+access_ir_module_module_user,módulo usuário,ir.module.module,base.group_user,1,0,0,0
+access_ir_module_module_system,módulo admin,ir.module.module,base.group_system,1,1,1,0
+access_ir_module_dependency_user,dependência usuário,ir.module.module.dependency,base.group_user,1,0,0,0
+access_ir_module_dependency_system,dependência admin,ir.module.module.dependency,base.group_system,1,1,1,1

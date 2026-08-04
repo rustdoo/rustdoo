@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A tela de Aplicativos. As linhas não são dados que alguém digita:
+     todo boot as reescreve a partir dos manifests do disco, porque o
+     disco é a verdade sobre o que existe e o banco é a verdade sobre o
+     que está no ar. -->
+<odoo>
+    <record id="view_module_list" model="ir.ui.view">
+        <field name="name">ir.module.module.list</field>
+        <field name="model">ir.module.module</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="shortdesc" string="Aplicativo"/><field name="name" string="Nome técnico"/><field name="category" string="Categoria"/><field name="latest_version" string="Versão"/><field name="state" string="Situação"/><field name="has_code" string="Código neste servidor"/></list></field>
+    </record>
+
+    <record id="view_module_form" model="ir.ui.view">
+        <field name="name">ir.module.module.form</field>
+        <field name="model">ir.module.module</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="shortdesc" string="Aplicativo"/><field name="name" string="Nome técnico"/><field name="category" string="Categoria"/><field name="latest_version" string="Versão"/><field name="application" string="É um aplicativo"/></group><group><field name="state" string="Situação"/><field name="installable" string="Instalável"/><field name="auto_install" string="Instala junto"/><field name="has_code" string="Código neste servidor"/><field name="summary" string="Resumo"/></group><field name="dependencies_id"><list><field name="name" string="Depende de"/></list></field><field name="description" string="Descrição"/></form></field>
+    </record>
+
+    <record id="view_module_search" model="ir.ui.view">
+        <field name="name">ir.module.module.search</field>
+        <field name="model">ir.module.module</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="shortdesc"/><field name="name"/><field name="category"/><filter name="installed" string="Instalados" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;installed&quot;]]"/><filter name="to_install" string="A instalar" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;to install&quot;]]"/><filter name="apps" string="Aplicativos" domain="[[&quot;application&quot;, &quot;=&quot;, true]]"/><filter name="portable" string="Com código aqui" domain="[[&quot;has_code&quot;, &quot;=&quot;, true]]"/><groupby name="category" string="Categoria"/><groupby name="state" string="Situação"/></search></field>
+    </record>
+
+    <record id="action_modules" model="ir.actions.act_window">
+        <field name="name">Aplicativos</field>
+        <field name="res_model">ir.module.module</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="menu_modules" model="ir.ui.menu">
+        <field name="name">Aplicativos</field>
+        <field name="parent_id" ref="base.menu_settings_root"/>
+        <field name="sequence">5</field>
+        <field name="action">base.action_modules</field>
+    </record>
+</odoo>

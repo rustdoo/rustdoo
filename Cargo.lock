@@ -1727,6 +1727,7 @@ dependencies = [
  "csv",
  "quick-xml",
  "regex",
+ "rusdoo-base",
  "rusdoo-core",
  "rusdoo-orm",
  "rusdoo-python",

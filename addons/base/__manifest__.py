@@ -14,6 +14,7 @@
         'views/res_company_views.xml',
         'views/res_users_views.xml',
         'views/menus.xml',
+        'views/ir_module_views.xml',
     ],
     'installable': True,
     'auto_install': True,

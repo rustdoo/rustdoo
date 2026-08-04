@@ -48,8 +48,22 @@ async fn main() -> anyhow::Result<()> {
     // The tree is read once, here, and every step below works off this
     // list — a reference clone has 652 manifests, and parsing them four
     // times is four times the boot.
+    // everything on disk, installed or not: the catalogue screen exists
+    // to show the difference, and the install set is a slice of this
+    let discovered = if has_addons {
+        rusdoo_modules::loader::discover_addons(&roots)?
+    } else {
+        Vec::new()
+    };
+    // what somebody asked for through the Apps screen, which the database
+    // remembers between boots — read before there is a registry, because
+    // it decides which models the registry gets
+    let asked_for = rusdoo_modules::catalogue::wanted_modules(&pool).await;
+    if !asked_for.is_empty() {
+        tracing::info!("the catalogue asks for: {}", asked_for.join(", "));
+    }
     let manifests = if has_addons {
-        install_set(rusdoo_modules::loader::discover_addons(&roots)?)?
+        install_set(discovered.clone(), &asked_for)?
     } else {
         Vec::new()
     };
@@ -109,6 +123,24 @@ async fn main() -> anyhow::Result<()> {
             // of the screen.
             let company = xml_ids.get("base.main_company").map(|(_, id)| *id);
             seed_admin(&registry, &pool, &groups, company).await?;
+
+            // and the catalogue the Apps screen reads: every manifest on
+            // disk becomes a row, this boot's set is marked installed,
+            // and what has no code in this build says so
+            let installed: std::collections::HashSet<String> =
+                report.modules.iter().map(|(name, _)| name.clone()).collect();
+            let with_code: std::collections::HashSet<String> = code_modules()
+                .into_iter()
+                .map(|(name, _)| name.to_string())
+                .collect();
+            rusdoo_modules::catalogue::sync(
+                &registry,
+                &pool,
+                &discovered,
+                &installed,
+                &with_code,
+            )
+            .await?;
         } else {
             registry.init_tables(&pool).await?;
             tracing::info!("schema initialized (no addons directory found)");
@@ -227,7 +259,7 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
 /// installing all 652 addons serves a client bundle that starts with an
 /// addon `web` never depended on, and the browser stops at the first
 /// `odoo.define`.
-fn install_set(discovered: Vec<Manifest>) -> anyhow::Result<Vec<Manifest>> {
+fn install_set(discovered: Vec<Manifest>, asked_for: &[String]) -> anyhow::Result<Vec<Manifest>> {
     let Ok(list) = std::env::var("RUSDOO_INSTALL") else {
         return Ok(discovered);
     };
@@ -236,6 +268,10 @@ fn install_set(discovered: Vec<Manifest>) -> anyhow::Result<Vec<Manifest>> {
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(str::to_string)
+        // what the Apps screen asked for joins what the command line
+        // named: the button records a decision, and this is the boot
+        // honouring it
+        .chain(asked_for.iter().cloned())
         .collect();
     if wanted.is_empty() {
         return Ok(discovered);

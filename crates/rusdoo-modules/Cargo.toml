@@ -22,5 +22,6 @@ sqlx.workspace = true
 regex.workspace = true
 
 [dev-dependencies]
+rusdoo-base = { path = "../rusdoo-base" }
 rusdoo-testing = { path = "../rusdoo-testing" }
 tokio.workspace = true
