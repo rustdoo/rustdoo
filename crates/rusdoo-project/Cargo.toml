@@ -9,6 +9,7 @@ serde_json.workspace = true
 chrono.workspace = true
 rusdoo-core = { path = "../rusdoo-core" }
 rusdoo-orm = { path = "../rusdoo-orm" }
+sqlx.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

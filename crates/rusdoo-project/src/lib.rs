@@ -26,6 +26,7 @@
 //!   access rules over an axis this port has not started.
 
 use rusdoo_core::RusdooError;
+use rusdoo_orm::hooks::HookCtx;
 use rusdoo_orm::access::Operation;
 use rusdoo_orm::defaults;
 use rusdoo_orm::fields::{Field, FieldType, OnDelete};
@@ -234,6 +235,64 @@ fn project() -> Model {
     .ordered("sequence, name, id")
 }
 
+/// What Odoo's `project.task.write` does when the stage changes: stamp
+/// when it moved, and close the task if the new stage is a folded one.
+///
+/// It is a hook and not a computed field because it writes a *fact about
+/// the past* — the moment somebody moved the card — which no recomputation
+/// can recover later. And it is not a constraint, because it refuses
+/// nothing.
+///
+/// `date_end` follows Odoo's `update_date_end`: a folded column is where
+/// work goes when it is over, so landing in one ends the task, and
+/// leaving one un-ends it. The two together are why a board can answer
+/// "how long has this been sitting here" at all.
+fn stamp_the_stage_change<'a>(
+    mut ctx: HookCtx<'a>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), RusdooError>> + Send + 'a>> {
+    Box::pin(async move {
+        if !ctx.wrote("stage_id") {
+            return Ok(());
+        }
+        let now = chrono::Utc::now()
+            .format(defaults::DATETIME_FORMAT)
+            .to_string();
+        let rows = ctx.records(&["stage_id", "date_end"]).await?;
+        for row in rows {
+            let Some(id) = row.get("id").and_then(Value::as_i64) else {
+                continue;
+            };
+            let folded = match row.get("stage_id") {
+                Some(Value::Array(pair)) => match pair.first().and_then(Value::as_i64) {
+                    Some(stage) => {
+                        let stages = ctx.registry.read_conn(&mut *ctx.tx, "project.task.type", &[stage], &["fold"]).await?;
+                        stages
+                            .first()
+                            .and_then(|stage| stage.get("fold"))
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false)
+                    }
+                    None => false,
+                },
+                _ => false,
+            };
+            let mut values: Vec<(&str, Value)> = vec![("date_last_stage_update", json!(now))];
+            if folded {
+                values.push(("date_end", json!(now)));
+            } else if !row.get("date_end").map(Value::is_null).unwrap_or(true) {
+                // dragged back out of a folded column: the task is open
+                // again, and an end date on an open task is a lie every
+                // report would repeat
+                values.push(("date_end", Value::Null));
+            }
+            ctx.registry
+                .write_tx(ctx.tx, "project.task", &[id], values)
+                .await?;
+        }
+        Ok(())
+    })
+}
+
 /// `project.task` — one piece of work, in two dimensions.
 fn task() -> Model {
     Model::new(
@@ -261,6 +320,9 @@ fn task() -> Model {
             m2o("company_id", "res.company").default_from(defaults::USER_COMPANY),
             Field::new("date_deadline", FieldType::Datetime),
             Field::new("date_end", FieldType::Datetime),
+            // when the card last moved: a fact about the past, which is
+            // why the stage hook writes it and nothing recomputes it
+            Field::new("date_last_stage_update", FieldType::Datetime),
             Field::new("allocated_hours", FieldType::Float { digits: Some((16, 2)) })
                 .default_value(json!(0.0)),
             Field::new(
@@ -280,6 +342,8 @@ fn task() -> Model {
         &["allocated_hours"],
         allocated_time_is_not_negative,
     )
+    .on_create("carimba a mudança de etapa", stamp_the_stage_change)
+    .on_write("carimba a mudança de etapa", stamp_the_stage_change)
     // Odoo's own: what somebody flagged, then the order they arranged,
     // then what is due soonest
     .ordered("priority desc, sequence, date_deadline, id desc")

@@ -205,3 +205,100 @@ async fn an_estimate_below_zero_is_refused_live() {
 
     case.close().await;
 }
+
+/// What Odoo's `write` does when a card moves, and what a board needs to
+/// answer "how long has this been sitting here".
+#[tokio::test]
+async fn moving_a_card_stamps_when_it_moved_live() {
+    let Some(case) = TransactionCase::open("project_stage_stamp", &MODULES).await else {
+        return;
+    };
+    let doing = create(
+        &case,
+        "project.task.type",
+        vec![("name", json!("Fazendo")), ("sequence", json!(1))],
+    )
+    .await;
+    let done = create(
+        &case,
+        "project.task.type",
+        vec![
+            ("name", json!("Concluído")),
+            ("sequence", json!(9)),
+            ("fold", json!(true)),
+        ],
+    )
+    .await;
+    let site = create(&case, "project.project", vec![("name", json!("Site"))]).await;
+
+    // no method is called anywhere here: this is a card being dragged,
+    // which is a write on `stage_id` and nothing else
+    let task = create(
+        &case,
+        "project.task",
+        vec![
+            ("name", json!("Escrever o texto")),
+            ("project_id", json!(site)),
+            ("stage_id", json!(doing)),
+        ],
+    )
+    .await;
+    let row = read(
+        &case,
+        "project.task",
+        task,
+        &["date_last_stage_update", "date_end"],
+    )
+    .await;
+    assert!(
+        !row["date_last_stage_update"].is_null(),
+        "nasceu numa etapa e ninguém carimbou: {row}"
+    );
+    assert!(row["date_end"].is_null(), "aberta e já com fim: {row}");
+
+    // dragged into a folded column: that is where work goes when it is
+    // over, so the task ends
+    case.models()
+        .write(
+            &case.pool(),
+            "project.task",
+            &[task],
+            vec![("stage_id", json!(done))],
+        )
+        .await
+        .expect("the move saves");
+    let row = read(&case, "project.task", task, &["date_end"]).await;
+    assert!(!row["date_end"].is_null(), "caiu no concluído sem fim: {row}");
+
+    // and dragged back out: an end date on an open task is a lie every
+    // report would repeat
+    case.models()
+        .write(
+            &case.pool(),
+            "project.task",
+            &[task],
+            vec![("stage_id", json!(doing))],
+        )
+        .await
+        .expect("the move back saves");
+    let row = read(&case, "project.task", task, &["date_end"]).await;
+    assert!(row["date_end"].is_null(), "voltou a fazer e ficou com fim: {row}");
+
+    // a write that does not touch the stage does not re-stamp it
+    let before = read(&case, "project.task", task, &["date_last_stage_update"]).await
+        ["date_last_stage_update"]
+        .clone();
+    case.models()
+        .write(
+            &case.pool(),
+            "project.task",
+            &[task],
+            vec![("name", json!("Escrever o texto da home"))],
+        )
+        .await
+        .expect("the rename saves");
+    let after = read(&case, "project.task", task, &["date_last_stage_update"]).await;
+    assert_eq!(after["date_last_stage_update"], before, "carimbou à toa");
+
+    case.close().await;
+}

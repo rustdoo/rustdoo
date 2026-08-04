@@ -35,7 +35,7 @@
         <field name="model">project.task</field>
         <field name="type">form</field>
         <field name="priority">10</field>
-        <field name="arch" type="xml"><form><group><field name="name" string="Tarefa"/><field name="project_id" string="Projeto"/><field name="stage_id" string="Etapa"/><field name="state" string="Estado"/><field name="priority" string="Prioridade"/></group><group><field name="user_id" string="Responsável"/><field name="partner_id" string="Cliente"/><field name="date_deadline" string="Prazo"/><field name="date_end" string="Encerrada em"/><field name="allocated_hours" string="Horas previstas"/><field name="tag_ids" string="Marcadores"/></group><field name="description" string="Descrição"/></form></field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Tarefa"/><field name="project_id" string="Projeto"/><field name="stage_id" string="Etapa"/><field name="state" string="Estado"/><field name="priority" string="Prioridade"/></group><group><field name="user_id" string="Responsável"/><field name="partner_id" string="Cliente"/><field name="date_deadline" string="Prazo"/><field name="date_end" string="Encerrada em"/><field name="date_last_stage_update" string="Mudou de etapa em"/><field name="allocated_hours" string="Horas previstas"/><field name="tag_ids" string="Marcadores"/></group><field name="description" string="Descrição"/></form></field>
     </record>
 
     <record id="view_task_kanban" model="ir.ui.view">
