@@ -26,7 +26,7 @@ use rusdoo_orm::domain::parse_domain;
 use rusdoo_orm::fields::{Field, FieldType};
 use rusdoo_orm::model::Model;
 use rusdoo_orm::registry::Registry;
-use serde_json::{json, Value};
+use serde_json::json;
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 
