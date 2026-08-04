@@ -830,6 +830,51 @@ pub fn apply_rule_records(
     Ok(remaining)
 }
 
+/// The model a record names, in either spelling.
+///
+/// This port's own data writes the technical name in a text column;
+/// Odoo's writes a ref to an `ir.model` record whose external id it never
+/// declares by hand — `ir.model._reflect` makes them, named `model_` plus
+/// the model's name with its dots turned into underscores.
+///
+/// The name is not reversed from the external id, because that is
+/// ambiguous (`model_res_partner_bank` could be `res.partner.bank` or
+/// `res_partner.bank`): every registered model is asked whether *its*
+/// name spells that suffix. `Ok(None)` means the model is not in this
+/// build; `Err` means the record names no model at all.
+fn model_named_by(
+    record: &DataRecord,
+    registry: &Registry,
+    text_column: &str,
+    ref_column: &str,
+    what: &str,
+) -> Result<Option<String>, RusdooError> {
+    if let Some(name) = text_of(record_field(record, text_column)) {
+        return Ok(registry.get(&name).map(|_| name));
+    }
+    let external = match record_field(record, ref_column) {
+        Some(FieldValue::Ref(xml_id)) => xml_id.clone(),
+        // a CSV column named `model_id:id` arrives as plain text
+        Some(FieldValue::Text(text)) => text.clone(),
+        _ => {
+            return Err(RusdooError::Validation(format!(
+                "{what} needs a {text_column:?} column with the model tech name, \
+                 or a {ref_column:?} pointing at an ir.model"
+            )))
+        }
+    };
+    let external = external.rsplit('.').next().unwrap_or(&external).to_string();
+    let Some(spelled) = external.strip_prefix("model_") else {
+        return Err(RusdooError::Validation(format!(
+            "{what}: {external:?} does not name an ir.model (expected model_<name>)"
+        )));
+    };
+    Ok(registry
+        .models()
+        .map(|model| model.meta.name.clone())
+        .find(|name| name.replace('.', "_") == spelled))
+}
+
 /// Which model a rule constrains.
 ///
 /// Two spellings reach the same answer. This port's own addons write the
@@ -844,25 +889,7 @@ pub fn apply_rule_records(
 /// that suffix. A model nobody claims is a model this build has not
 /// ported, and the answer is `None`.
 fn rule_model(record: &DataRecord, registry: &Registry) -> Result<Option<String>, RusdooError> {
-    if let Some(name) = text_of(record_field(record, "model")) {
-        return Ok(registry.get(&name).map(|_| name));
-    }
-    let Some(FieldValue::Ref(xml_id)) = record_field(record, "model_id") else {
-        return Err(RusdooError::Validation(
-            "ir.rule needs a 'model' column with the model tech name, or a \
-             'model_id' ref to an ir.model".into(),
-        ));
-    };
-    let external = xml_id.rsplit('.').next().unwrap_or(xml_id);
-    let Some(spelled) = external.strip_prefix("model_") else {
-        return Err(RusdooError::Validation(format!(
-            "ir.rule: {xml_id:?} does not name an ir.model (expected model_<name>)"
-        )));
-    };
-    Ok(registry
-        .models()
-        .map(|model| model.meta.name.clone())
-        .find(|name| name.replace('.', "_") == spelled))
+    model_named_by(record, registry, "model", "model_id", "ir.rule")
 }
 
 /// The `res.groups` ids a rule applies to. Absent means a global rule,
@@ -1124,21 +1151,19 @@ pub fn apply_access_records(
             remaining.push(record.clone());
             continue;
         }
-        let model = match record_field(record, "model") {
-            Some(FieldValue::Text(name)) => name.clone(),
-            _ => {
-                return Err(RusdooError::Validation(
-                    "ir.model.access needs a 'model' column with the model tech name".into(),
-                ))
-            }
+        let Some(model) = model_named_by(record, registry, "model", "model_id", "ir.model.access")?
+        else {
+            // A grant on a model this build has not ported grants nothing
+            // — there is no model to reach — so it is skipped and named,
+            // like every other record about a model that is not here.
+            // What is *not* skipped is a grant naming no model at all,
+            // which is a typo that would leave a real model unreachable.
+            tracing::warn!(
+                "module {module}: ir.model.access skipped, its model is not in this build ({:?})",
+                record_field(record, "model_id").or_else(|| record_field(record, "model"))
+            );
+            continue;
         };
-        // a grant on a model that does not exist is a data-file typo, not
-        // a silent no-op (which would leave the real model unreachable)
-        if registry.get(&model).is_none() {
-            return Err(RusdooError::Validation(format!(
-                "ir.model.access grants on unknown model {model:?}"
-            )));
-        }
         let Some(FieldValue::Ref(group_ref)) = record_field(record, "group_id") else {
             // no group: global grant, not supported yet — skip, stay closed
             tracing::warn!("ir.model.access without group_id skipped on {model}");

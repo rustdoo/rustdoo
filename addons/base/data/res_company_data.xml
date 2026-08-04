@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A empresa que toda instalação do Odoo tem, com o mesmo identificador
+     externo: `base.main_company` é referenciada por dezenas de addons e
+     pelo próprio cliente, que sem ela não consegue nem desenhar o seletor
+     de empresas do topo da tela.
+
+     noupdate: o nome é a primeira coisa que qualquer instalação troca. -->
+<odoo noupdate="1">
+    <record id="main_company" model="res.company">
+        <field name="name">Minha Empresa</field>
+    </record>
+</odoo>

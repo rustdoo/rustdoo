@@ -97,6 +97,18 @@ impl OrmService {
         };
         let is_superuser = session.uid == SUPERUSER_ID;
         let (lang, tz) = self.user_locale(session.uid).await;
+        // `name` is the person, `username` is what they type to log in —
+        // Odoo's session_info keeps them apart, and the navbar shows the
+        // first. A login in the greeting is what the port used to show.
+        let name = self
+            .registry
+            .read(&self.pool, "res.users", &[session.uid], &["name"])
+            .await
+            .ok()
+            .and_then(|rows| rows.into_iter().next())
+            .and_then(|row| row.get("name").and_then(Value::as_str).map(str::to_string))
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| session.login.clone());
         json!({
             "uid": session.uid,
             // res.groups membership beyond the superuser bypass is not
@@ -117,7 +129,7 @@ impl OrmService {
             "db": self.database_name(),
             "server_version": PROTOCOL_VERSION,
             "server_version_info": version_info(),
-            "name": session.login,
+            "name": name,
             "username": session.login,
             "partner_id": Value::Null,
             "max_file_upload_size": MAX_FILE_UPLOAD_SIZE,

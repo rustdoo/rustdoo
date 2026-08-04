@@ -103,11 +103,16 @@ async fn main() -> anyhow::Result<()> {
                 .iter()
                 .filter_map(|xml_id| xml_ids.get(xml_id).map(|(_, id)| *id))
                 .collect();
-            seed_admin(&registry, &pool, &groups).await?;
+            // the company every install has (`base.main_company`): the
+            // admin belongs to it, like Odoo's own admin does. Without a
+            // company the client cannot even draw the switcher at the top
+            // of the screen.
+            let company = xml_ids.get("base.main_company").map(|(_, id)| *id);
+            seed_admin(&registry, &pool, &groups, company).await?;
         } else {
             registry.init_tables(&pool).await?;
             tracing::info!("schema initialized (no addons directory found)");
-            seed_admin(&registry, &pool, &[]).await?;
+            seed_admin(&registry, &pool, &[], None).await?;
         }
     }
 
@@ -383,6 +388,7 @@ async fn seed_admin(
     registry: &Registry,
     pool: &sqlx::PgPool,
     groups: &[i64],
+    company: Option<i64>,
 ) -> anyhow::Result<()> {
     use rusdoo_orm::crud::SearchOptions;
     let domain = rusdoo_orm::domain::parse_domain(&serde_json::json!([["login", "=", "admin"]]))?;
@@ -400,12 +406,34 @@ async fn seed_admin(
                     ("password", serde_json::json!(hash)),
                     ("name", serde_json::json!("Administrador")),
                     ("active", serde_json::json!(true)),
+                    ("company_id", serde_json::json!(company)),
                     // command 6: replace the membership with these groups
                     ("groups_id", serde_json::json!([[6, 0, groups]])),
                 ],
             )
             .await?;
         tracing::warn!("admin user created (login: admin / password: admin) — change the password");
+    } else if let Some(company) = company {
+        // an admin from an earlier boot, before there was a company to
+        // belong to: joined rather than left behind, because a user with
+        // no company is a user the client cannot draw a screen for
+        let orphan = registry
+            .read(pool, "res.users", &existing, &["company_id"])
+            .await?
+            .into_iter()
+            .filter(|row| row["company_id"].is_null())
+            .filter_map(|row| row["id"].as_i64())
+            .collect::<Vec<_>>();
+        if !orphan.is_empty() {
+            registry
+                .write(
+                    pool,
+                    "res.users",
+                    &orphan,
+                    vec![("company_id", serde_json::json!(company))],
+                )
+                .await?;
+        }
     }
     Ok(())
 }

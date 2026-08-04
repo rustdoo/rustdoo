@@ -163,6 +163,19 @@ async fn the_addons_tree_installs_and_adds_up_live() {
         "the base group says nothing about sales"
     );
 
+    // the company every install has, and an admin who belongs to it:
+    // without them the web client cannot draw the switcher at the top of
+    // the screen, which is where this gap first showed
+    let company = xml_ids
+        .get("base.main_company")
+        .expect("base ships the main company")
+        .1;
+    let rows = registry
+        .read(&pool, "res.company", &[company], &["name"])
+        .await
+        .expect("the company reads");
+    assert!(!rows[0]["name"].as_str().unwrap_or_default().is_empty());
+
     // the demo products of the sale addon are real records
     let products = registry
         .search(

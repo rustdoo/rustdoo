@@ -36,6 +36,10 @@ pub fn router(service: OrmService) -> Router {
         .route("/web/session/destroy", post(destroy))
         .route("/web/session/get_session_info", post(session_info))
         .route("/web/webclient/load_menus", get(load_menus))
+        // the client asks with the cache hash on the path
+        // (`/web/webclient/load_menus/<unique>`); the hash is what makes
+        // the URL cacheable, and nothing on this side reads it
+        .route("/web/webclient/load_menus/{unique}", get(load_menus))
         .route("/web/webclient/version_info", post(version_info))
         .route(
             "/web/webclient/translations",
@@ -411,6 +415,12 @@ async fn authenticate(State(service): State<OrmService>, Json(body): Json<Value>
         Some(uid) => {
             let groups = service.resolve_groups(uid).await;
             let token = service.sessions.open(uid, login, groups);
+            // Odoo answers a login with the whole session_info
+            // (`ir.http.session_info()`), not with a receipt: it is what
+            // a client that did not come through the shell — a script, a
+            // second tab, the port's own test harness — boots from.
+            let opened = service.sessions.get(&token);
+            let info = service.session_info(opened.as_ref()).await;
             (
                 AppendHeaders([(
                     header::SET_COOKIE,
@@ -423,10 +433,7 @@ async fn authenticate(State(service): State<OrmService>, Json(body): Json<Value>
                         }
                     ),
                 )]),
-                Json(JsonRpcResponse::result(
-                    request.id,
-                    json!({"uid": uid, "username": login}),
-                )),
+                Json(JsonRpcResponse::result(request.id, info)),
             )
                 .into_response()
         }

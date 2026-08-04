@@ -6,6 +6,7 @@
     'depends': [],
     'data': [
         'data/res_lang.xml',
+        'data/res_company_data.xml',
         'data/ir_cron.xml',
         'security/res_groups.xml',
         'security/ir.model.access.csv',

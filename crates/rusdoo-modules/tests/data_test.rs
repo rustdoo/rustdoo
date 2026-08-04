@@ -467,8 +467,17 @@ fn a_view_patch_arch_survives_the_loader() {
     assert!(arch.contains(r#"<field name="debit_origin_id"/>"#), "{arch}");
 }
 
+/// A grant on a model this build has not ported is skipped, and a grant
+/// naming no model at all is still an error.
+///
+/// This used to be an error too, on the grounds that a typo would leave a
+/// real model unreachable. Pointing the server at Odoo's own tree settled
+/// it the other way: every addon there grants on models this port does
+/// not have yet, and a build that refuses to install because of them
+/// installs nothing at all. The skip is logged with the row that caused
+/// it, and it grants nothing — there is no model to reach.
 #[test]
-fn access_csv_on_unknown_model_errors() {
+fn access_csv_on_a_model_this_build_lacks_is_skipped() {
     use rusdoo_modules::installer::{apply_access_records, XmlIds};
     use rusdoo_orm::access::AccessControl;
 
@@ -480,8 +489,22 @@ fn access_csv_on_unknown_model_errors() {
         noupdate: false,
     };
     let mut ac = AccessControl::new();
+    let left = apply_access_records(&mut ac, &reg, &[rec], "m", &XmlIds::new()).unwrap();
+    assert!(left.is_empty(), "the row was consumed, not passed on");
+    assert!(
+        ac.check("ghost.model", rusdoo_orm::access::Operation::Read, &[1], false)
+            .is_err(),
+        "skipping a grant grants nothing"
+    );
 
-    let err = apply_access_records(&mut ac, &reg, &[rec], "m", &XmlIds::new()).unwrap_err();
-
-    assert!(err.to_string().contains("unknown model"));
+    // a row that names no model at all is a typo the installer must not
+    // wave through: it would leave a real model unreachable
+    let nameless = rusdoo_modules::data::DataRecord {
+        xml_id: Some("acc2".into()),
+        model: "ir.model.access".into(),
+        fields: vec![("name".into(), FieldValue::Text("sem modelo".into()))],
+        noupdate: false,
+    };
+    let err = apply_access_records(&mut ac, &reg, &[nameless], "m", &XmlIds::new()).unwrap_err();
+    assert!(err.to_string().contains("model"), "{err}");
 }

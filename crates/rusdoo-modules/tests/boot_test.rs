@@ -269,6 +269,12 @@ async fn ir_model_access_csv_loads_into_acl() {
     assert!(acl
         .check("x_demo.doc", Operation::Write, &[group_id], false)
         .is_err());
+    // the second row of the CSV names the model the way Odoo names it —
+    // `model_id:id` pointing at an `ir.model` external id — and grants
+    // create, which the first row does not
+    assert!(acl
+        .check("x_demo.doc", Operation::Create, &[group_id], false)
+        .is_ok());
     assert!(acl
         .check("x_demo.doc", Operation::Read, &[], false)
         .is_err());

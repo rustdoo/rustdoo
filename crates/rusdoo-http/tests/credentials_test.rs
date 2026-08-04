@@ -227,3 +227,66 @@ async fn id_may_be_asked_for_like_any_other_field_live() {
     assert_eq!(rows[0]["name"], "Leitores");
     assert!(rows[0]["id"].is_number());
 }
+
+/// Odoo answers a login with the whole `session_info`, not with a
+/// receipt: a client that did not come through the shell — a script, a
+/// second tab, this port's own browser harness — boots from what comes
+/// back here.
+#[tokio::test]
+async fn a_login_answers_with_everything_a_client_boots_from_live() {
+    let Ok(url) = std::env::var("RUSDOO_TEST_DATABASE_URL") else {
+        eprintln!("skipped: RUSDOO_TEST_DATABASE_URL not set");
+        return;
+    };
+    let (service, pool) = fixture(&url, rusdoo_testing::schema_for("rusdoo_login_info")).await;
+    let company: i32 = sqlx::query_scalar(
+        r#"INSERT INTO "res_company" ("name", "active") VALUES ('Minha Empresa', true) RETURNING "id""#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let hash = rusdoo_http::session::hash_password("segredo123").unwrap();
+    sqlx::query(
+        r#"INSERT INTO "res_users" ("login", "password", "name", "active", "company_id")
+           VALUES ('joana', $1, 'Joana', true, $2)"#,
+    )
+    .bind(&hash)
+    .bind(company)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let body = json!({"jsonrpc": "2.0", "id": 1, "method": "call",
+                      "params": {"login": "joana", "password": "segredo123"}});
+    let response = router(service.clone())
+        .oneshot(
+            Request::post("/web/session/authenticate")
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let answer: Value = serde_json::from_slice(&bytes).unwrap();
+    let info = &answer["result"];
+
+    assert_eq!(info["uid"], json!(1), "{answer}");
+    assert_eq!(info["username"], json!("joana"), "{answer}");
+    assert_eq!(info["name"], json!("Joana"), "{answer}");
+    // the company switcher at the top of the screen reads this, and
+    // crashes on a company without a name — which is how the gap showed
+    let companies = &info["user_companies"];
+    let company = i64::from(company);
+    assert_eq!(companies["current_company"], json!(company), "{answer}");
+    assert_eq!(
+        companies["allowed_companies"][company.to_string()]["name"],
+        json!("Minha Empresa"),
+        "{answer}"
+    );
+    // and the rest of what a boot needs is there rather than left to a
+    // second round trip
+    for key in ["db", "server_version", "user_context", "is_admin"] {
+        assert!(!info[key].is_null(), "session_info has no {key}: {answer}");
+    }
+}

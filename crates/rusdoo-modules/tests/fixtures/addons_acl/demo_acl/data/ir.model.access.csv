@@ -1,2 +1,3 @@
-id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_doc_reader,doc leitor,x_demo.doc,group_reader,1,0,0,0
+id,name,model,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_doc_reader,doc leitor,x_demo.doc,,group_reader,1,0,0,0
+access_doc_reader_by_model_id,doc leitor (por model_id),,base.model_x_demo_doc,group_reader,0,0,1,0
