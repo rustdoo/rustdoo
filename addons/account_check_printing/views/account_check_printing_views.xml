@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_journal_check_form" model="ir.ui.view">
+        <field name="name">account.journal.check.form</field>
+        <field name="model">account.journal</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Diário"/><field name="code" string="Código"/></group><group><field name="check_manual_sequencing" string="Cheques já numerados"/><field name="check_next_number" string="Próximo número"/></group></form></field>
+    </record>
+
+    <record id="view_payment_check_list" model="ir.ui.view">
+        <field name="name">account.payment.check.list</field>
+        <field name="model">account.payment</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Pagamento"/><field name="date" string="Data"/><field name="partner_id" string="Favorecido"/><field name="journal_id" string="Diário"/><field name="amount" string="Valor"/><field name="check_number" string="Cheque"/><field name="state" string="Situação"/></list></field>
+    </record>
+
+    <record id="view_payment_check_form" model="ir.ui.view">
+        <field name="name">account.payment.check.form</field>
+        <field name="model">account.payment</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="partner_id" string="Favorecido"/><field name="journal_id" string="Diário"/><field name="payment_method_id" string="Forma"/><field name="date" string="Data"/></group><group><field name="amount" string="Valor"/><field name="check_number" string="Número do cheque"/><field name="memo" string="Histórico"/><field name="state" string="Situação"/></group></form></field>
+    </record>
+
+    <record id="action_check_payments" model="ir.actions.act_window">
+        <field name="name">Pagamentos por cheque</field>
+        <field name="res_model">account.payment</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

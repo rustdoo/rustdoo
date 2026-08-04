@@ -1,0 +1,8 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_payment_method_user,forma de pagamento usuário,account.payment.method,base.group_user,1,0,0,0
+access_payment_method_system,forma de pagamento admin,account.payment.method,base.group_system,1,1,1,1
+access_journal_user,diário usuário,account.journal,base.group_user,1,0,0,0
+access_journal_system,diário admin,account.journal,base.group_system,1,1,1,1
+access_payment_user,pagamento usuário,account.payment,base.group_user,1,1,1,0
+access_payment_system,pagamento admin,account.payment,base.group_system,1,1,1,1
+access_print_prenumbered_user,diálogo de cheques pré-numerados,print.prenumbered.checks,base.group_user,1,1,1,1

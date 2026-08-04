@@ -19,6 +19,7 @@ members = [
     "crates/rusdoo-utm",
     "crates/rusdoo-sales-team",
     "crates/rusdoo-account-debit-note",
+    "crates/rusdoo-account-check-printing",
     "crates/rusdoo-data-recycle",
     "crates/rusdoo-onboarding",
     "crates/rusdoo-testing",

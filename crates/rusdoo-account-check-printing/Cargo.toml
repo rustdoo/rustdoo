@@ -1,0 +1,18 @@
+[package]
+name = "rusdoo-account-check-printing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+rusdoo-core = { path = "../rusdoo-core" }
+rusdoo-orm = { path = "../rusdoo-orm" }
+rusdoo-account = { path = "../rusdoo-account" }
+
+[dev-dependencies]
+rusdoo-testing = { path = "../rusdoo-testing" }
+sqlx.workspace = true
+tokio.workspace = true
+rusdoo-base = { path = "../rusdoo-base" }
+rusdoo-product = { path = "../rusdoo-product" }

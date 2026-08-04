@@ -1459,6 +1459,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-account-check-printing"
+version = "0.1.0"
+dependencies = [
+ "rusdoo-account",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "rusdoo-product",
+ "rusdoo-testing",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-account-debit-note"
 version = "0.1.0"
 dependencies = [
@@ -1816,6 +1831,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "rusdoo-account",
+ "rusdoo-account-check-printing",
  "rusdoo-account-debit-note",
  "rusdoo-analytic",
  "rusdoo-barcodes",
@@ -1900,6 +1916,7 @@ name = "rusdoo-testing"
 version = "0.1.0"
 dependencies = [
  "rusdoo-account",
+ "rusdoo-account-check-printing",
  "rusdoo-base",
  "rusdoo-base-vat",
  "rusdoo-calendar",

@@ -191,6 +191,7 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
         ("utm", rusdoo_utm::extend as ModelProvider),
         ("sales_team", rusdoo_sales_team::extend as ModelProvider),
         ("account_debit_note", rusdoo_account_debit_note::extend as ModelProvider),
+        ("account_check_printing", rusdoo_account_check_printing::extend as ModelProvider),
         ("data_recycle", rusdoo_data_recycle::extend as ModelProvider),
         ("onboarding", rusdoo_onboarding::extend as ModelProvider),
         ("sale", rusdoo_sale::extend as ModelProvider),
@@ -292,6 +293,9 @@ fn code_methods(manifests: &[Manifest]) -> anyhow::Result<rusdoo_orm::methods::M
     }
     if installed.contains(&"purchase") {
         rusdoo_purchase::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"account_check_printing") {
+        rusdoo_account_check_printing::extend_methods(&mut methods)?;
     }
     if installed.contains(&"purchase_requisition") {
         rusdoo_purchase_requisition::extend_methods(&mut methods)?;
