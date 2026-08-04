@@ -33,3 +33,6 @@ access_ir_model_system,modelo admin,ir.model,base.group_system,1,1,1,0
 access_ir_model_fields_user,campo usuário,ir.model.fields,base.group_user,1,0,0,0
 access_ir_model_fields_system,campo admin,ir.model.fields,base.group_system,1,1,1,0
 access_ir_filters_user,filtro salvo usuário,ir.filters,base.group_user,1,1,1,1
+access_ir_model_data_system,identificador externo admin,ir.model.data,base.group_system,1,0,0,0
+access_ir_model_access_system,direito de acesso admin,ir.model.access,base.group_system,1,0,0,0
+access_ir_rule_system,regra de registro admin,ir.rule,base.group_system,1,0,0,0

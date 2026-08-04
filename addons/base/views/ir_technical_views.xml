@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- O menu Técnico do Odoo: as telas que mostram o próprio sistema.
+
+     Quase tudo aqui é view sobre modelo que já existia — sequências,
+     agendamentos, parâmetros, views, menus, ações, anexos. O que faltava
+     não era o dado, era o lugar de olhar para ele. Um administrador que
+     não consegue ver as regras de acesso é um administrador que não
+     consegue auditá-las. -->
+<odoo>
+    <!-- ── Estrutura do banco ────────────────────────────────────── -->
+    <record id="view_ir_model_list" model="ir.ui.view">
+        <field name="name">ir.model.list</field>
+        <field name="model">ir.model</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Modelo"/><field name="model" string="Nome técnico"/><field name="transient" string="É um assistente"/><field name="state" string="Origem"/></list></field>
+    </record>
+    <record id="view_ir_model_form" model="ir.ui.view">
+        <field name="name">ir.model.form</field>
+        <field name="model">ir.model</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Modelo"/><field name="model" string="Nome técnico"/><field name="transient" string="É um assistente"/><field name="state" string="Origem"/></group><field name="field_id"><list><field name="name" string="Campo"/><field name="field_description" string="Rótulo"/><field name="ttype" string="Tipo"/><field name="relation" string="Aponta para"/><field name="required" string="Obrigatório"/><field name="store" string="Em coluna"/></list></field></form></field>
+    </record>
+    <record id="action_ir_model" model="ir.actions.act_window">
+        <field name="name">Modelos</field>
+        <field name="res_model">ir.model</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_ir_model_fields_list" model="ir.ui.view">
+        <field name="name">ir.model.fields.list</field>
+        <field name="model">ir.model.fields</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="model" string="Modelo"/><field name="name" string="Campo"/><field name="ttype" string="Tipo"/><field name="relation" string="Aponta para"/><field name="relation_field" string="Pelo campo"/><field name="required" string="Obrigatório"/><field name="store" string="Em coluna"/><field name="related" string="Espelha"/><field name="is_computed" string="Calculado"/></list></field>
+    </record>
+    <record id="view_ir_model_fields_search" model="ir.ui.view">
+        <field name="name">ir.model.fields.search</field>
+        <field name="model">ir.model.fields</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="model"/><field name="relation"/><filter name="stored" string="Em coluna" domain="[[&quot;store&quot;, &quot;=&quot;, true]]"/><filter name="computed" string="Calculados" domain="[[&quot;is_computed&quot;, &quot;=&quot;, true]]"/><groupby name="model" string="Modelo"/><groupby name="ttype" string="Tipo"/></search></field>
+    </record>
+    <record id="action_ir_model_fields" model="ir.actions.act_window">
+        <field name="name">Campos</field>
+        <field name="res_model">ir.model.fields</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_ir_model_data_list" model="ir.ui.view">
+        <field name="name">ir.model.data.list</field>
+        <field name="model">ir.model.data</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="module" string="Módulo"/><field name="name" string="Nome"/><field name="model" string="Modelo"/><field name="res_id" string="Registro"/><field name="noupdate" string="Preserva edições"/></list></field>
+    </record>
+    <record id="view_ir_model_data_search" model="ir.ui.view">
+        <field name="name">ir.model.data.search</field>
+        <field name="model">ir.model.data</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="module"/><field name="model"/><groupby name="module" string="Módulo"/><groupby name="model" string="Modelo"/></search></field>
+    </record>
+    <record id="action_ir_model_data" model="ir.actions.act_window">
+        <field name="name">Identificadores externos</field>
+        <field name="res_model">ir.model.data</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- ── Segurança ─────────────────────────────────────────────── -->
+    <record id="view_ir_model_access_list" model="ir.ui.view">
+        <field name="name">ir.model.access.list</field>
+        <field name="model">ir.model.access</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="model" string="Modelo"/><field name="group_id" string="Grupo"/><field name="perm_read" string="Ler"/><field name="perm_write" string="Escrever"/><field name="perm_create" string="Criar"/><field name="perm_unlink" string="Apagar"/><field name="module" string="Módulo"/></list></field>
+    </record>
+    <record id="view_ir_model_access_search" model="ir.ui.view">
+        <field name="name">ir.model.access.search</field>
+        <field name="model">ir.model.access</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="model"/><field name="group_id"/><groupby name="model" string="Modelo"/><groupby name="group_id" string="Grupo"/></search></field>
+    </record>
+    <record id="action_ir_model_access" model="ir.actions.act_window">
+        <field name="name">Direitos de acesso</field>
+        <field name="res_model">ir.model.access</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_ir_rule_list" model="ir.ui.view">
+        <field name="name">ir.rule.list</field>
+        <field name="model">ir.rule</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="model" string="Modelo"/><field name="domain_force" string="Domínio"/><field name="groups" string="Grupos"/><field name="perm_read" string="Ler"/><field name="perm_write" string="Escrever"/><field name="perm_create" string="Criar"/><field name="perm_unlink" string="Apagar"/></list></field>
+    </record>
+    <record id="view_ir_rule_form" model="ir.ui.view">
+        <field name="name">ir.rule.form</field>
+        <field name="model">ir.rule</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="model" string="Modelo"/><field name="module" string="Módulo"/><field name="groups" string="Grupos (vazio = global)"/></group><group><field name="perm_read" string="Ler"/><field name="perm_write" string="Escrever"/><field name="perm_create" string="Criar"/><field name="perm_unlink" string="Apagar"/></group><field name="domain_force" string="Domínio"/></form></field>
+    </record>
+    <record id="action_ir_rule" model="ir.actions.act_window">
+        <field name="name">Regras de registro</field>
+        <field name="res_model">ir.rule</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- ── Interface ─────────────────────────────────────────────── -->
+    <record id="view_ir_ui_view_list" model="ir.ui.view">
+        <field name="name">ir.ui.view.list</field>
+        <field name="model">ir.ui.view</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Nome"/><field name="model" string="Modelo"/><field name="type" string="Tipo"/><field name="priority" string="Prioridade"/><field name="inherit_id" string="Herda de"/></list></field>
+    </record>
+    <record id="view_ir_ui_view_form" model="ir.ui.view">
+        <field name="name">ir.ui.view.form</field>
+        <field name="model">ir.ui.view</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Nome"/><field name="model" string="Modelo"/><field name="type" string="Tipo"/><field name="priority" string="Prioridade"/><field name="inherit_id" string="Herda de"/></group><field name="arch" string="Definição"/></form></field>
+    </record>
+    <record id="action_ir_ui_view" model="ir.actions.act_window">
+        <field name="name">Views</field>
+        <field name="res_model">ir.ui.view</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_ir_ui_menu_list" model="ir.ui.view">
+        <field name="name">ir.ui.menu.list</field>
+        <field name="model">ir.ui.menu</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Item"/><field name="parent_id" string="Dentro de"/><field name="sequence" string="Ordem"/><field name="action" string="Ação"/></list></field>
+    </record>
+    <record id="action_ir_ui_menu" model="ir.actions.act_window">
+        <field name="name">Itens de menu</field>
+        <field name="res_model">ir.ui.menu</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_ir_act_window_list" model="ir.ui.view">
+        <field name="name">ir.actions.act_window.list</field>
+        <field name="model">ir.actions.act_window</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Ação"/><field name="res_model" string="Modelo"/><field name="view_mode" string="Modos"/></list></field>
+    </record>
+    <record id="action_ir_act_window" model="ir.actions.act_window">
+        <field name="name">Ações de janela</field>
+        <field name="res_model">ir.actions.act_window</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_ir_act_report_list" model="ir.ui.view">
+        <field name="name">ir.actions.report.list</field>
+        <field name="model">ir.actions.report</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Relatório"/><field name="model" string="Modelo"/><field name="report_name" string="Template"/></list></field>
+    </record>
+    <record id="action_ir_act_report" model="ir.actions.act_window">
+        <field name="name">Relatórios</field>
+        <field name="res_model">ir.actions.report</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- ── Parâmetros e automação ────────────────────────────────── -->
+    <record id="view_ir_config_parameter_list" model="ir.ui.view">
+        <field name="name">ir.config_parameter.list</field>
+        <field name="model">ir.config_parameter</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="key" string="Chave"/><field name="value" string="Valor"/></list></field>
+    </record>
+    <record id="action_ir_config_parameter" model="ir.actions.act_window">
+        <field name="name">Parâmetros do sistema</field>
+        <field name="res_model">ir.config_parameter</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_ir_sequence_list" model="ir.ui.view">
+        <field name="name">ir.sequence.list</field>
+        <field name="model">ir.sequence</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Sequência"/><field name="code" string="Código"/><field name="prefix" string="Prefixo"/><field name="padding" string="Dígitos"/><field name="number_next" string="Próximo"/></list></field>
+    </record>
+    <record id="action_ir_sequence" model="ir.actions.act_window">
+        <field name="name">Sequências</field>
+        <field name="res_model">ir.sequence</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_ir_cron_list" model="ir.ui.view">
+        <field name="name">ir.cron.list</field>
+        <field name="model">ir.cron</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Tarefa"/><field name="model" string="Modelo"/><field name="method" string="Método"/><field name="interval_number" string="A cada"/><field name="interval_type" string="Unidade"/><field name="nextcall" string="Próxima execução"/><field name="active" string="Ativa"/></list></field>
+    </record>
+    <record id="action_ir_cron" model="ir.actions.act_window">
+        <field name="name">Ações agendadas</field>
+        <field name="res_model">ir.cron</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_ir_attachment_list" model="ir.ui.view">
+        <field name="name">ir.attachment.list</field>
+        <field name="model">ir.attachment</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Arquivo"/><field name="res_model" string="Modelo"/><field name="res_id" string="Registro"/><field name="mimetype" string="Tipo"/><field name="file_size" string="Tamanho"/></list></field>
+    </record>
+    <record id="action_ir_attachment" model="ir.actions.act_window">
+        <field name="name">Anexos</field>
+        <field name="res_model">ir.attachment</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_ir_filters_list" model="ir.ui.view">
+        <field name="name">ir.filters.list</field>
+        <field name="model">ir.filters</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Filtro"/><field name="model_id" string="Modelo"/><field name="user_ids" string="De quem"/><field name="is_default" string="Padrão"/></list></field>
+    </record>
+    <record id="action_ir_filters" model="ir.actions.act_window">
+        <field name="name">Filtros salvos</field>
+        <field name="res_model">ir.filters</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_res_lang_list" model="ir.ui.view">
+        <field name="name">res.lang.list</field>
+        <field name="model">res.lang</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Idioma"/><field name="code" string="Código"/><field name="active" string="Ativo"/></list></field>
+    </record>
+    <record id="action_res_lang" model="ir.actions.act_window">
+        <field name="name">Idiomas</field>
+        <field name="res_model">res.lang</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

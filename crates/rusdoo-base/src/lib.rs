@@ -221,7 +221,100 @@ fn models() -> Vec<Model> {
         ir_model(),
         ir_model_fields(),
         filters(),
+        model_data(),
+        model_access(),
+        record_rule(),
     ]
+}
+
+/// `ir.model.data` — the external ids, as a model.
+///
+/// The rows have existed since the first install: they are how a data
+/// file says "this record is `sale.action_orders`" and how the second
+/// boot finds it again. What they were not was *visible* — the table was
+/// written by raw SQL and no screen could open it, which is a strange
+/// thing for the index of everything a module made.
+///
+/// The columns mirror `IR_MODEL_DATA_DDL` exactly, because the table is
+/// created by that DDL on the first boot and this ORM does not yet alter
+/// a table it did not make.
+fn model_data() -> Model {
+    Model::new(
+        meta("ir.model.data", "ir_model_data"),
+        vec![
+            char("module").required(),
+            char("name").required(),
+            // the model and row this id points at — Odoo's `model` is a
+            // plain string here too, because an external id may name a
+            // record of a model this build does not carry
+            char("model").required(),
+            Field::new("res_id", FieldType::Integer).required(),
+            // what `noupdate="1"` in a data file means: the user edits
+            // this and a module update must not undo it
+            Field::new("noupdate", FieldType::Boolean).default_value(json!(false)),
+        ],
+    )
+    // the same unique key `IR_MODEL_DATA_DDL` declares, and not for
+    // symmetry: the installer upserts external ids with `ON CONFLICT
+    // ("module", "name")`, which needs a constraint to conflict *on*.
+    // Now that this model creates the table, it has to carry it.
+    .sql_constrained(
+        "ir_model_data_module_name_uniq",
+        r#"UNIQUE ("module", "name")"#,
+        "an external id is one record",
+    )
+    .ordered("module, name, id")
+}
+
+/// `ir.model.access` — who may read, write, create and delete what.
+///
+/// Loaded from every module's `ir.model.access.csv` and enforced on every
+/// call. It was invisible for the same reason as the external ids, and
+/// this one matters more: an administrator who cannot *see* the access
+/// rules is an administrator who cannot audit them.
+///
+/// Columns mirror `IR_MODEL_ACCESS_DDL`. `module` is this port's own —
+/// it is how a re-install replaces the grants of one module without
+/// touching another's.
+fn model_access() -> Model {
+    Model::new(
+        meta("ir.model.access", "ir_model_access"),
+        vec![
+            char("module").required(),
+            char("model").required(),
+            m2o("group_id", "res.groups").required(),
+            Field::new("perm_read", FieldType::Boolean).default_value(json!(false)),
+            Field::new("perm_write", FieldType::Boolean).default_value(json!(false)),
+            Field::new("perm_create", FieldType::Boolean).default_value(json!(false)),
+            Field::new("perm_unlink", FieldType::Boolean).default_value(json!(false)),
+        ],
+    )
+    .ordered("model, id")
+}
+
+/// `ir.rule` — which *records* of a model somebody may touch.
+///
+/// The domain is stored as the text a data file wrote, `user.id` and all:
+/// it is substituted per call, never evaluated as code. See
+/// `rusdoo-orm/src/rules.rs` for why that token is a token and not an
+/// expression.
+fn record_rule() -> Model {
+    Model::new(
+        meta("ir.rule", "ir_rule"),
+        vec![
+            char("module").required(),
+            char("model").required(),
+            Field::new("domain_force", FieldType::Text).required(),
+            // the groups the rule applies to, as the JSON list the loader
+            // wrote; empty means a global rule, which is the widest kind
+            Field::new("groups", FieldType::Text).default_value(json!("[]")),
+            Field::new("perm_read", FieldType::Boolean).default_value(json!(false)),
+            Field::new("perm_write", FieldType::Boolean).default_value(json!(false)),
+            Field::new("perm_create", FieldType::Boolean).default_value(json!(false)),
+            Field::new("perm_unlink", FieldType::Boolean).default_value(json!(false)),
+        ],
+    )
+    .ordered("model, id")
 }
 
 /// `ir.filters` — the searches somebody saved.

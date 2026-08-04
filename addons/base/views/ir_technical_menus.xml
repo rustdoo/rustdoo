@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A árvore que o Odoo põe sob Configurações › Técnico, na mesma
+     divisão: estrutura, segurança, interface, parâmetros. -->
+<odoo>
+    <record id="menu_technical" model="ir.ui.menu">
+        <field name="name">Técnico</field>
+        <field name="parent_id" ref="base.menu_settings_root"/>
+        <field name="sequence">50</field>
+    </record>
+
+    <record id="menu_ir_model" model="ir.ui.menu">
+        <field name="name">Modelos</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">10</field>
+        <field name="action">base.action_ir_model</field>
+    </record>
+    <record id="menu_ir_model_fields" model="ir.ui.menu">
+        <field name="name">Campos</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">11</field>
+        <field name="action">base.action_ir_model_fields</field>
+    </record>
+    <record id="menu_ir_model_data" model="ir.ui.menu">
+        <field name="name">Identificadores externos</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">12</field>
+        <field name="action">base.action_ir_model_data</field>
+    </record>
+
+    <record id="menu_ir_model_access" model="ir.ui.menu">
+        <field name="name">Direitos de acesso</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">20</field>
+        <field name="action">base.action_ir_model_access</field>
+    </record>
+    <record id="menu_ir_rule" model="ir.ui.menu">
+        <field name="name">Regras de registro</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">21</field>
+        <field name="action">base.action_ir_rule</field>
+    </record>
+
+    <record id="menu_ir_ui_view" model="ir.ui.menu">
+        <field name="name">Views</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">30</field>
+        <field name="action">base.action_ir_ui_view</field>
+    </record>
+    <record id="menu_ir_ui_menu" model="ir.ui.menu">
+        <field name="name">Itens de menu</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">31</field>
+        <field name="action">base.action_ir_ui_menu</field>
+    </record>
+    <record id="menu_ir_act_window" model="ir.ui.menu">
+        <field name="name">Ações de janela</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">32</field>
+        <field name="action">base.action_ir_act_window</field>
+    </record>
+    <record id="menu_ir_act_report" model="ir.ui.menu">
+        <field name="name">Relatórios</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">33</field>
+        <field name="action">base.action_ir_act_report</field>
+    </record>
+    <record id="menu_ir_filters" model="ir.ui.menu">
+        <field name="name">Filtros salvos</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">34</field>
+        <field name="action">base.action_ir_filters</field>
+    </record>
+
+    <record id="menu_ir_config_parameter" model="ir.ui.menu">
+        <field name="name">Parâmetros do sistema</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">40</field>
+        <field name="action">base.action_ir_config_parameter</field>
+    </record>
+    <record id="menu_ir_sequence" model="ir.ui.menu">
+        <field name="name">Sequências</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">41</field>
+        <field name="action">base.action_ir_sequence</field>
+    </record>
+    <record id="menu_ir_cron" model="ir.ui.menu">
+        <field name="name">Ações agendadas</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">42</field>
+        <field name="action">base.action_ir_cron</field>
+    </record>
+    <record id="menu_ir_attachment" model="ir.ui.menu">
+        <field name="name">Anexos</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">43</field>
+        <field name="action">base.action_ir_attachment</field>
+    </record>
+    <record id="menu_res_lang" model="ir.ui.menu">
+        <field name="name">Idiomas</field>
+        <field name="parent_id" ref="menu_technical"/>
+        <field name="sequence">44</field>
+        <field name="action">base.action_res_lang</field>
+    </record>
+</odoo>
