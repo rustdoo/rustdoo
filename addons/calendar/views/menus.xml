@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_calendar_root" model="ir.ui.menu">
+        <field name="name">Agenda</field>
+        <field name="sequence">15</field>
+    </record>
+    <record id="menu_events" model="ir.ui.menu">
+        <field name="name">Reuniões</field>
+        <field name="parent_id" ref="menu_calendar_root"/>
+        <field name="sequence">10</field>
+        <field name="action">calendar.action_events</field>
+    </record>
+    <record id="menu_alarms" model="ir.ui.menu">
+        <field name="name">Lembretes</field>
+        <field name="parent_id" ref="menu_calendar_root"/>
+        <field name="sequence">20</field>
+        <field name="action">calendar.action_alarms</field>
+    </record>
+</odoo>

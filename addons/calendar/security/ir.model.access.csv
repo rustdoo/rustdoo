@@ -1,0 +1,9 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_calendar_event_user,reunião usuário,calendar.event,base.group_user,1,1,1,1
+access_calendar_attendee_user,convidado usuário,calendar.attendee,base.group_user,1,1,1,1
+access_calendar_recurrence_user,recorrência usuário,calendar.recurrence,base.group_user,1,1,1,1
+access_calendar_alarm_user,lembrete usuário,calendar.alarm,base.group_user,1,0,0,0
+access_calendar_alarm_system,lembrete admin,calendar.alarm,base.group_system,1,1,1,1
+access_calendar_event_type_user,marcador usuário,calendar.event.type,base.group_user,1,0,0,0
+access_calendar_event_type_system,marcador admin,calendar.event.type,base.group_system,1,1,1,1
+access_calendar_filters_user,filtro de agenda usuário,calendar.filters,base.group_user,1,1,1,1

@@ -171,6 +171,12 @@ fn modules() -> Vec<Module> {
             sequences: &[],
         },
         Module {
+            name: "calendar",
+            extend: rusdoo_calendar::extend,
+            methods: Some(rusdoo_calendar::extend_methods),
+            sequences: &[],
+        },
+        Module {
             name: "product",
             extend: rusdoo_product::extend,
             methods: None,

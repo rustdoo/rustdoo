@@ -1529,6 +1529,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-calendar"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-mail",
+ "rusdoo-orm",
+ "rusdoo-testing",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "rusdoo-core"
 version = "0.1.0"
 dependencies = [
@@ -1767,6 +1783,7 @@ dependencies = [
  "rusdoo-barcodes",
  "rusdoo-base",
  "rusdoo-base-vat",
+ "rusdoo-calendar",
  "rusdoo-core",
  "rusdoo-data-recycle",
  "rusdoo-http",
@@ -1828,6 +1845,7 @@ dependencies = [
  "rusdoo-account",
  "rusdoo-base",
  "rusdoo-base-vat",
+ "rusdoo-calendar",
  "rusdoo-core",
  "rusdoo-mail",
  "rusdoo-orm",

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Os lembretes que o Odoo instala de fábrica, com os mesmos
+     identificadores externos: um formulário de reunião oferece esta lista
+     antes de o usuário criar qualquer um.
+
+     noupdate: o usuário edita e apaga estes; uma atualização de módulo não
+     deve trazê-los de volta. -->
+<odoo noupdate="1">
+    <record id="alarm_notif_1" model="calendar.alarm">
+        <field name="name">Notificação - 15 minutos antes</field>
+        <field name="alarm_type">notification</field>
+        <field name="duration">15</field>
+        <field name="interval">minutes</field>
+    </record>
+    <record id="alarm_notif_2" model="calendar.alarm">
+        <field name="name">Notificação - 30 minutos antes</field>
+        <field name="alarm_type">notification</field>
+        <field name="duration">30</field>
+        <field name="interval">minutes</field>
+    </record>
+    <record id="alarm_notif_3" model="calendar.alarm">
+        <field name="name">Notificação - 1 hora antes</field>
+        <field name="alarm_type">notification</field>
+        <field name="duration">1</field>
+        <field name="interval">hours</field>
+    </record>
+    <record id="alarm_notif_4" model="calendar.alarm">
+        <field name="name">Notificação - 1 dia antes</field>
+        <field name="alarm_type">notification</field>
+        <field name="duration">1</field>
+        <field name="interval">days</field>
+    </record>
+    <record id="alarm_mail_1" model="calendar.alarm">
+        <field name="name">E-mail - 3 dias antes</field>
+        <field name="alarm_type">email</field>
+        <field name="duration">3</field>
+        <field name="interval">days</field>
+    </record>
+</odoo>

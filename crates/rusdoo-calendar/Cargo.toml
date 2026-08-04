@@ -1,0 +1,21 @@
+[package]
+name = "rusdoo-calendar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+rusdoo-core = { path = "../rusdoo-core" }
+rusdoo-orm = { path = "../rusdoo-orm" }
+
+[dev-dependencies]
+rusdoo-testing = { path = "../rusdoo-testing" }
+tokio.workspace = true
+sqlx.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+rusdoo-base = { path = "../rusdoo-base" }
+rusdoo-mail = { path = "../rusdoo-mail" }
