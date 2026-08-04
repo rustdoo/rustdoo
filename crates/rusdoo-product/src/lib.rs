@@ -193,10 +193,10 @@ fn product() -> Model {
         &["standard_price"],
         cost_is_not_negative,
     )
-    // Odoo orders by `default_code, name, id`; `name` belongs to the
-    // template, and ordering by a delegated field would need the join
-    // that this ORM's `ORDER BY` does not yet build
-    .ordered("default_code, id")
+    // Odoo's own `_order`: the reference first, then the name the
+    // template holds — a delegated column the search reaches through the
+    // link
+    .ordered("default_code, name, id")
 }
 
 #[cfg(test)]

@@ -168,3 +168,76 @@ async fn a_negative_price_is_refused_on_either_record_live() {
         .await;
     assert!(refused.is_err(), "a negative cost was accepted");
 }
+
+/// What the list view does when a user clicks the "Produto" column, and
+/// what the kanban does before it draws a single card. Both name a field
+/// that belongs to the template, and both reach it from the variant's
+/// own query.
+#[tokio::test]
+async fn a_search_orders_and_groups_by_the_templates_fields_live() {
+    let Some(case) = TransactionCase::open("product_delegated_query", &MODULES).await else {
+        return;
+    };
+    let service = OrmService::insecure(case.registry(), case.pool());
+
+    for (name, kind, code) in [
+        ("Cadeira", "consu", "MOB-2"),
+        ("Armário", "consu", "MOB-1"),
+        ("Montagem", "service", "SRV-1"),
+    ] {
+        call(
+            &service,
+            "product.product",
+            "create",
+            json!([{"name": name, "type": kind, "default_code": code}]),
+        )
+        .await;
+    }
+
+    // ordered by the name the catalogue shows, not by the variant's own
+    // columns
+    let rows = service
+        .call_kw(
+            1,
+            "product.product",
+            "search_read",
+            &[json!([]), json!(["name"])],
+            &serde_json::from_value(json!({"order": "name asc"})).unwrap(),
+        )
+        .await
+        .expect("search_read ordered by a delegated field");
+    let names: Vec<&str> = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Armário", "Cadeira", "Montagem"]);
+
+    // and grouped by the type the template carries
+    let groups = service
+        .call_kw(
+            1,
+            "product.product",
+            "formatted_read_group",
+            &[json!([]), json!(["type"]), json!(["__count"])],
+            &Default::default(),
+        )
+        .await
+        .expect("read_group by a delegated field");
+    let counts: Vec<(String, i64)> = groups
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|g| {
+            (
+                g["type"].as_str().unwrap_or_default().to_string(),
+                g["__count"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    assert!(counts.contains(&("consu".into(), 2)), "{counts:?}");
+    assert!(counts.contains(&("service".into(), 1)), "{counts:?}");
+
+    case.close().await;
+}

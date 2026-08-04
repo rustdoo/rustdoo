@@ -59,11 +59,11 @@ fn parse(reg: &Registry, groupby: &[&str], aggregates: &[&str]) -> (Vec<GroupBy>
     (
         groupby
             .iter()
-            .map(|spec| GroupBy::parse(model, spec).unwrap())
+            .map(|spec| GroupBy::parse(reg, model, spec).unwrap())
             .collect(),
         aggregates
             .iter()
-            .map(|spec| Aggregate::parse(model, spec).unwrap())
+            .map(|spec| Aggregate::parse(reg, model, spec).unwrap())
             .collect(),
     )
 }
@@ -138,7 +138,7 @@ fn date_groupby_buckets_by_granularity() {
 fn date_groupby_without_granularity_defaults_to_month() {
     let reg = sales_registry("rusdoo_test_grp_sale");
     let model = reg.get("rusdoo.test.sale").unwrap();
-    let group = GroupBy::parse(model, "day").unwrap();
+    let group = GroupBy::parse(&reg, model, "day").unwrap();
     let query = reg
         .read_group_sql(
             "rusdoo.test.sale",
@@ -182,42 +182,42 @@ fn malformed_specs_are_refused() {
     let reg = sales_registry("rusdoo_test_grp_sale");
     let model = reg.get("rusdoo.test.sale").unwrap();
 
-    assert!(GroupBy::parse(model, "nope").is_err(), "unknown field");
+    assert!(GroupBy::parse(&reg, model, "nope").is_err(), "unknown field");
     assert!(
-        GroupBy::parse(model, "day:century").is_err(),
+        GroupBy::parse(&reg, model, "day:century").is_err(),
         "unknown granularity"
     );
     assert!(
-        GroupBy::parse(model, "amount:month").is_err(),
+        GroupBy::parse(&reg, model, "amount:month").is_err(),
         "granularity on a non-date field"
     );
     assert!(
-        GroupBy::parse(model, "country_id.name").is_err(),
+        GroupBy::parse(&reg, model, "country_id.name").is_err(),
         "grouping through a related field is not supported yet"
     );
     assert!(
-        GroupBy::parse(model, "tag_ids").is_err(),
+        GroupBy::parse(&reg, model, "tag_ids").is_err(),
         "a many2many has no column to group on"
     );
 
     assert!(
-        Aggregate::parse(model, "amount").is_err(),
+        Aggregate::parse(&reg, model, "amount").is_err(),
         "an aggregate needs a function"
     );
     assert!(
-        Aggregate::parse(model, "amount:median").is_err(),
+        Aggregate::parse(&reg, model, "amount:median").is_err(),
         "unknown aggregate function"
     );
     assert!(
-        Aggregate::parse(model, "nope:sum").is_err(),
+        Aggregate::parse(&reg, model, "nope:sum").is_err(),
         "unknown field"
     );
     assert!(
-        Aggregate::parse(model, "tag_ids:sum").is_err(),
+        Aggregate::parse(&reg, model, "tag_ids:sum").is_err(),
         "x2many has no column to aggregate"
     );
     // the closed function set is what keeps SQL out of the spec
-    assert!(Aggregate::parse(model, "amount:sum) FROM x --").is_err());
+    assert!(Aggregate::parse(&reg, model, "amount:sum) FROM x --").is_err());
 }
 
 #[test]
@@ -314,11 +314,11 @@ async fn read_group_returns_groups_live() {
             &pool,
             "rusdoo.test.sale",
             &parse_domain(&json!([])).unwrap(),
-            &[GroupBy::parse(model, "country_id").unwrap()],
+            &[GroupBy::parse(&reg, model, "country_id").unwrap()],
             &[
                 Aggregate::Count,
-                Aggregate::parse(model, "amount:sum").unwrap(),
-                Aggregate::parse(model, "amount:max").unwrap(),
+                Aggregate::parse(&reg, model, "amount:sum").unwrap(),
+                Aggregate::parse(&reg, model, "amount:max").unwrap(),
             ],
             &GroupOptions {
                 order: Some("__count desc".into()),
@@ -347,7 +347,7 @@ async fn read_group_returns_groups_live() {
             &pool,
             "rusdoo.test.sale",
             &parse_domain(&json!([["amount", ">=", 10]])).unwrap(),
-            &[GroupBy::parse(model, "country_id").unwrap()],
+            &[GroupBy::parse(&reg, model, "country_id").unwrap()],
             &[Aggregate::Count],
             &GroupOptions::default(),
         )
@@ -363,7 +363,7 @@ async fn read_group_returns_groups_live() {
             &pool,
             "rusdoo.test.sale",
             &parse_domain(&json!([])).unwrap(),
-            &[GroupBy::parse(model, "day:month").unwrap()],
+            &[GroupBy::parse(&reg, model, "day:month").unwrap()],
             &[Aggregate::Count],
             &GroupOptions::default(),
         )
@@ -381,7 +381,7 @@ async fn read_group_returns_groups_live() {
             &pool,
             "rusdoo.test.sale",
             &parse_domain(&json!([])).unwrap(),
-            &[GroupBy::parse(model, "name").unwrap()],
+            &[GroupBy::parse(&reg, model, "name").unwrap()],
             &[Aggregate::Count],
             &GroupOptions {
                 limit: Some(2),

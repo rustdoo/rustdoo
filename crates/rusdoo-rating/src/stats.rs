@@ -70,8 +70,8 @@ async fn gather(
             ctx.pool,
             RATING,
             &domain,
-            &[GroupBy::parse(model, "rating")?],
-            &[Aggregate::parse(model, COUNT_SPEC)?],
+            &[GroupBy::parse(&ctx.registry, model, "rating")?],
+            &[Aggregate::parse(&ctx.registry, model, COUNT_SPEC)?],
             &GroupOptions::default(),
         )
         .await?;

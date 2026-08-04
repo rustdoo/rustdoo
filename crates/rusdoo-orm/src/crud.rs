@@ -115,7 +115,7 @@ impl Model {
             .as_deref()
             .filter(|spec| !spec.trim().is_empty())
             .unwrap_or_else(|| self.order());
-        sql.push_str(&format!(" ORDER BY {}", self.order_by(order)?));
+        sql.push_str(&format!(" ORDER BY {}", self.order_by_in(order, ctx)?));
         if let Some(limit) = opts.limit {
             sql.push_str(&format!(" LIMIT {limit}"));
         }
@@ -382,11 +382,15 @@ impl Model {
     /// the model's fields so arbitrary SQL can never reach ORDER BY.
     /// The model's own `_order`, rendered as SQL — what a relation reads
     /// its lines by.
-    pub(crate) fn order_sql(&self) -> Result<String, RusdooError> {
-        self.order_by(self.order())
+    pub(crate) fn order_sql_in(&self, ctx: Ctx) -> Result<String, RusdooError> {
+        self.order_by_in(self.order(), ctx)
     }
 
-    fn order_by(&self, spec: &str) -> Result<String, RusdooError> {
+    /// With a registry in context, a field the model reaches through
+    /// `_inherits` orders by the parent's column: Odoo's
+    /// `product.product` is ordered by `default_code, name, id`, and the
+    /// name is the template's.
+    fn order_by_in(&self, spec: &str, ctx: Ctx) -> Result<String, RusdooError> {
         let clauses: Vec<String> = spec
             .split(',')
             .filter(|part| !part.trim().is_empty())
@@ -395,7 +399,11 @@ impl Model {
                 let field = words
                     .next()
                     .ok_or_else(|| RusdooError::Validation("empty ORDER BY clause".into()))?;
+                let mut delegated: Option<String> = None;
                 if field != "id" {
+                    if let Some(registry) = ctx.registry {
+                        delegated = crate::sql::delegated_expr(registry, self, field)?;
+                    }
                     match self.field(field) {
                         // ordering happens in SQL: a field with no column
                         // of its own cannot appear in ORDER BY
@@ -405,6 +413,9 @@ impl Model {
                             )))
                         }
                         Some(_) => {}
+                        // not the model's own, but its template's: order
+                        // by the expression that reaches it
+                        None if delegated.is_some() => {}
                         None => {
                             return Err(RusdooError::Validation(format!(
                                 "unknown field in order: {field:?}"
@@ -426,7 +437,11 @@ impl Model {
                         "malformed order clause: {part:?}"
                     )));
                 }
-                Ok(format!("{} {direction}", quote_ident(field)?))
+                let column = match delegated {
+                    Some(expr) => expr,
+                    None => quote_ident(field)?,
+                };
+                Ok(format!("{column} {direction}"))
             })
             .collect::<Result<_, _>>()?;
         Ok(clauses.join(", "))

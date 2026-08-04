@@ -1688,7 +1688,7 @@ impl Registry {
                     quote_ident(inverse)?,
                     quote_ident(&co.meta.table)?,
                     quote_ident(inverse)?,
-                    co.order_sql()?,
+                    co.order_sql_in(crate::sql::Ctx::full(co, self))?,
                 )
             }
             other => {

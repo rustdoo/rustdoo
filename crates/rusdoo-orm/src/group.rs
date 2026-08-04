@@ -194,13 +194,15 @@ fn split_spec<'a>(spec: &'a str, kind: &str) -> Result<(&'a str, Option<&'a str>
     Ok((name, qualifier))
 }
 
-/// The stored, groupable/aggregatable field behind a spec.
+/// The stored, groupable/aggregatable field behind a spec — the model's
+/// own, or the one it reaches through `_inherits`.
 fn stored_field<'a>(
+    registry: &'a Registry,
     model: &'a Model,
     name: &str,
     spec: &str,
 ) -> Result<&'a crate::fields::Field, RusdooError> {
-    let field = model.field(name).ok_or_else(|| {
+    let field = registry.field_of(model, name).ok_or_else(|| {
         RusdooError::Validation(format!(
             "unknown field on {}: {spec:?}",
             model.meta.name.as_str()
@@ -217,9 +219,9 @@ fn stored_field<'a>(
 impl GroupBy {
     /// Parse one groupby spec against the model. A date or datetime field
     /// without an explicit granularity buckets by month, like Odoo.
-    pub fn parse(model: &Model, spec: &str) -> Result<GroupBy, RusdooError> {
+    pub fn parse(registry: &Registry, model: &Model, spec: &str) -> Result<GroupBy, RusdooError> {
         let (name, qualifier) = split_spec(spec, "grouping")?;
-        let field = stored_field(model, name, spec)?;
+        let field = stored_field(registry, model, name, spec)?;
         let is_date = matches!(field.ty, FieldType::Date | FieldType::Datetime);
         let granularity = match (qualifier, is_date) {
             (Some(q), true) => Some(Granularity::parse(q).ok_or_else(|| {
@@ -244,13 +246,16 @@ impl GroupBy {
     /// bucket, rendered in the same wire format the read path uses
     /// (`YYYY-MM-DD` / `YYYY-MM-DD HH:MM:SS`), so a grouped value and a
     /// read value of the same record are the same string.
-    fn expression(&self, model: &Model) -> Result<String, RusdooError> {
-        let column = quote_ident(&self.field)?;
+    fn expression(&self, registry: &Registry, model: &Model) -> Result<String, RusdooError> {
+        let column = match crate::sql::delegated_expr(registry, model, &self.field)? {
+            Some(expr) => expr,
+            None => quote_ident(&self.field)?,
+        };
         let Some(granularity) = self.granularity else {
             return Ok(column);
         };
         let is_datetime = matches!(
-            model.field(&self.field).map(|f| &f.ty),
+            registry.field_of(model, &self.field).map(|f| &f.ty),
             Some(FieldType::Datetime)
         );
         let format = if is_datetime {
@@ -268,7 +273,7 @@ impl GroupBy {
 impl Aggregate {
     /// Parse one aggregate spec against the model: `__count`, or
     /// `field:function` over a stored column.
-    pub fn parse(model: &Model, spec: &str) -> Result<Aggregate, RusdooError> {
+    pub fn parse(registry: &Registry, model: &Model, spec: &str) -> Result<Aggregate, RusdooError> {
         if spec == COUNT_SPEC {
             return Ok(Aggregate::Count);
         }
@@ -281,7 +286,7 @@ impl Aggregate {
         let function = AggFunc::parse(qualifier).ok_or_else(|| {
             RusdooError::Validation(format!("unknown aggregate function: {qualifier:?}"))
         })?;
-        stored_field(model, name, spec)?;
+        stored_field(registry, model, name, spec)?;
         Ok(Aggregate::Field {
             spec: spec.to_string(),
             field: name.to_string(),
@@ -289,12 +294,18 @@ impl Aggregate {
         })
     }
 
-    fn expression(&self) -> Result<String, RusdooError> {
+    fn expression(&self, registry: &Registry, model: &Model) -> Result<String, RusdooError> {
         match self {
             Aggregate::Count => Ok("count(*)".to_string()),
             Aggregate::Field {
                 field, function, ..
-            } => Ok(function.render(&quote_ident(field)?)),
+            } => {
+                let column = match crate::sql::delegated_expr(registry, model, field)? {
+                    Some(expr) => expr,
+                    None => quote_ident(field)?,
+                };
+                Ok(function.render(&column))
+            }
         }
     }
 }
@@ -341,7 +352,7 @@ impl Registry {
         // spec -> expression, for resolving the ORDER BY below
         let mut sortable: Vec<(String, String)> = Vec::new();
         for (index, group) in groupby.iter().enumerate() {
-            let expr = group.expression(model)?;
+            let expr = group.expression(self, model)?;
             selected.push(format!(r#"to_jsonb({expr}) AS "g{index}""#));
             sortable.push((group.spec.clone(), expr.clone()));
             group_exprs.push(expr);
@@ -351,7 +362,7 @@ impl Registry {
             });
         }
         for (index, aggregate) in aggregates.iter().enumerate() {
-            let expr = aggregate.expression()?;
+            let expr = aggregate.expression(self, model)?;
             selected.push(format!(r#"to_jsonb({expr}) AS "a{index}""#));
             sortable.push((aggregate.spec().to_string(), expr));
             columns.push(GroupColumn {

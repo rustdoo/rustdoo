@@ -409,7 +409,7 @@ async fn stored_computes_are_materialized_and_recomputed_live() {
             &pool,
             "rusdoo.test.stored",
             &parse_domain(&json!([])).unwrap(),
-            &[GroupBy::parse(model, "total").unwrap()],
+            &[GroupBy::parse(&reg, model, "total").unwrap()],
             &[Aggregate::Count],
             &GroupOptions::default(),
         )

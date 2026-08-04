@@ -56,11 +56,11 @@ impl OrmService {
             .ok_or_else(|| RpcError::invalid_params(format!("unknown model: {model}")))?;
         let groupby: Vec<GroupBy> = groupby
             .iter()
-            .map(|spec| GroupBy::parse(m, spec).map_err(RpcError::from))
+            .map(|spec| GroupBy::parse(&self.registry, m, spec).map_err(RpcError::from))
             .collect::<Result<_, _>>()?;
         let aggregates: Vec<Aggregate> = aggregates
             .iter()
-            .map(|spec| Aggregate::parse(m, spec).map_err(RpcError::from))
+            .map(|spec| Aggregate::parse(&self.registry, m, spec).map_err(RpcError::from))
             .collect::<Result<_, _>>()?;
         let mentioned: Vec<String> = groupby
             .iter()

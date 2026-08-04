@@ -86,6 +86,59 @@ pub fn quote_ident(name: &str) -> Result<String, RusdooError> {
     }
 }
 
+/// A column that lives on an `_inherits` parent, as an expression the
+/// child's own query can select, group and order by.
+///
+/// `None` when `name` is not a delegated field of `model` — it is either
+/// the model's own column or nothing at all, and the caller says which.
+///
+/// The expression is a correlated subquery per hop:
+///
+/// ```sql
+/// (SELECT "product_template"."name" FROM "product_template"
+///   WHERE "product_template"."id" = "product_product"."product_tmpl_id")
+/// ```
+///
+/// A join would read better and plan better, but every query this ORM
+/// builds selects `FROM` one table; a subquery is the form that fits
+/// wherever a column fits, which is what `ORDER BY` and `GROUP BY` need.
+/// Each hop is an index lookup on a primary key — the same work a join
+/// would do, planned per row instead of once.
+pub(crate) fn delegated_expr(
+    registry: &Registry,
+    model: &Model,
+    name: &str,
+) -> Result<Option<String>, RusdooError> {
+    if model.field(name).is_some() {
+        return Ok(None);
+    }
+    let Some(chain) = registry.delegation_chain(model, name, 0) else {
+        return Ok(None);
+    };
+    // walk the chain outwards, each hop resolving the id of the next
+    // record from the one before it
+    let mut owner_id = format!(
+        "{}.{}",
+        quote_ident(&model.meta.table)?,
+        quote_ident(&chain[0].0)?
+    );
+    for (index, (_, parent_name)) in chain.iter().enumerate() {
+        let parent = registry.get(parent_name).ok_or_else(|| {
+            RusdooError::Validation(format!("_inherits parent not registered: {parent_name}"))
+        })?;
+        let table = quote_ident(&parent.meta.table)?;
+        // the last hop selects the column itself; the others select the
+        // link that leads to the next record
+        let selected = match chain.get(index + 1) {
+            Some((link, _)) => quote_ident(link)?,
+            None => quote_ident(name)?,
+        };
+        owner_id =
+            format!(r#"(SELECT {table}.{selected} FROM {table} WHERE {table}."id" = {owner_id})"#);
+    }
+    Ok(Some(owner_id))
+}
+
 /// Context-free rendering; prefer [`render`] with a fuller [`Ctx`].
 pub fn where_clause(domain: &Domain) -> Result<(String, Vec<Value>), RusdooError> {
     let mut params = Vec::new();
