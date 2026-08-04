@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- O funil de manutenção que o Odoo instala, com os mesmos
+     identificadores externos, e a equipe interna que recebe tudo por
+     padrão. Sem etapas não há funil: a primeira tela seria uma lista sem
+     colunas.
+
+     noupdate: etapas e equipes são a primeira coisa que uma operação
+     ajusta ao seu jeito. -->
+<odoo noupdate="1">
+    <record id="stage_0" model="maintenance.stage">
+        <field name="name">Nova solicitação</field>
+        <field name="sequence">1</field>
+    </record>
+    <record id="stage_1" model="maintenance.stage">
+        <field name="name">Em execução</field>
+        <field name="sequence">2</field>
+    </record>
+    <record id="stage_3" model="maintenance.stage">
+        <field name="name">Reparado</field>
+        <field name="sequence">3</field>
+        <field name="done" eval="True"/>
+    </record>
+    <record id="stage_4" model="maintenance.stage">
+        <field name="name">Descartado</field>
+        <field name="sequence">4</field>
+        <field name="done" eval="True"/>
+        <field name="fold" eval="True"/>
+    </record>
+
+    <record id="equipment_team_maintenance" model="maintenance.team">
+        <field name="name">Manutenção interna</field>
+    </record>
+</odoo>

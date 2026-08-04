@@ -1,0 +1,11 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_maintenance_request_user,solicitação usuário,maintenance.request,base.group_user,1,1,1,0
+access_maintenance_request_system,solicitação admin,maintenance.request,base.group_system,1,1,1,1
+access_maintenance_equipment_user,equipamento usuário,maintenance.equipment,base.group_user,1,0,0,0
+access_maintenance_equipment_system,equipamento admin,maintenance.equipment,base.group_system,1,1,1,1
+access_maintenance_category_user,categoria usuário,maintenance.equipment.category,base.group_user,1,0,0,0
+access_maintenance_category_system,categoria admin,maintenance.equipment.category,base.group_system,1,1,1,1
+access_maintenance_stage_user,etapa usuário,maintenance.stage,base.group_user,1,0,0,0
+access_maintenance_stage_system,etapa admin,maintenance.stage,base.group_system,1,1,1,1
+access_maintenance_team_user,equipe usuário,maintenance.team,base.group_user,1,0,0,0
+access_maintenance_team_system,equipe admin,maintenance.team,base.group_system,1,1,1,1

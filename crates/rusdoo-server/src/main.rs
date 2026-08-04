@@ -187,6 +187,7 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
         // depois de `sales_team` e `utm`, que ele aponta
         ("crm", rusdoo_crm::extend as ModelProvider),
         ("hr_attendance", rusdoo_hr_attendance::extend as ModelProvider),
+        ("maintenance", rusdoo_maintenance::extend as ModelProvider),
         ("mail", rusdoo_mail::extend as ModelProvider),
         ("rating", rusdoo_rating::extend as ModelProvider),
         ("product", rusdoo_product::extend as ModelProvider),

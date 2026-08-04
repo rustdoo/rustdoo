@@ -237,6 +237,12 @@ fn modules() -> Vec<Module> {
             sequences: &[],
         },
         Module {
+            name: "maintenance",
+            extend: rusdoo_maintenance::extend,
+            methods: None,
+            sequences: &[],
+        },
+        Module {
             name: "crm",
             extend: rusdoo_crm::extend,
             methods: Some(rusdoo_crm::extend_methods),

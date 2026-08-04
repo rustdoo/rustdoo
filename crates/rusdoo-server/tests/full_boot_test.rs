@@ -66,6 +66,7 @@ fn registry() -> Registry {
     rusdoo_resource::extend(&mut registry).expect("resource models");
     rusdoo_hr::extend(&mut registry).expect("hr models");
     rusdoo_hr_attendance::extend(&mut registry).expect("hr_attendance models");
+    rusdoo_maintenance::extend(&mut registry).expect("maintenance models");
     rusdoo_stock_account::extend(&mut registry).expect("stock_account models");
     rusdoo_stock_picking_batch::extend(&mut registry).expect("stock_picking_batch models");
     rusdoo_purchase_requisition::extend(&mut registry).expect("purchase_requisition models");
@@ -108,7 +109,7 @@ async fn the_addons_tree_installs_and_adds_up_live() {
         "base", "base_vat", "web", "mail", "product", "account", "stock", "purchase",
         "sale", "sale_purchase", "calendar", "resource", "stock_account",
         "stock_picking_batch", "purchase_requisition", "account_check_printing",
-        "phone_validation", "fleet", "lunch", "hr", "hr_attendance", "crm", "sale_crm", "contacts", "uom",
+        "phone_validation", "fleet", "lunch", "hr", "hr_attendance", "maintenance", "crm", "sale_crm", "contacts", "uom",
         "barcodes", "utm", "sales_team",
         "account_debit_note", "data_recycle", "onboarding",
     ] {

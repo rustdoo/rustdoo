@@ -1705,6 +1705,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-maintenance"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-hr",
+ "rusdoo-orm",
+ "rusdoo-resource",
+ "rusdoo-testing",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-modules"
 version = "0.1.0"
 dependencies = [
@@ -1957,6 +1973,7 @@ dependencies = [
  "rusdoo-http",
  "rusdoo-lunch",
  "rusdoo-mail",
+ "rusdoo-maintenance",
  "rusdoo-modules",
  "rusdoo-onboarding",
  "rusdoo-orm",
@@ -2044,6 +2061,7 @@ dependencies = [
  "rusdoo-hr-attendance",
  "rusdoo-lunch",
  "rusdoo-mail",
+ "rusdoo-maintenance",
  "rusdoo-orm",
  "rusdoo-phone-validation",
  "rusdoo-product",
