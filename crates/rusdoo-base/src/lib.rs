@@ -220,7 +220,81 @@ fn models() -> Vec<Model> {
         module_dependency(),
         ir_model(),
         ir_model_fields(),
+        filters(),
     ]
+}
+
+/// `ir.filters` — the searches somebody saved.
+///
+/// Port of `odoo/addons/base/models/ir_filters.py`. A saved filter is
+/// the smallest piece of an ERP that belongs to a *person*: a domain, the
+/// context it was built in, and the order it read best in. Losing them
+/// between sessions is what makes a system feel like somebody else's.
+///
+/// `model_id` is the model's technical name, as in Odoo — a `Selection`
+/// there, filled from the registry; a plain string here, which is what
+/// the client sends and what `ir.model` now describes.
+///
+/// Sharing follows Odoo's rule and it is worth stating, because the empty
+/// case is the surprising one: a filter with no users is shared with
+/// **everyone**, and one that names users belongs to them.
+fn filters() -> Model {
+    Model::new(
+        meta("ir.filters", "ir_filters"),
+        vec![
+            char("name").required(),
+            char("model_id").required(),
+            // the three pieces a search is made of, stored as the client
+            // sends them: JSON text, not columns this port would have to
+            // re-render on the way out
+            Field::new("domain", FieldType::Text)
+                .required()
+                .default_value(json!("[]")),
+            Field::new("context", FieldType::Text)
+                .required()
+                .default_value(json!("{}")),
+            char("sort").required().default_value(json!("[]")),
+            Field::new(
+                "user_ids",
+                FieldType::Many2many {
+                    comodel: "res.users".into(),
+                    relation: "ir_filters_users_rel".into(),
+                    column1: "filter_id".into(),
+                    column2: "user_id".into(),
+                },
+            ),
+            // the one that opens with the screen
+            Field::new("is_default", FieldType::Boolean).default_value(json!(false)),
+            Field::new("active", FieldType::Boolean).default_value(json!(true)),
+        ],
+    )
+    .constrained(
+        "a saved search is a search",
+        &["domain", "context", "sort"],
+        a_filter_holds_json,
+    )
+    .ordered("model_id, name, id desc")
+}
+
+/// The three pieces are JSON the client sends and the client reads back.
+/// Storing text nobody parsed is how a saved filter becomes a screen that
+/// will not open, months later, for one person.
+fn a_filter_holds_json(record: &Map<String, Value>) -> Result<(), String> {
+    for (field, empty) in [("domain", "[]"), ("context", "{}"), ("sort", "[]")] {
+        let text = record
+            .get(field)
+            .and_then(Value::as_str)
+            .unwrap_or(empty)
+            .trim()
+            .to_string();
+        if text.is_empty() {
+            continue;
+        }
+        if serde_json::from_str::<Value>(&text).is_err() {
+            return Err(format!("the {field} of a saved filter is not JSON: {text:?}"));
+        }
+    }
+    Ok(())
 }
 
 /// `ir.model` — every model this server runs, as a row.

@@ -1522,6 +1522,7 @@ version = "0.1.0"
 dependencies = [
  "rusdoo-core",
  "rusdoo-orm",
+ "rusdoo-testing",
  "serde_json",
  "sqlx",
  "tokio",
