@@ -188,6 +188,7 @@ fn code_modules() -> Vec<(&'static str, ModelProvider)> {
         ("crm", rusdoo_crm::extend as ModelProvider),
         ("hr_attendance", rusdoo_hr_attendance::extend as ModelProvider),
         ("maintenance", rusdoo_maintenance::extend as ModelProvider),
+        ("project", rusdoo_project::extend as ModelProvider),
         ("mail", rusdoo_mail::extend as ModelProvider),
         ("rating", rusdoo_rating::extend as ModelProvider),
         ("product", rusdoo_product::extend as ModelProvider),
@@ -327,6 +328,9 @@ fn code_methods(manifests: &[Manifest]) -> anyhow::Result<rusdoo_orm::methods::M
     }
     if installed.contains(&"sale_crm") {
         rusdoo_sale_crm::extend_methods(&mut methods)?;
+    }
+    if installed.contains(&"project") {
+        rusdoo_project::extend_methods(&mut methods)?;
     }
     if installed.contains(&"hr_attendance") {
         rusdoo_hr_attendance::extend_methods(&mut methods)?;

@@ -22,6 +22,7 @@ rusdoo-sales-team = { path = "../rusdoo-sales-team" }
 rusdoo-hr = { path = "../rusdoo-hr" }
 rusdoo-hr-attendance = { path = "../rusdoo-hr-attendance" }
 rusdoo-maintenance = { path = "../rusdoo-maintenance" }
+rusdoo-project = { path = "../rusdoo-project" }
 rusdoo-lunch = { path = "../rusdoo-lunch" }
 rusdoo-phone-validation = { path = "../rusdoo-phone-validation" }
 rusdoo-sale-purchase = { path = "../rusdoo-sale-purchase" }

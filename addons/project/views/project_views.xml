@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_project_list" model="ir.ui.view">
+        <field name="name">project.project.list</field>
+        <field name="model">project.project</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Projeto"/><field name="partner_id" string="Cliente"/><field name="user_id" string="Responsável"/><field name="task_count" string="Tarefas"/><field name="open_task_count" string="Em aberto"/></list></field>
+    </record>
+
+    <record id="view_project_form" model="ir.ui.view">
+        <field name="name">project.project.form</field>
+        <field name="model">project.project</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Projeto"/><field name="partner_id" string="Cliente"/><field name="user_id" string="Responsável"/><field name="label_tasks" string="Chamar tarefas de"/><field name="active" string="Ativo"/></group><group><field name="date_start" string="Início"/><field name="date" string="Prazo"/><field name="task_count" string="Tarefas"/><field name="open_task_count" string="Em aberto"/></group><field name="tasks"><list><field name="name" string="Tarefa"/><field name="stage_id" string="Etapa"/><field name="state" string="Estado"/><field name="user_id" string="Responsável"/><field name="date_deadline" string="Prazo"/></list></field><field name="description" string="Descrição"/></form></field>
+    </record>
+
+    <record id="action_projects" model="ir.actions.act_window">
+        <field name="name">Projetos</field>
+        <field name="res_model">project.project</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_task_list" model="ir.ui.view">
+        <field name="name">project.task.list</field>
+        <field name="model">project.task</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Tarefa"/><field name="project_id" string="Projeto"/><field name="stage_id" string="Etapa"/><field name="state" string="Estado"/><field name="user_id" string="Responsável"/><field name="date_deadline" string="Prazo"/><field name="allocated_hours" string="Horas previstas"/></list></field>
+    </record>
+
+    <record id="view_task_form" model="ir.ui.view">
+        <field name="name">project.task.form</field>
+        <field name="model">project.task</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><group><field name="name" string="Tarefa"/><field name="project_id" string="Projeto"/><field name="stage_id" string="Etapa"/><field name="state" string="Estado"/><field name="priority" string="Prioridade"/></group><group><field name="user_id" string="Responsável"/><field name="partner_id" string="Cliente"/><field name="date_deadline" string="Prazo"/><field name="date_end" string="Encerrada em"/><field name="allocated_hours" string="Horas previstas"/><field name="tag_ids" string="Marcadores"/></group><field name="description" string="Descrição"/></form></field>
+    </record>
+
+    <record id="view_task_kanban" model="ir.ui.view">
+        <field name="name">project.task.kanban</field>
+        <field name="model">project.task</field>
+        <field name="type">kanban</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><kanban default_group_by="stage_id"><field name="name"/><field name="project_id" string="Projeto"/><field name="user_id" string="Responsável"/><field name="date_deadline" string="Prazo"/></kanban></field>
+    </record>
+
+    <record id="view_task_search" model="ir.ui.view">
+        <field name="name">project.task.search</field>
+        <field name="model">project.task</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="project_id"/><field name="user_id"/><filter name="open" string="Em aberto" domain="[[&quot;state&quot;, &quot;not in&quot;, [&quot;1_done&quot;, &quot;1_canceled&quot;]]]"/><groupby name="stage_id" string="Etapa"/><groupby name="user_id" string="Responsável"/></search></field>
+    </record>
+
+    <record id="action_tasks" model="ir.actions.act_window">
+        <field name="name">Tarefas</field>
+        <field name="res_model">project.task</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+
+    <record id="menu_project_root" model="ir.ui.menu">
+        <field name="name">Projetos</field>
+        <field name="sequence">25</field>
+    </record>
+    <record id="menu_projects" model="ir.ui.menu">
+        <field name="name">Projetos</field>
+        <field name="parent_id" ref="menu_project_root"/>
+        <field name="sequence">10</field>
+        <field name="action">project.action_projects</field>
+    </record>
+    <record id="menu_tasks" model="ir.ui.menu">
+        <field name="name">Tarefas</field>
+        <field name="parent_id" ref="menu_project_root"/>
+        <field name="sequence">20</field>
+        <field name="action">project.action_tasks</field>
+    </record>
+</odoo>

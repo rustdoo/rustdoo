@@ -9,6 +9,7 @@ members = [
     "crates/rusdoo-hr",
     "crates/rusdoo-hr-attendance",
     "crates/rusdoo-maintenance",
+    "crates/rusdoo-project",
     "crates/rusdoo-crm",
     "crates/rusdoo-sale-crm",
     "crates/rusdoo-phone-validation",

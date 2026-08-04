@@ -1797,6 +1797,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusdoo-project"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rusdoo-base",
+ "rusdoo-core",
+ "rusdoo-orm",
+ "rusdoo-testing",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "rusdoo-purchase"
 version = "0.1.0"
 dependencies = [
@@ -1979,6 +1993,7 @@ dependencies = [
  "rusdoo-orm",
  "rusdoo-phone-validation",
  "rusdoo-product",
+ "rusdoo-project",
  "rusdoo-purchase",
  "rusdoo-purchase-requisition",
  "rusdoo-qweb",
@@ -2065,6 +2080,7 @@ dependencies = [
  "rusdoo-orm",
  "rusdoo-phone-validation",
  "rusdoo-product",
+ "rusdoo-project",
  "rusdoo-purchase",
  "rusdoo-purchase-requisition",
  "rusdoo-resource",

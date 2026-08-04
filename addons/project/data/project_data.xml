@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- As etapas que o Odoo instala de fábrica. Sem elas o quadro de um
+     projeto novo abre sem colunas, e a primeira coisa que alguém faria
+     seria inventá-las de novo.
+
+     noupdate: cada equipe renomeia e reordena as suas. -->
+<odoo noupdate="1">
+    <record id="project_stage_0" model="project.task.type">
+        <field name="name">Novo</field>
+        <field name="sequence">1</field>
+    </record>
+    <record id="project_stage_1" model="project.task.type">
+        <field name="name">Em andamento</field>
+        <field name="sequence">2</field>
+    </record>
+    <record id="project_stage_2" model="project.task.type">
+        <field name="name">Em revisão</field>
+        <field name="sequence">3</field>
+    </record>
+    <record id="project_stage_3" model="project.task.type">
+        <field name="name">Concluído</field>
+        <field name="sequence">4</field>
+        <field name="fold" eval="True"/>
+    </record>
+</odoo>

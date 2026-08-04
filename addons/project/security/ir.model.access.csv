@@ -1,0 +1,9 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_project_project_user,projeto usuário,project.project,base.group_user,1,1,1,0
+access_project_project_system,projeto admin,project.project,base.group_system,1,1,1,1
+access_project_task_user,tarefa usuário,project.task,base.group_user,1,1,1,1
+access_project_task_system,tarefa admin,project.task,base.group_system,1,1,1,1
+access_project_task_type_user,etapa usuário,project.task.type,base.group_user,1,0,0,0
+access_project_task_type_system,etapa admin,project.task.type,base.group_system,1,1,1,1
+access_project_tags_user,marcador usuário,project.tags,base.group_user,1,0,0,0
+access_project_tags_system,marcador admin,project.tags,base.group_system,1,1,1,1
