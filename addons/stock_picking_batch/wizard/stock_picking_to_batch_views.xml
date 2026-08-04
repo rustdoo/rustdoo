@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="stock_picking_to_batch_form" model="ir.ui.view">
+        <field name="name">stock.picking.to.batch.form</field>
+        <field name="model">stock.picking.to.batch</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="attach_pickings" type="object" string="Confirm" class="btn-primary"/><group><field name="picking_ids" string="Transfers" readonly="1"/><field name="mode" string="Add to"/><field name="batch_id" string="Batch transfer"/></group><group><field name="user_id" string="Responsible"/><field name="description" string="Description"/><field name="is_create_draft" string="Leave it in draft"/></group></form></field>
+    </record>
+</odoo>

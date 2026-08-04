@@ -23,6 +23,7 @@ members = [
     "crates/rusdoo-testing",
     "crates/rusdoo-stock",
     "crates/rusdoo-stock-account",
+    "crates/rusdoo-stock-picking-batch",
     "crates/rusdoo-http",
     "crates/rusdoo-qweb",
     "crates/rusdoo-modules",

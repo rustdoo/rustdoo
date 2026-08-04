@@ -213,6 +213,12 @@ fn modules() -> Vec<Module> {
             sequences: &[("sale.order", "SO")],
         },
         Module {
+            name: "stock_picking_batch",
+            extend: rusdoo_stock_picking_batch::extend,
+            methods: Some(rusdoo_stock_picking_batch::extend_methods),
+            sequences: &[("picking.batch", "BATCH/"), ("picking.wave", "WAVE/")],
+        },
+        Module {
             name: "sale_purchase",
             extend: rusdoo_sale_purchase::extend,
             methods: Some(rusdoo_sale_purchase::extend_methods),

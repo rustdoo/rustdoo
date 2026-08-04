@@ -1,0 +1,7 @@
+id,name,model,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_stock_picking_batch_user,batch transfer operator,stock.picking.batch,stock.group_stock_user,1,1,1,0
+access_stock_picking_batch_manager,batch transfer manager,stock.picking.batch,stock.group_stock_manager,1,1,1,1
+access_stock_picking_to_batch_user,add to batch dialog operator,stock.picking.to.batch,stock.group_stock_user,1,1,1,0
+access_stock_picking_to_batch_manager,add to batch dialog manager,stock.picking.to.batch,stock.group_stock_manager,1,1,1,1
+access_stock_add_to_wave_user,add to wave dialog operator,stock.add.to.wave,stock.group_stock_user,1,1,1,0
+access_stock_add_to_wave_manager,add to wave dialog manager,stock.add.to.wave,stock.group_stock_manager,1,1,1,1

@@ -1,0 +1,19 @@
+[package]
+name = "rusdoo-stock-picking-batch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+rusdoo-core = { path = "../rusdoo-core" }
+rusdoo-orm = { path = "../rusdoo-orm" }
+rusdoo-stock = { path = "../rusdoo-stock" }
+
+[dev-dependencies]
+rusdoo-testing = { path = "../rusdoo-testing" }
+sqlx.workspace = true
+tokio.workspace = true
+rusdoo-base = { path = "../rusdoo-base" }
+rusdoo-product = { path = "../rusdoo-product" }
+rusdoo-http = { path = "../rusdoo-http" }

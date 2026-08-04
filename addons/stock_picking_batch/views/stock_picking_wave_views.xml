@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_picking_tree_wave" model="ir.actions.act_window">
+        <field name="name">Wave Transfers</field>
+        <field name="res_model">stock.picking.batch</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[["is_wave", "=", true]]</field>
+    </record>
+</odoo>

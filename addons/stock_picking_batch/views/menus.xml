@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="menu_batch_transfers" model="ir.ui.menu">
+        <field name="name">Batch Transfers</field>
+        <field name="parent_id" ref="stock.menu_stock_root"/>
+        <field name="sequence">15</field>
+        <field name="action">stock_picking_batch.stock_picking_batch_action</field>
+    </record>
+    <record id="menu_wave_transfers" model="ir.ui.menu">
+        <field name="name">Wave Transfers</field>
+        <field name="parent_id" ref="stock.menu_stock_root"/>
+        <field name="sequence">16</field>
+        <field name="action">stock_picking_batch.action_picking_tree_wave</field>
+    </record>
+</odoo>

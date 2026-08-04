@@ -22,6 +22,7 @@ rusdoo-calendar = { path = "../rusdoo-calendar" }
 rusdoo-sale-purchase = { path = "../rusdoo-sale-purchase" }
 rusdoo-resource = { path = "../rusdoo-resource" }
 rusdoo-stock-account = { path = "../rusdoo-stock-account" }
+rusdoo-stock-picking-batch = { path = "../rusdoo-stock-picking-batch" }
 rusdoo-mail = { path = "../rusdoo-mail" }
 rusdoo-account = { path = "../rusdoo-account" }
 rusdoo-rating = { path = "../rusdoo-rating" }

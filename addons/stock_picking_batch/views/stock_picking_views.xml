@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- View inheritance, not a copy: whoever changes stock's transfer
+         form does not have to remember this file. -->
+    <record id="view_picking_form_batch" model="ir.ui.view">
+        <field name="name">stock.picking.form.batch</field>
+        <field name="model">stock.picking</field>
+        <field name="type">form</field>
+        <field name="inherit_id" ref="stock.view_picking_form"/>
+        <field name="arch" type="xml"><data><xpath expr="//button[@name='action_cancel']" position="after"><button name="action_add_to_batch" type="object" string="Add to batch"/><button name="action_add_to_wave" type="object" string="Add to wave"/><button name="action_view_batch" type="object" string="Open the batch"/></xpath><xpath expr="//field[@name='origin']" position="after"><field name="batch_id" string="Batch transfer" readonly="1"/><field name="batch_sequence" string="Sequence"/></xpath></data></field>
+    </record>
+
+    <record id="view_picking_list_batch" model="ir.ui.view">
+        <field name="name">stock.picking.list.batch</field>
+        <field name="model">stock.picking</field>
+        <field name="type">list</field>
+        <field name="inherit_id" ref="stock.view_picking_list"/>
+        <field name="arch" type="xml"><data><xpath expr="//field[@name='origin']" position="after"><field name="batch_id" string="Batch transfer"/></xpath></data></field>
+    </record>
+
+    <record id="view_picking_search_batch" model="ir.ui.view">
+        <field name="name">stock.picking.search.batch</field>
+        <field name="model">stock.picking</field>
+        <field name="type">search</field>
+        <field name="inherit_id" ref="stock.view_picking_search"/>
+        <field name="arch" type="xml"><data><xpath expr="//filter[@name='done']" position="after"><filter name="unbatched" string="Not in a batch" domain="[[&quot;batch_id&quot;, &quot;=&quot;, false]]"/></xpath><xpath expr="//groupby[@name='state']" position="before"><groupby name="batch_id" string="Batch transfer"/></xpath></data></field>
+    </record>
+</odoo>

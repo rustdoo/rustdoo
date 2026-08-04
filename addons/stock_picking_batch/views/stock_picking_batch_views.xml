@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_picking_batch_list" model="ir.ui.view">
+        <field name="name">stock.picking.batch.list</field>
+        <field name="model">stock.picking.batch</field>
+        <field name="type">list</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><list><field name="name" string="Reference"/><field name="description" string="Description"/><field name="user_id" string="Responsible"/><field name="picking_type" string="Operation type"/><field name="scheduled_date" string="Scheduled date"/><field name="picking_count" string="Transfers"/><field name="state" string="Status"/></list></field>
+    </record>
+
+    <record id="view_picking_batch_form" model="ir.ui.view">
+        <field name="name">stock.picking.batch.form</field>
+        <field name="model">stock.picking.batch</field>
+        <field name="type">form</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><form><button name="action_confirm" type="object" string="Confirm" class="btn-primary"/><button name="action_done" type="object" string="Validate"/><button name="action_cancel" type="object" string="Cancel"/><button name="action_merge" type="object" string="Merge"/><group><field name="name" string="Reference"/><field name="description" string="Description"/><field name="user_id" string="Responsible"/><field name="scheduled_date" string="Scheduled date"/></group><group><field name="picking_type" string="Operation type"/><field name="company_id" string="Company"/><field name="is_wave" string="This batch is a wave" readonly="1"/><field name="state" string="Status"/></group><field name="picking_ids" string="Transfers"><list><field name="name" string="Reference"/><field name="partner_id" string="Contact"/><field name="scheduled_date" string="Scheduled date"/><field name="batch_sequence" string="Sequence"/><field name="state" string="Status"/></list></field></form></field>
+    </record>
+
+    <record id="view_picking_batch_search" model="ir.ui.view">
+        <field name="name">stock.picking.batch.search</field>
+        <field name="model">stock.picking.batch</field>
+        <field name="type">search</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="description"/><field name="user_id"/><filter name="draft" string="Draft" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;draft&quot;]]"/><filter name="in_progress" string="In progress" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;in_progress&quot;]]"/><filter name="done" string="Done" domain="[[&quot;state&quot;, &quot;=&quot;, &quot;done&quot;]]"/><groupby name="state" string="Status"/><groupby name="picking_type" string="Operation type"/><groupby name="user_id" string="Responsible"/></search></field>
+    </record>
+
+    <record id="view_picking_batch_kanban" model="ir.ui.view">
+        <field name="name">stock.picking.batch.kanban</field>
+        <field name="model">stock.picking.batch</field>
+        <field name="type">kanban</field>
+        <field name="priority">10</field>
+        <field name="arch" type="xml"><kanban default_group_by="state"><field name="name"/><field name="description" string="Description"/><field name="user_id" string="Responsible"/><field name="picking_count" string="Transfers"/></kanban></field>
+    </record>
+
+    <!-- Batches and waves are one model; the two screens are one domain
+         apart, which is what keeps a wave out of the batch list. -->
+    <record id="stock_picking_batch_action" model="ir.actions.act_window">
+        <field name="name">Batch Transfers</field>
+        <field name="res_model">stock.picking.batch</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[["is_wave", "=", false]]</field>
+    </record>
+</odoo>
