@@ -28,3 +28,7 @@ access_ir_module_module_user,módulo usuário,ir.module.module,base.group_user,1
 access_ir_module_module_system,módulo admin,ir.module.module,base.group_system,1,1,1,0
 access_ir_module_dependency_user,dependência usuário,ir.module.module.dependency,base.group_user,1,0,0,0
 access_ir_module_dependency_system,dependência admin,ir.module.module.dependency,base.group_system,1,1,1,1
+access_ir_model_user,modelo usuário,ir.model,base.group_user,1,0,0,0
+access_ir_model_system,modelo admin,ir.model,base.group_system,1,1,1,0
+access_ir_model_fields_user,campo usuário,ir.model.fields,base.group_user,1,0,0,0
+access_ir_model_fields_system,campo admin,ir.model.fields,base.group_system,1,1,1,0

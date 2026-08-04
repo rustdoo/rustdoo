@@ -9,6 +9,7 @@ pub mod graph;
 pub mod js_module;
 pub mod installer;
 pub mod po;
+pub mod reflect;
 pub mod loader;
 pub mod manifest;
 pub mod pyliteral;

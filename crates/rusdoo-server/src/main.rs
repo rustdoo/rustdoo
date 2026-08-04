@@ -99,9 +99,19 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let mut translations = rusdoo_orm::translations::Translations::new();
-    if std::env::args().any(|arg| arg == "--init") {
+    {
         use rusdoo_modules::installer::{install_manifests, XmlIds};
         let mut xml_ids = XmlIds::load(&pool).await?;
+        // Reflection first, and on every boot: the registry describes
+        // itself into `ir.model` / `ir.model.fields` before any data file
+        // is allowed to point at a model by external id. A model is code,
+        // and code is not installed into a database — a binary that grew
+        // a model since last time has to say so here.
+        let described = rusdoo_modules::reflect::reflect(&registry, &pool, &mut xml_ids).await?;
+        if described > 0 {
+            tracing::info!("{described} model(s) described in ir.model");
+        }
+        if std::env::args().any(|arg| arg == "--init") {
         if has_addons {
             let report =
                 install_manifests(&pool, &mut registry, &manifests, &mut xml_ids).await?;
@@ -145,6 +155,13 @@ async fn main() -> anyhow::Result<()> {
             registry.init_tables(&pool).await?;
             tracing::info!("schema initialized (no addons directory found)");
             seed_admin(&registry, &pool, &[], None).await?;
+        }
+        // and once more after the install: a first boot creates the
+        // tables inside it, so the reflection above described nothing
+        let described = rusdoo_modules::reflect::reflect(&registry, &pool, &mut xml_ids).await?;
+        if described > 0 {
+            tracing::debug!("{described} model(s) described after the install");
+        }
         }
     }
 

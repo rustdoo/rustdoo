@@ -64,7 +64,10 @@ impl XmlIds {
         self.map.get(qualified)
     }
 
-    fn insert(&mut self, qualified: String, model: String, id: i64) {
+    /// Record an external id. Public because reflection publishes the
+    /// ids Odoo's own data points at (`base.model_res_partner`), and it
+    /// does that outside the data-file loop.
+    pub fn insert(&mut self, qualified: String, model: String, id: i64) {
         self.map.insert(qualified, (model, id));
     }
 }

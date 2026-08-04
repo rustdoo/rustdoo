@@ -218,7 +218,109 @@ fn models() -> Vec<Model> {
         ui_menu(),
         module(),
         module_dependency(),
+        ir_model(),
+        ir_model_fields(),
     ]
+}
+
+/// `ir.model` — every model this server runs, as a row.
+///
+/// Port of `odoo/addons/base/models/ir_model.py`. Odoo calls writing
+/// these rows *reflection*: the registry is built from code, and then it
+/// describes itself into the database, because half of what an ERP does
+/// is talk about its own shape. A saved filter names a model; a server
+/// action names a model; `ir.rule` and `ir.model.access` in Odoo's own
+/// data files point at `model_id`, not at a string.
+///
+/// The rows are not data anybody types. Every boot rewrites them from
+/// the registry, and a model that stopped existing loses its row.
+fn ir_model() -> Model {
+    Model::new(
+        meta("ir.model", "ir_model"),
+        vec![
+            // the technical name (`res.partner`), which is what every
+            // other row means when it says "model"
+            char("model").required(),
+            // what a person reads
+            char("name").translatable(),
+            Field::new("info", FieldType::Text),
+            // Odoo tells apart the models that came with the code from
+            // the ones somebody built through the interface. This port
+            // has no interface for building one, so every row is `base`
+            // until it does.
+            Field::new(
+                "state",
+                FieldType::Selection(vec![
+                    ("manual".into(), "Custom Object".into()),
+                    ("base".into(), "Base Object".into()),
+                ]),
+            )
+            .required()
+            .default_value(json!("base")),
+            // a wizard is a model whose rows are swept: a screen that
+            // lists models has to say which are which
+            Field::new("transient", FieldType::Boolean).default_value(json!(false)),
+            Field::new(
+                "field_id",
+                FieldType::One2many {
+                    comodel: "ir.model.fields".into(),
+                    inverse: "model_id".into(),
+                },
+            ),
+        ],
+    )
+    .sql_constrained(
+        "ir_model_model_uniq",
+        r#"UNIQUE ("model")"#,
+        "a model is described once",
+    )
+    .ordered("model, id")
+}
+
+/// `ir.model.fields` — every field of every model, as a row.
+///
+/// The column names are Odoo's, because its own data files and every
+/// module that reads metadata use them: `ttype` for the kind, `relation`
+/// for the comodel a relational field points at, `relation_field` for
+/// the column a one2many is inverse of.
+fn ir_model_fields() -> Model {
+    Model::new(
+        meta("ir.model.fields", "ir_model_fields"),
+        vec![
+            char("name").required(),
+            // both, like Odoo: the link for a screen, the string for
+            // everything that only knows the technical name
+            char("model").required(),
+            m2o("model_id", "ir.model").ondelete(OnDelete::Cascade),
+            char("field_description").translatable(),
+            char("ttype").required(),
+            char("relation"),
+            char("relation_field"),
+            Field::new("required", FieldType::Boolean).default_value(json!(false)),
+            Field::new("readonly", FieldType::Boolean).default_value(json!(false)),
+            Field::new("store", FieldType::Boolean).default_value(json!(true)),
+            Field::new("translate", FieldType::Boolean).default_value(json!(false)),
+            // what a field is derived from, when it is derived: the path
+            // of a related field, and whether a compute stands behind it
+            char("related"),
+            Field::new("is_computed", FieldType::Boolean).default_value(json!(false)),
+            Field::new(
+                "state",
+                FieldType::Selection(vec![
+                    ("manual".into(), "Custom Field".into()),
+                    ("base".into(), "Base Field".into()),
+                ]),
+            )
+            .required()
+            .default_value(json!("base")),
+        ],
+    )
+    .sql_constrained(
+        "ir_model_fields_name_uniq",
+        r#"UNIQUE ("model", "name")"#,
+        "a field is described once per model",
+    )
+    .ordered("model, name, id")
 }
 
 /// The states a module is in, and the one that makes the screen useful.
